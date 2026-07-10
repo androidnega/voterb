@@ -1,0 +1,211 @@
+{
+  "date": "2026-07-10T05:00:34.647768",
+  "backend": {
+    "apps": [
+      "accounts",
+      "elections",
+      "candidates",
+      "voting",
+      "security",
+      "results",
+      "strongroom",
+      "fraud",
+      "notifications",
+      "ussd",
+      "system",
+      "operations",
+      "audit"
+    ],
+    "missing_apps": [],
+    "model_counts": {
+      "accounts": 6,
+      "elections": 6,
+      "candidates": 1,
+      "voting": 4,
+      "security": 4,
+      "results": 1,
+      "strongroom": 10,
+      "fraud": 2,
+      "notifications": 2,
+      "ussd": 2,
+      "system": 4,
+      "operations": 0,
+      "audit": 0
+    },
+    "api_routes": {
+      "accounts": 10,
+      "elections": 8,
+      "candidates": 4,
+      "voting": 5,
+      "results": 8,
+      "strongroom": 4,
+      "fraud": 9,
+      "notifications": 3,
+      "ussd": 4,
+      "system": 6,
+      "operations": 5,
+      "audit": 3
+    },
+    "total_routes": 69,
+    "url_includes": 13,
+    "commands": [
+      "accounts:seed_roles",
+      "elections:seed_voting_test_data",
+      "system:seed_system_defaults"
+    ]
+  },
+  "frontend": {
+    "dependencies": [
+      "@fortawesome/fontawesome-free",
+      "@primevue/themes",
+      "axios",
+      "chart.js",
+      "pinia",
+      "primeicons",
+      "primevue",
+      "vue",
+      "vue-router"
+    ],
+    "has_src": true,
+    "vue_files": 26
+  },
+  "errors": [],
+  "warnings": [],
+  "summary": {
+    "total_modules": 11,
+    "total_apps": 13,
+    "total_routes": 69,
+    "total_vue_files": 26,
+    "errors": 0,
+    "warnings": 0
+  },
+  "features": {
+    "authentication": [
+      "Login (index/email + password)",
+      "OTP verification",
+      "JWT tokens",
+      "Session management",
+      "Role-based access"
+    ],
+    "roles": [
+      "student",
+      "candidate",
+      "admin",
+      "super_admin"
+    ],
+    "modules": {
+      "election_management": "Election CRUD, positions, candidates",
+      "voting_flow": "SVT, ballot, submit, confirmation",
+      "results_management": "Generate, certify, publish, view",
+      "strongroom": "Seals, custody, public verify",
+      "fraud_monitoring": "Alerts, cases, stats",
+      "notifications": "In-app, event triggers",
+      "system_settings": "Institution, flags, integrations",
+      "ussd_monitoring": "Sessions, logs, stats",
+      "audit_logs": "MFA + audit combined view",
+      "operations_center": "Health, metrics, queues",
+      "user_management": "CRUD, roles, reset password"
+    }
+  },
+  "privileges": {
+    "student": [
+      "View own profile",
+      "View eligible elections",
+      "Request SVT",
+      "View ballot",
+      "Submit vote",
+      "View published results",
+      "View vote history",
+      "Receive notifications"
+    ],
+    "admin": [
+      "Manage elections (CRUD)",
+      "Manage positions",
+      "Manage candidates (approve/reject)",
+      "Manage voter eligibility",
+      "Open/Close elections",
+      "View live monitoring",
+      "Preview results",
+      "View security alerts",
+      "View fraud cases",
+      "View USSD sessions",
+      "View audit logs",
+      "Manage Strongroom committee",
+      "Request vault access"
+    ],
+    "super_admin": [
+      "All Admin privileges",
+      "Certify results",
+      "Publish results",
+      "Approve Strongroom committee",
+      "Approve vault requests",
+      "User management (CRUD, roles)",
+      "System settings",
+      "Feature flags",
+      "Maintenance mode",
+      "View operations center",
+      "View all logs",
+      "Audit all actions"
+    ]
+  },
+  "dashboards": {
+    "student": [
+      "My Elections - list of eligible elections",
+      "Vote Now button on eligible elections",
+      "Results tab - published results",
+      "Notification bell in header",
+      "Profile settings (optional)"
+    ],
+    "admin": [
+      "Stats cards (Total/Active Elections, Voters, Turnout)",
+      "Voting activity chart",
+      "Recent activity feed",
+      "Sidebar navigation: Dashboard, Elections, Results, Strongroom, Fraud, USSD, Audit",
+      "Election management list",
+      "Result management list"
+    ],
+    "super_admin": [
+      "All Admin dashboard features",
+      "Additional sidebar: Operations, Users, Settings",
+      "User management full CRUD",
+      "Operations Center (health, metrics, queues, logs)",
+      "System Settings (institution, flags, integrations, maintenance)",
+      "Full audit view"
+    ]
+  },
+  "structure": {
+    "backend": {
+      "framework": "Django 5.x",
+      "api_framework": "Django REST Framework",
+      "real_time": "Django Channels + Redis",
+      "database": "PostgreSQL (SQLite in dev)",
+      "cache": "Redis",
+      "auth": "JWT (SimpleJWT) + OTP",
+      "apps": [
+        "accounts",
+        "elections",
+        "candidates",
+        "voting",
+        "security",
+        "results",
+        "strongroom",
+        "fraud",
+        "notifications",
+        "ussd",
+        "system",
+        "operations",
+        "audit"
+      ]
+    },
+    "frontend": {
+      "framework": "Vue 3",
+      "state": "Pinia",
+      "routing": "Vue Router",
+      "ui_library": "PrimeVue",
+      "styling": "Tailwind CSS",
+      "icons": "FontAwesome + PrimeIcons",
+      "charts": "Chart.js",
+      "api_client": "Axios"
+    }
+  }
+}

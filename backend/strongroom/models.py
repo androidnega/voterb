@@ -1,0 +1,137 @@
+import uuid
+from django.db import models
+from django.utils import timezone
+from accounts.models import User
+from elections.models import Election
+
+# ---------- Existing Models ----------
+class BallotSeal(models.Model):
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='ballot_seals')
+    svt_id = models.UUIDField(null=True, blank=True)
+    seal_hash = models.CharField(max_length=128)
+    status = models.CharField(max_length=20, default='active')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"BallotSeal {self.seal_hash[:16]}... ({self.election.title})"
+
+class ElectionSeal(models.Model):
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    election = models.OneToOneField(Election, on_delete=models.CASCADE, related_name='election_seal')
+    seal_hash = models.CharField(max_length=128)
+    status = models.CharField(max_length=20, default='active')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"ElectionSeal {self.seal_hash[:16]}... ({self.election.title})"
+
+class CustodyRecord(models.Model):
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='custody_records')
+    action = models.CharField(max_length=50)
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    metadata = models.JSONField(default=dict)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.action} - {self.election.title}"
+
+class IntegrityVerification(models.Model):
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='integrity_verifications')
+    verification_type = models.CharField(max_length=50)
+    status = models.CharField(max_length=20)
+    report = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.verification_type} - {self.election.title}"
+
+# ---------- New Models for Committee & Vault ----------
+class StrongroomCommittee(models.Model):
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('submitted', 'Submitted'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='committees')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    nominated_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='nominated_committees')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Committee for {self.election.title} ({self.status})"
+
+class StrongroomCommitteeMember(models.Model):
+    ROLE_CHOICES = [
+        ('chair', 'Chair'),
+        ('custodian', 'Custodian'),
+        ('observer', 'Observer'),
+    ]
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    committee = models.ForeignKey(StrongroomCommittee, on_delete=models.CASCADE, related_name='members')
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='custodian')
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('committee', 'user')
+
+    def __str__(self):
+        return f"{self.user.email} ({self.role})"
+
+class VaultAccessRequest(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='vault_requests')
+    requested_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='vault_requests')
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_vault_requests')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Vault Request for {self.election.title} ({self.status})"
+
+class VaultSession(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('active', 'Active'),
+        ('closed', 'Closed'),
+    ]
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    access_request = models.ForeignKey(VaultAccessRequest, on_delete=models.CASCADE, related_name='vault_sessions')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    opened_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='opened_vault_sessions')
+    opened_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    evidence_notes = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"Vault Session for {self.access_request.election.title} ({self.status})"
+
+class VaultEvidence(models.Model):
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(VaultSession, on_delete=models.CASCADE, related_name='evidence')
+    seal_type = models.CharField(max_length=20)  # 'ballot' or 'election'
+    seal_hash = models.CharField(max_length=128)
+    seal_uuid = models.UUIDField()
+    viewed_by = models.ForeignKey(User, on_delete=models.CASCADE)
+    viewed_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Evidence {self.seal_hash[:16]}... viewed by {self.viewed_by.email}"

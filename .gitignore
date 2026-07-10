@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/venv/
+backend/.env
+backend/.env.*
+!backend/.env.lan.example
+*.sqlite3
+backend/media/
+backend/staticfiles/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Local / secrets
+.env
+.env.local
+*.pem
+
+# Large exports (keep audit_results.json if user wants - it's small)
+voterb-project-for-deepseek.txt
