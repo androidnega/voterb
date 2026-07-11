@@ -6,8 +6,8 @@
         input-id="fd-faculty"
         :model-value="facultyUuid"
         :options="faculties"
-        option-label="name"
-        option-value="uuid"
+        optionLabel="name"
+        optionValue="uuid"
         placeholder="Choose faculty"
         class="fd-select"
         :disabled="loading || disabled"
@@ -15,28 +15,25 @@
       />
     </div>
 
-    <Transition name="fd-reveal">
-      <div v-if="hasFaculty" key="department" class="fd-field">
-        <label for="fd-department">Department</label>
-        <Select
-          :key="`dept-${facultyKey}`"
-          input-id="fd-department"
-          :model-value="departmentUuid"
-          :options="filteredDepartments"
-          option-label="name"
-          option-value="uuid"
-          :placeholder="filteredDepartments.length ? 'Choose department' : 'No departments found'"
-          class="fd-select"
-          :disabled="loading || disabled || !filteredDepartments.length"
-          @update:model-value="onDepartmentChange"
-        />
-        <p v-if="filteredDepartments.length === 0" class="fd-hint fd-hint--warn">
-          No departments for this faculty yet.
-        </p>
-      </div>
-    </Transition>
-
-    <p v-if="!hasFaculty && showHint" class="fd-hint">Pick a faculty to see departments.</p>
+    <div class="fd-field">
+      <label for="fd-department">Department</label>
+      <Select
+        :key="`dept-${facultyKey}`"
+        input-id="fd-department"
+        :model-value="departmentUuid"
+        :options="filteredDepartments"
+        optionLabel="name"
+        optionValue="uuid"
+        :placeholder="departmentPlaceholder"
+        class="fd-select"
+        :disabled="loading || disabled || !hasFaculty || !filteredDepartments.length"
+        @update:model-value="onDepartmentChange"
+      />
+      <p v-if="hasFaculty && !filteredDepartments.length" class="fd-hint fd-hint--warn">
+        No departments for this faculty yet.
+      </p>
+      <p v-else-if="!hasFaculty && showHint" class="fd-hint">Pick a faculty first.</p>
+    </div>
   </div>
 </template>
 
@@ -62,12 +59,26 @@ const loading = ref(false)
 const faculties = ref([])
 const departments = ref([])
 
-const facultyKey = computed(() => String(props.facultyUuid || ''))
+const normalizeUuid = (value) => {
+  if (value == null || value === '') return ''
+  if (typeof value === 'object') {
+    return String(value.uuid ?? value.value ?? '').trim()
+  }
+  return String(value).trim()
+}
+
+const facultyKey = computed(() => normalizeUuid(props.facultyUuid) || '')
 const hasFaculty = computed(() => Boolean(facultyKey.value))
+
+const departmentPlaceholder = computed(() => {
+  if (!hasFaculty.value) return 'Select faculty first'
+  if (!filteredDepartments.value.length) return 'No departments found'
+  return 'Choose department'
+})
 
 const resolveFacultyUuid = (dept) => {
   if (!dept) return ''
-  return String(dept.faculty?.uuid ?? dept.faculty_uuid ?? '')
+  return normalizeUuid(dept.faculty?.uuid ?? dept.faculty_uuid ?? dept.faculty)
 }
 
 const filteredDepartments = computed(() => {
@@ -83,13 +94,13 @@ const applyPreloaded = () => {
 }
 
 const onFacultyChange = (value) => {
-  const next = value ? String(value) : null
+  const next = normalizeUuid(value) || null
   emit('update:facultyUuid', next)
   emit('update:departmentUuid', null)
 }
 
 const onDepartmentChange = (value) => {
-  emit('update:departmentUuid', value ? String(value) : null)
+  emit('update:departmentUuid', normalizeUuid(value) || null)
 }
 
 const fetchData = async () => {
@@ -111,12 +122,14 @@ const fetchData = async () => {
 
 watch(
   () => [props.facultiesData, props.departmentsData],
-  () => applyPreloaded(),
-  { deep: true }
+  () => {
+    applyPreloaded()
+  },
+  { deep: true, immediate: true }
 )
 
 onMounted(() => {
-  if (!applyPreloaded()) fetchData()
+  if (!faculties.value.length) fetchData()
 })
 
 defineExpose({ refresh: fetchData, faculties, departments })
