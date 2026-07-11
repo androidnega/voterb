@@ -65,7 +65,7 @@
                 :faculty-name="facultyName"
                 :department-name="departmentName"
                 :level-name="levelName"
-                @update:form="form = $event"
+                @update:form="onFormUpdate"
               />
               <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
             </div>
@@ -144,6 +144,10 @@ const indexNumber = computed(() => formatIndexDisplay(authStore.user?.index_numb
 const optionsLoaded = computed(
   () => faculties.value.length > 0 && departments.value.length > 0 && levels.value.length > 0
 )
+
+const onFormUpdate = (next) => {
+  form.value = { ...form.value, ...next }
+}
 
 const loadAcademicOptions = async () => {
   try {

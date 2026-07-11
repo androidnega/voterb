@@ -14,7 +14,7 @@
         required
         placeholder="Ama Serwaa Mensah"
         autocomplete="name"
-        @input="update('full_name', $event.target.value)"
+        @input="updateField('full_name', $event.target.value)"
       />
     </div>
     <div class="field">
@@ -27,31 +27,28 @@
         required
         placeholder="+233 50 123 4567"
         autocomplete="tel"
-        @input="update('phone_number', $event.target.value)"
+        @input="updateField('phone_number', $event.target.value)"
       />
     </div>
   </div>
 
   <div v-else-if="stepId === 'academic'" class="fields">
     <FacultyDepartmentSelect
-      :faculty-uuid="form.faculty_uuid"
-      :department-uuid="form.department_uuid"
+      v-model:faculty-uuid="facultyUuid"
+      v-model:department-uuid="departmentUuid"
       :faculties-data="facultiesData"
       :departments-data="departmentsData"
-      @update:faculty-uuid="update('faculty_uuid', $event)"
-      @update:department-uuid="update('department_uuid', $event)"
     />
     <div class="field">
       <label :for="`${idPrefix}-level`">Level</label>
       <Select
         :input-id="`${idPrefix}-level`"
-        :model-value="form.level_uuid || null"
+        v-model="levelUuid"
         :options="levels"
         optionLabel="name"
         optionValue="uuid"
         placeholder="Choose level"
         class="level-select"
-        @update:model-value="update('level_uuid', $event ? String($event) : '')"
       />
     </div>
   </div>
@@ -69,6 +66,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import Select from 'primevue/select'
 import FacultyDepartmentSelect from '@/components/academic/FacultyDepartmentSelect.vue'
 
@@ -87,8 +85,23 @@ const props = defineProps({
 
 const emit = defineEmits(['update:form'])
 
-const update = (key, value) => {
-  emit('update:form', { ...props.form, [key]: value })
+const facultyUuid = computed({
+  get: () => props.form.faculty_uuid || null,
+  set: (value) => updateField('faculty_uuid', value),
+})
+
+const departmentUuid = computed({
+  get: () => props.form.department_uuid || null,
+  set: (value) => updateField('department_uuid', value),
+})
+
+const levelUuid = computed({
+  get: () => props.form.level_uuid || null,
+  set: (value) => updateField('level_uuid', value ? String(value) : ''),
+})
+
+const updateField = (key, value) => {
+  emit('update:form', { ...props.form, [key]: value ?? '' })
 }
 </script>
 

@@ -4,14 +4,13 @@
       <label for="fd-faculty">Faculty</label>
       <Select
         input-id="fd-faculty"
-        :model-value="facultyUuid"
+        v-model="facultyModel"
         :options="faculties"
         optionLabel="name"
         optionValue="uuid"
         placeholder="Choose faculty"
         class="fd-select"
         :disabled="loading || disabled"
-        @update:model-value="onFacultyChange"
       />
     </div>
 
@@ -20,14 +19,13 @@
       <Select
         :key="`dept-${facultyKey}`"
         input-id="fd-department"
-        :model-value="departmentUuid"
+        v-model="departmentModel"
         :options="filteredDepartments"
         optionLabel="name"
         optionValue="uuid"
         :placeholder="departmentPlaceholder"
         class="fd-select"
-        :disabled="loading || disabled || !hasFaculty || !filteredDepartments.length"
-        @update:model-value="onDepartmentChange"
+        :disabled="loading || disabled || !hasFaculty"
       />
       <p v-if="hasFaculty && !filteredDepartments.length" class="fd-hint fd-hint--warn">
         No departments for this faculty yet.
@@ -58,6 +56,8 @@ const emit = defineEmits(['update:facultyUuid', 'update:departmentUuid'])
 const loading = ref(false)
 const faculties = ref([])
 const departments = ref([])
+const selectedFacultyUuid = ref('')
+const selectedDepartmentUuid = ref('')
 
 const normalizeUuid = (value) => {
   if (value == null || value === '') return ''
@@ -67,8 +67,34 @@ const normalizeUuid = (value) => {
   return String(value).trim()
 }
 
-const facultyKey = computed(() => normalizeUuid(props.facultyUuid) || '')
-const hasFaculty = computed(() => Boolean(facultyKey.value))
+watch(
+  () => props.facultyUuid,
+  (value) => {
+    selectedFacultyUuid.value = normalizeUuid(value)
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.departmentUuid,
+  (value) => {
+    selectedDepartmentUuid.value = normalizeUuid(value)
+  },
+  { immediate: true }
+)
+
+const facultyModel = computed({
+  get: () => selectedFacultyUuid.value || null,
+  set: (value) => onFacultyChange(value),
+})
+
+const departmentModel = computed({
+  get: () => selectedDepartmentUuid.value || null,
+  set: (value) => onDepartmentChange(value),
+})
+
+const facultyKey = computed(() => selectedFacultyUuid.value)
+const hasFaculty = computed(() => Boolean(selectedFacultyUuid.value))
 
 const departmentPlaceholder = computed(() => {
   if (!hasFaculty.value) return 'Select faculty first'
@@ -94,13 +120,17 @@ const applyPreloaded = () => {
 }
 
 const onFacultyChange = (value) => {
-  const next = normalizeUuid(value) || null
-  emit('update:facultyUuid', next)
+  const next = normalizeUuid(value)
+  selectedFacultyUuid.value = next
+  selectedDepartmentUuid.value = ''
+  emit('update:facultyUuid', next || null)
   emit('update:departmentUuid', null)
 }
 
 const onDepartmentChange = (value) => {
-  emit('update:departmentUuid', normalizeUuid(value) || null)
+  const next = normalizeUuid(value)
+  selectedDepartmentUuid.value = next
+  emit('update:departmentUuid', next || null)
 }
 
 const fetchData = async () => {
