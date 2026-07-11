@@ -104,7 +104,7 @@ const authStore = useAuthStore()
 const steps = [
   { id: 'profile', short: 'Details', title: 'Your details', subtitle: 'Tell us how to reach you.' },
   { id: 'academic', short: 'Faculty', title: 'Your faculty', subtitle: 'Select where you belong on campus.' },
-  { id: 'finish', short: 'Confirm', title: 'Confirm', subtitle: 'Double-check everything looks right.' },
+  { id: 'finish', short: 'Confirm', title: 'Almost done', subtitle: 'Review your details, then finish setup.' },
 ]
 
 const currentStep = ref(1)
@@ -266,7 +266,14 @@ const submitOnboarding = async () => {
   loading.value = true
   errorMessage.value = ''
   try {
-    const { data } = await onboardingApi.complete(form.value)
+    const payload = {
+      full_name: form.value.full_name?.trim(),
+      phone_number: form.value.phone_number?.trim(),
+      faculty_uuid: form.value.faculty_uuid,
+      department_uuid: form.value.department_uuid,
+      level_uuid: form.value.level_uuid,
+    }
+    const { data } = await onboardingApi.complete(payload)
     if (data.user) authStore.user = data.user
     authStore.requiresOnboarding = false
     authStore.isNewUser = false
@@ -275,7 +282,16 @@ const submitOnboarding = async () => {
     await router.replace('/student')
   } catch (error) {
     console.error('Onboarding failed:', error)
-    errorMessage.value = error.response?.data?.error || 'Failed to complete onboarding.'
+    const data = error.response?.data
+    if (data?.error) {
+      errorMessage.value = data.error
+    } else if (typeof data === 'object' && data) {
+      const firstField = Object.keys(data)[0]
+      const firstError = Array.isArray(data[firstField]) ? data[firstField][0] : data[firstField]
+      errorMessage.value = firstError || 'Failed to complete onboarding.'
+    } else {
+      errorMessage.value = 'Failed to complete onboarding.'
+    }
   } finally {
     loading.value = false
   }

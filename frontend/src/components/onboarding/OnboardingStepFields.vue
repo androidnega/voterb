@@ -51,15 +51,44 @@
     </div>
   </div>
 
-  <div v-else class="fields">
-    <ul class="summary">
-      <li><span>Index</span><strong>{{ indexNumber }}</strong></li>
-      <li><span>Name</span><strong>{{ form.full_name }}</strong></li>
-      <li><span>Phone</span><strong>{{ form.phone_number }}</strong></li>
-      <li><span>Faculty</span><strong>{{ facultyName }}</strong></li>
-      <li><span>Department</span><strong>{{ departmentName }}</strong></li>
-      <li><span>Level</span><strong>{{ levelName }}</strong></li>
-    </ul>
+  <div v-else class="confirm-step">
+    <p class="confirm-lead">Review your details before finishing setup.</p>
+
+    <section class="confirm-block">
+      <h3 class="confirm-block-title">Personal</h3>
+      <dl class="confirm-grid">
+        <div class="confirm-item">
+          <dt>Index</dt>
+          <dd>{{ indexNumber }}</dd>
+        </div>
+        <div class="confirm-item">
+          <dt>Full name</dt>
+          <dd>{{ form.full_name }}</dd>
+        </div>
+        <div class="confirm-item">
+          <dt>Phone</dt>
+          <dd>{{ form.phone_number }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="confirm-block">
+      <h3 class="confirm-block-title">Campus</h3>
+      <dl class="confirm-grid">
+        <div class="confirm-item">
+          <dt>Faculty</dt>
+          <dd>{{ facultyName }}</dd>
+        </div>
+        <div class="confirm-item">
+          <dt>Department</dt>
+          <dd>{{ departmentName }}</dd>
+        </div>
+        <div class="confirm-item">
+          <dt>Level</dt>
+          <dd>{{ levelName }}</dd>
+        </div>
+      </dl>
+    </section>
   </div>
 </template>
 
@@ -174,36 +203,69 @@ defineProps({
   width: 1.85rem;
 }
 
-.summary {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border: 1px solid var(--ob-border, #e8e6e1);
-  border-radius: 0.55rem;
-  overflow: hidden;
-  background: var(--ob-input, #fff);
+.confirm-step {
+  display: grid;
+  gap: 0.85rem;
 }
 
-.summary li {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.7rem;
-  padding: 0.55rem 0.7rem;
+.confirm-lead {
+  margin: 0;
   font-size: 0.72rem;
+  color: var(--ob-muted, #78716c);
+  line-height: 1.45;
+}
+
+.confirm-block {
+  border: 1px solid var(--ob-border, #e8e6e1);
+  border-radius: 0.55rem;
+  background: var(--ob-input, #fff);
+  overflow: hidden;
+}
+
+.confirm-block-title {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ob-muted, #78716c);
+  background: #f7f6f3;
   border-bottom: 1px solid var(--ob-border, #e8e6e1);
 }
 
-.summary li:last-child {
+.confirm-grid {
+  margin: 0;
+  display: grid;
+}
+
+.confirm-item {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.65rem;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--ob-border, #e8e6e1);
+}
+
+.confirm-item:last-child {
   border-bottom: none;
 }
 
-.summary span {
+.confirm-item dt {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   color: var(--ob-muted, #78716c);
 }
 
-.summary strong {
-  color: var(--ob-text, #1c1917);
+.confirm-item dd {
+  margin: 0;
+  font-size: 0.75rem;
   font-weight: 600;
+  color: var(--ob-text, #1c1917);
   text-align: right;
+  word-break: break-word;
 }
 </style>

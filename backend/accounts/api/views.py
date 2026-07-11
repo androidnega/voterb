@@ -219,7 +219,7 @@ class StudentOnboardingView(APIView):
         except Level.DoesNotExist:
             return Response({'error': 'Level not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        if department.faculty_id != faculty.id:
+        if department.faculty_id != faculty.pk:
             return Response({'error': 'Department does not belong to selected faculty'}, status=status.HTTP_400_BAD_REQUEST)
 
         user.faculty = faculty
