@@ -1,30 +1,19 @@
 <template>
   <div class="countdown" :class="`countdown--${timing.phase}`">
-    <p class="countdown-label">{{ timing.label }}</p>
-
-    <div v-if="!timing.expired" class="countdown-grid" role="timer" :aria-label="ariaLabel">
-      <div class="countdown-unit">
-        <span class="countdown-value">{{ pad(timing.days) }}</span>
-        <span class="countdown-name">days</span>
-      </div>
-      <span class="countdown-sep" aria-hidden="true">:</span>
-      <div class="countdown-unit">
-        <span class="countdown-value">{{ pad(timing.hours) }}</span>
-        <span class="countdown-name">hrs</span>
-      </div>
-      <span class="countdown-sep" aria-hidden="true">:</span>
-      <div class="countdown-unit">
-        <span class="countdown-value">{{ pad(timing.minutes) }}</span>
-        <span class="countdown-name">min</span>
-      </div>
-      <span class="countdown-sep" aria-hidden="true">:</span>
-      <div class="countdown-unit">
-        <span class="countdown-value">{{ pad(timing.seconds) }}</span>
-        <span class="countdown-name">sec</span>
-      </div>
+    <div v-if="!timing.expired" class="countdown-row" role="timer" :aria-label="ariaLabel">
+      <span class="countdown-prefix">{{ timing.label }}</span>
+      <span class="countdown-clock">
+        <span class="countdown-segment">{{ pad(timing.days) }}<small>d</small></span>
+        <span class="countdown-dot" aria-hidden="true">·</span>
+        <span class="countdown-segment">{{ pad(timing.hours) }}<small>h</small></span>
+        <span class="countdown-dot" aria-hidden="true">·</span>
+        <span class="countdown-segment">{{ pad(timing.minutes) }}<small>m</small></span>
+        <span class="countdown-dot" aria-hidden="true">·</span>
+        <span class="countdown-segment countdown-segment--sec">{{ pad(timing.seconds) }}<small>s</small></span>
+      </span>
     </div>
 
-    <p v-else class="countdown-ended">This ballot is no longer accepting votes.</p>
+    <p v-else class="countdown-ended">{{ timing.label }}</p>
 
     <p v-if="timing.target" class="countdown-absolute">
       {{ timing.absoluteLabel }} {{ formatElectionMoment(timing.target) }}
@@ -49,7 +38,6 @@ const now = useNowTicker()
 const election = toRef(props, 'election')
 
 const timing = computed(() => getElectionTiming(election.value, now.value))
-
 const pad = (value) => formatCountdownUnit(value)
 
 const ariaLabel = computed(() => {
@@ -60,113 +48,89 @@ const ariaLabel = computed(() => {
 
 <style scoped>
 .countdown {
-  margin-top: 0.9rem;
-  padding: 0.85rem 0.9rem;
-  border-radius: 0.7rem;
-  background: linear-gradient(180deg, #f8f7f4 0%, #f3f2ee 100%);
-  border: 1px solid #e8e5df;
+  display: grid;
+  gap: 0.3rem;
 }
 
-.countdown--open {
-  background: linear-gradient(180deg, #f0fdf9 0%, #ecfdf5 100%);
-  border-color: var(--vb-accent-border, #99f6e4);
+.countdown-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem 0.55rem;
 }
 
-.countdown--closed {
-  background: #fafaf9;
-  border-color: #e7e5e4;
+.countdown-prefix {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #a8a29e;
+  letter-spacing: 0.01em;
 }
 
-.countdown-label {
-  margin: 0;
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #78716c;
-}
-
-.countdown--open .countdown-label {
+.countdown--open .countdown-prefix {
   color: var(--vb-accent, #0f766e);
 }
 
-.countdown-grid {
-  margin-top: 0.55rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-}
-
-.countdown-unit {
-  min-width: 2.65rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-}
-
-.countdown-value {
-  width: 100%;
-  padding: 0.4rem 0.2rem;
-  border-radius: 0.45rem;
-  background: #fff;
-  border: 1px solid #e7e5e4;
-  font-size: 0.95rem;
-  font-weight: 700;
+.countdown-clock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
+}
+
+.countdown-segment {
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   color: #1c1917;
-  text-align: center;
   line-height: 1;
 }
 
-.countdown--open .countdown-value {
-  border-color: #ccefe8;
+.countdown--open .countdown-segment {
   color: var(--vb-accent, #0f766e);
 }
 
-.countdown-name {
-  font-size: 0.52rem;
+.countdown-segment small {
+  margin-left: 0.05rem;
+  font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: #a8a29e;
 }
 
-.countdown-sep {
-  margin-top: -0.55rem;
-  font-size: 0.85rem;
-  font-weight: 700;
+.countdown-segment--sec {
+  min-width: 2.1rem;
+}
+
+.countdown-dot {
   color: #d6d3d1;
+  font-weight: 700;
+  font-size: 0.75rem;
+  line-height: 1;
 }
 
 .countdown-ended {
-  margin: 0.55rem 0 0;
+  margin: 0;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   color: #78716c;
 }
 
 .countdown-absolute {
-  margin: 0.55rem 0 0;
+  margin: 0;
   font-size: 0.65rem;
   color: #a8a29e;
-  text-align: center;
 }
 
-@media (max-width: 380px) {
-  .countdown-unit {
-    min-width: 2.35rem;
+@media (min-width: 768px) {
+  .countdown-prefix {
+    font-size: 0.72rem;
   }
 
-  .countdown-value {
-    font-size: 0.82rem;
-    padding: 0.35rem 0.15rem;
+  .countdown-segment {
+    font-size: 1.05rem;
   }
 
-  .countdown-grid {
-    gap: 0.2rem;
+  .countdown-segment small {
+    font-size: 0.68rem;
   }
 }
 </style>

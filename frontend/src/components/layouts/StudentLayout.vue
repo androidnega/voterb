@@ -45,9 +45,8 @@ async function handleLogout() {
 
 <style scoped>
 .student-shell {
-  --sd-bg: #f4f3ef;
-  --sd-surface: #fdfcfa;
-  --sd-border: #e5e2db;
+  --sd-bg: #f6f5f2;
+  --sd-border: #ebe8e2;
   --sd-text: #1c1917;
   --sd-muted: #78716c;
 
@@ -61,33 +60,32 @@ async function handleLogout() {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(253, 252, 250, 0.92);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--sd-border);
+  background: rgba(246, 245, 242, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid transparent;
 }
 
 .student-topbar-inner {
-  max-width: 42rem;
   margin: 0 auto;
-  padding: 0.85rem 1.1rem;
+  padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .student-brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.5rem;
   text-decoration: none;
   color: inherit;
 }
 
 .student-brand-icon {
-  width: 1.85rem;
-  height: 1.85rem;
-  border-radius: 0.5rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 0.45rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -97,12 +95,12 @@ async function handleLogout() {
 }
 
 .student-brand-icon svg {
-  width: 1rem;
-  height: 1rem;
+  width: 0.9rem;
+  height: 0.9rem;
 }
 
 .student-brand-text {
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -110,69 +108,64 @@ async function handleLogout() {
 .student-topbar-meta {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.5rem;
 }
 
 .student-index {
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   font-weight: 600;
   color: var(--sd-muted);
   letter-spacing: 0.02em;
 }
 
 .student-signout {
-  border: 1px solid var(--sd-border);
-  background: #fff;
+  border: none;
+  background: transparent;
   color: var(--sd-muted);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 600;
-  padding: 0.4rem 0.7rem;
-  border-radius: 0.45rem;
+  padding: 0.35rem 0.15rem;
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease;
+  transition: color 0.2s ease;
 }
 
 .student-signout:hover {
-  border-color: #d6d3cd;
   color: var(--sd-text);
 }
 
 .student-main {
-  max-width: 42rem;
   margin: 0 auto;
-  padding: 1rem 1rem 2rem;
+  padding: 1.1rem 1rem 2.5rem;
   width: 100%;
 }
 
-@media (min-width: 640px) {
-  .student-topbar-inner,
-  .student-main {
-    max-width: 48rem;
-    padding-left: 1.25rem;
-    padding-right: 1.25rem;
+@media (max-width: 639px) {
+  .student-topbar-inner {
+    padding: 0.7rem 0.95rem;
+  }
+
+  .student-index {
+    display: none;
   }
 
   .student-main {
-    padding-top: 1.5rem;
+    padding: 1rem 0.95rem 2rem;
   }
 }
 
-@media (min-width: 900px) {
-  .student-topbar-inner,
-  .student-main {
-    max-width: 72rem;
-    padding-left: 2rem;
-    padding-right: 2rem;
-  }
-
-  .student-main {
-    padding-top: 2rem;
-    padding-bottom: 3rem;
+@media (min-width: 768px) {
+  .student-topbar {
+    border-bottom-color: var(--sd-border);
   }
 
   .student-topbar-inner {
-    padding-top: 1rem;
-    padding-bottom: 1rem;
+    max-width: 40rem;
+    padding: 0.9rem 0;
+  }
+
+  .student-main {
+    max-width: 40rem;
+    padding: 1.75rem 0 3rem;
   }
 }
 </style>
