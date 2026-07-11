@@ -8,34 +8,32 @@
       <label :for="`${idPrefix}-full-name`">Full name</label>
       <input
         :id="`${idPrefix}-full-name`"
+        v-model="form.full_name"
         class="control"
-        :value="form.full_name"
         type="text"
         required
         placeholder="Ama Serwaa Mensah"
         autocomplete="name"
-        @input="updateField('full_name', $event.target.value)"
       />
     </div>
     <div class="field">
       <label :for="`${idPrefix}-phone`">Phone</label>
       <input
         :id="`${idPrefix}-phone`"
+        v-model="form.phone_number"
         class="control"
-        :value="form.phone_number"
         type="tel"
         required
         placeholder="+233 50 123 4567"
         autocomplete="tel"
-        @input="updateField('phone_number', $event.target.value)"
       />
     </div>
   </div>
 
   <div v-else-if="stepId === 'academic'" class="fields">
     <FacultyDepartmentSelect
-      v-model:faculty-uuid="facultyUuid"
-      v-model:department-uuid="departmentUuid"
+      v-model:faculty-uuid="form.faculty_uuid"
+      v-model:department-uuid="form.department_uuid"
       :faculties-data="facultiesData"
       :departments-data="departmentsData"
     />
@@ -43,7 +41,7 @@
       <label :for="`${idPrefix}-level`">Level</label>
       <Select
         :input-id="`${idPrefix}-level`"
-        v-model="levelUuid"
+        v-model="form.level_uuid"
         :options="levels"
         optionLabel="name"
         optionValue="uuid"
@@ -66,13 +64,13 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
 import Select from 'primevue/select'
 import FacultyDepartmentSelect from '@/components/academic/FacultyDepartmentSelect.vue'
 
-const props = defineProps({
+const form = defineModel('form', { type: Object, required: true })
+
+defineProps({
   stepId: { type: String, required: true },
-  form: { type: Object, required: true },
   indexNumber: { type: String, default: '—' },
   levels: { type: Array, default: () => [] },
   facultiesData: { type: Array, default: () => [] },
@@ -82,27 +80,6 @@ const props = defineProps({
   levelName: { type: String, default: '—' },
   idPrefix: { type: String, default: 'onboard' },
 })
-
-const emit = defineEmits(['update:form'])
-
-const facultyUuid = computed({
-  get: () => props.form.faculty_uuid || null,
-  set: (value) => updateField('faculty_uuid', value),
-})
-
-const departmentUuid = computed({
-  get: () => props.form.department_uuid || null,
-  set: (value) => updateField('department_uuid', value),
-})
-
-const levelUuid = computed({
-  get: () => props.form.level_uuid || null,
-  set: (value) => updateField('level_uuid', value ? String(value) : ''),
-})
-
-const updateField = (key, value) => {
-  emit('update:form', { ...props.form, [key]: value ?? '' })
-}
 </script>
 
 <style scoped>

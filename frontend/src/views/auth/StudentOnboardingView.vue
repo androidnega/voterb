@@ -56,8 +56,8 @@
           <Transition :name="slideTransition" mode="out-in">
             <div :key="currentStep" class="setup-body">
               <OnboardingStepFields
+                v-model:form="form"
                 :step-id="activeStepMeta.id"
-                :form="form"
                 :index-number="indexNumber"
                 :levels="levels"
                 :faculties-data="faculties"
@@ -65,7 +65,6 @@
                 :faculty-name="facultyName"
                 :department-name="departmentName"
                 :level-name="levelName"
-                @update:form="onFormUpdate"
               />
               <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
             </div>
@@ -120,9 +119,9 @@ const errorMessage = ref('')
 const form = ref({
   full_name: '',
   phone_number: '',
-  faculty_uuid: '',
-  department_uuid: '',
-  level_uuid: '',
+  faculty_uuid: null,
+  department_uuid: null,
+  level_uuid: null,
 })
 
 const isLastStep = computed(() => currentStep.value === steps.length)
@@ -144,10 +143,6 @@ const indexNumber = computed(() => formatIndexDisplay(authStore.user?.index_numb
 const optionsLoaded = computed(
   () => faculties.value.length > 0 && departments.value.length > 0 && levels.value.length > 0
 )
-
-const onFormUpdate = (next) => {
-  form.value = { ...form.value, ...next }
-}
 
 const loadAcademicOptions = async () => {
   try {
@@ -226,7 +221,9 @@ const validateStep = (step) => {
       errorMessage.value = 'Academic options are not loaded. Refresh the page and ensure the backend is running.'
       return false
     }
-    if (!form.value.faculty_uuid || !form.value.department_uuid || !form.value.level_uuid) {
+    if (!String(form.value.faculty_uuid || '').trim()
+      || !String(form.value.department_uuid || '').trim()
+      || !String(form.value.level_uuid || '').trim()) {
       errorMessage.value = 'Please select faculty, department, and level.'
       return false
     }

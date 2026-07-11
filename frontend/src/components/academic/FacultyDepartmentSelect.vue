@@ -4,13 +4,14 @@
       <label for="fd-faculty">Faculty</label>
       <Select
         input-id="fd-faculty"
-        v-model="facultyModel"
+        :model-value="facultyUuid"
         :options="faculties"
         optionLabel="name"
         optionValue="uuid"
         placeholder="Choose faculty"
         class="fd-select"
         :disabled="loading || disabled"
+        @update:model-value="onFacultyChange"
       />
     </div>
 
@@ -19,13 +20,14 @@
       <Select
         :key="`dept-${facultyKey}`"
         input-id="fd-department"
-        v-model="departmentModel"
+        :model-value="departmentUuid"
         :options="filteredDepartments"
         optionLabel="name"
         optionValue="uuid"
         :placeholder="departmentPlaceholder"
         class="fd-select"
         :disabled="loading || disabled || !hasFaculty"
+        @update:model-value="onDepartmentChange"
       />
       <p v-if="hasFaculty && !filteredDepartments.length" class="fd-hint fd-hint--warn">
         No departments for this faculty yet.
@@ -40,9 +42,10 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { academicApi } from '@/api/academic'
 import Select from 'primevue/select'
 
+const facultyUuid = defineModel('facultyUuid', { type: [String, null], default: null })
+const departmentUuid = defineModel('departmentUuid', { type: [String, null], default: null })
+
 const props = defineProps({
-  facultyUuid: { type: [String, null], default: null },
-  departmentUuid: { type: [String, null], default: null },
   disabled: { type: Boolean, default: false },
   grid: { type: Boolean, default: false },
   showHint: { type: Boolean, default: true },
@@ -51,15 +54,11 @@ const props = defineProps({
   departmentsData: { type: Array, default: null },
 })
 
-const emit = defineEmits(['update:facultyUuid', 'update:departmentUuid'])
-
 const loading = ref(false)
 const faculties = ref([])
 const departments = ref([])
-const selectedFacultyUuid = ref('')
-const selectedDepartmentUuid = ref('')
 
-const normalizeUuid = (value) => {
+function normalizeUuid(value) {
   if (value == null || value === '') return ''
   if (typeof value === 'object') {
     return String(value.uuid ?? value.value ?? '').trim()
@@ -67,42 +66,10 @@ const normalizeUuid = (value) => {
   return String(value).trim()
 }
 
-watch(
-  () => props.facultyUuid,
-  (value) => {
-    selectedFacultyUuid.value = normalizeUuid(value)
-  },
-  { immediate: true }
-)
+const facultyKey = computed(() => normalizeUuid(facultyUuid.value))
+const hasFaculty = computed(() => Boolean(facultyKey.value))
 
-watch(
-  () => props.departmentUuid,
-  (value) => {
-    selectedDepartmentUuid.value = normalizeUuid(value)
-  },
-  { immediate: true }
-)
-
-const facultyModel = computed({
-  get: () => selectedFacultyUuid.value || null,
-  set: (value) => onFacultyChange(value),
-})
-
-const departmentModel = computed({
-  get: () => selectedDepartmentUuid.value || null,
-  set: (value) => onDepartmentChange(value),
-})
-
-const facultyKey = computed(() => selectedFacultyUuid.value)
-const hasFaculty = computed(() => Boolean(selectedFacultyUuid.value))
-
-const departmentPlaceholder = computed(() => {
-  if (!hasFaculty.value) return 'Select faculty first'
-  if (!filteredDepartments.value.length) return 'No departments found'
-  return 'Choose department'
-})
-
-const resolveFacultyUuid = (dept) => {
+function resolveFacultyUuid(dept) {
   if (!dept) return ''
   return normalizeUuid(dept.faculty?.uuid ?? dept.faculty_uuid ?? dept.faculty)
 }
@@ -112,28 +79,29 @@ const filteredDepartments = computed(() => {
   return departments.value.filter((dept) => resolveFacultyUuid(dept) === facultyKey.value)
 })
 
-const applyPreloaded = () => {
+const departmentPlaceholder = computed(() => {
+  if (!hasFaculty.value) return 'Select faculty first'
+  if (!filteredDepartments.value.length) return 'No departments found'
+  return 'Choose department'
+})
+
+function applyPreloaded() {
   if (!props.facultiesData?.length) return false
   faculties.value = props.facultiesData
   departments.value = props.departmentsData || []
   return true
 }
 
-const onFacultyChange = (value) => {
-  const next = normalizeUuid(value)
-  selectedFacultyUuid.value = next
-  selectedDepartmentUuid.value = ''
-  emit('update:facultyUuid', next || null)
-  emit('update:departmentUuid', null)
+function onFacultyChange(value) {
+  facultyUuid.value = normalizeUuid(value) || null
+  departmentUuid.value = null
 }
 
-const onDepartmentChange = (value) => {
-  const next = normalizeUuid(value)
-  selectedDepartmentUuid.value = next
-  emit('update:departmentUuid', next || null)
+function onDepartmentChange(value) {
+  departmentUuid.value = normalizeUuid(value) || null
 }
 
-const fetchData = async () => {
+async function fetchData() {
   loading.value = true
   try {
     const params = props.activeOnly ? { active_only: 'true' } : {}
@@ -152,9 +120,7 @@ const fetchData = async () => {
 
 watch(
   () => [props.facultiesData, props.departmentsData],
-  () => {
-    applyPreloaded()
-  },
+  () => applyPreloaded(),
   { deep: true, immediate: true }
 )
 
@@ -230,17 +196,6 @@ defineExpose({ refresh: fetchData, faculties, departments })
 :deep(.p-select .p-select-dropdown) {
   width: 2.25rem;
   color: #a8a29e;
-}
-
-.fd-reveal-enter-active,
-.fd-reveal-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.fd-reveal-enter-from,
-.fd-reveal-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
 }
 
 @media (max-width: 640px) {
