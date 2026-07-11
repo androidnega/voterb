@@ -95,7 +95,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { onboardingApi } from '@/api/academic'
+import { onboardingApi, academicApi } from '@/api/academic'
 import OnboardingStepFields from '@/components/onboarding/OnboardingStepFields.vue'
 import { formatIndexDisplay } from '@/utils/index'
 
@@ -141,6 +141,33 @@ const levelName = computed(() =>
   levels.value.find((l) => String(l.uuid) === String(form.value.level_uuid))?.name || '—'
 )
 const indexNumber = computed(() => formatIndexDisplay(authStore.user?.index_number))
+const optionsLoaded = computed(
+  () => faculties.value.length > 0 && departments.value.length > 0 && levels.value.length > 0
+)
+
+const loadAcademicOptions = async () => {
+  try {
+    const { data } = await onboardingApi.getOptions()
+    return {
+      faculties: data.faculties || [],
+      departments: data.departments || [],
+      levels: data.levels || [],
+    }
+  } catch (primaryError) {
+    console.warn('Onboarding options failed, using elections API fallback:', primaryError)
+    const params = { active_only: 'true' }
+    const [facultyRes, departmentRes, levelRes] = await Promise.all([
+      academicApi.faculties(params),
+      academicApi.departments(params),
+      academicApi.levels(),
+    ])
+    return {
+      faculties: facultyRes.data || [],
+      departments: departmentRes.data || [],
+      levels: levelRes.data || [],
+    }
+  }
+}
 
 const fetchOnboardingOptions = async () => {
   loadingOptions.value = true
@@ -152,10 +179,14 @@ const fetchOnboardingOptions = async () => {
       return
     }
 
-    const { data } = await onboardingApi.getOptions()
-    faculties.value = data.faculties || []
-    departments.value = data.departments || []
-    levels.value = data.levels || []
+    const options = await loadAcademicOptions()
+    faculties.value = options.faculties
+    departments.value = options.departments
+    levels.value = options.levels
+
+    if (!optionsLoaded.value) {
+      errorMessage.value = 'No faculty, department, or level data is available yet. Please try again later.'
+    }
   } catch (error) {
     console.error('Failed to load onboarding options:', error)
     if (error.response?.status === 401) {
@@ -163,7 +194,12 @@ const fetchOnboardingOptions = async () => {
       await router.replace('/login')
       return
     }
-    errorMessage.value = 'Could not load options. Please refresh.'
+    const status = error.response?.status
+    if (!status || status >= 500) {
+      errorMessage.value = 'Could not reach the server. Make sure the backend is running, then refresh.'
+    } else {
+      errorMessage.value = 'Could not load academic options. Please refresh.'
+    }
   } finally {
     loadingOptions.value = false
   }
@@ -182,6 +218,10 @@ const validateStep = (step) => {
     }
   }
   if (step === 2) {
+    if (!optionsLoaded.value) {
+      errorMessage.value = 'Academic options are not loaded. Refresh the page and ensure the backend is running.'
+      return false
+    }
     if (!form.value.faculty_uuid || !form.value.department_uuid || !form.value.level_uuid) {
       errorMessage.value = 'Please select faculty, department, and level.'
       return false

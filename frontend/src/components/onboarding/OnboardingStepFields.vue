@@ -72,7 +72,18 @@
 import Select from 'primevue/select'
 import FacultyDepartmentSelect from '@/components/academic/FacultyDepartmentSelect.vue'
 
-const props = defineProps({
+const {
+  stepId,
+  form,
+  indexNumber,
+  levels,
+  facultiesData,
+  departmentsData,
+  facultyName,
+  departmentName,
+  levelName,
+  idPrefix,
+} = defineProps({
   stepId: { type: String, required: true },
   form: { type: Object, required: true },
   indexNumber: { type: String, default: '—' },
@@ -88,7 +99,7 @@ const props = defineProps({
 const emit = defineEmits(['update:form'])
 
 const update = (key, value) => {
-  emit('update:form', { ...props.form, [key]: value })
+  emit('update:form', { ...form, [key]: value })
 }
 </script>
 
