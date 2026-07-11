@@ -1,47 +1,55 @@
 <template>
   <div class="student-home">
-    <section class="welcome-card">
-      <p class="welcome-eyebrow">Student portal</p>
-      <h1 class="welcome-title">Hello, {{ studentName }}</h1>
-      <p v-if="campusLine" class="welcome-meta">{{ campusLine }}</p>
-      <p class="welcome-copy">
-        Vote in elections you're eligible for. When one is open, tap <strong>Cast vote</strong> to begin.
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="hero-eyebrow">Student portal</p>
+        <h1 class="hero-title">Hello, {{ studentName }}</h1>
+        <p v-if="campusLine" class="hero-meta">{{ campusLine }}</p>
+      </div>
+      <p class="hero-note">
+        Cast your vote securely while an election is open. Each ballot closes automatically when the timer runs out.
       </p>
     </section>
 
-    <section class="elections-section">
-      <div class="section-head">
-        <h2>Open elections</h2>
-        <p>Active ballots you can participate in right now.</p>
+    <section class="elections-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Your ballots</h2>
+          <p>{{ elections.length ? `${elections.length} active election${elections.length === 1 ? '' : 's'}` : 'Nothing open right now' }}</p>
+        </div>
+        <span v-if="!loading && elections.length" class="live-pill">
+          <span class="live-dot" aria-hidden="true"></span>
+          Live
+        </span>
       </div>
 
       <div v-if="loading" class="state-card">
         <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
-        <span>Loading elections…</span>
+        <span>Loading your elections…</span>
       </div>
 
       <div v-else-if="error" class="state-card state-card--error">
         <p>{{ error }}</p>
-        <button type="button" class="btn-retry" @click="fetchElections">Try again</button>
+        <button type="button" class="btn-secondary" @click="fetchElections">Try again</button>
       </div>
 
       <div v-else-if="!elections.length" class="state-card state-card--empty">
         <div class="empty-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
         </div>
         <h3>No open elections</h3>
         <p>You're not eligible for any active ballots right now. Check back when voting opens.</p>
       </div>
 
-      <div v-else class="election-list">
+      <div v-else class="election-grid">
         <article
           v-for="election in elections"
           :key="election.uuid"
           class="election-card"
         >
-          <div class="election-card-head">
+          <div class="election-card-top">
             <div class="election-card-copy">
               <h3>{{ election.title }}</h3>
               <p>{{ election.description || 'No description provided.' }}</p>
@@ -51,25 +59,17 @@
             </span>
           </div>
 
-          <dl class="election-meta">
-            <div>
-              <dt>Opens</dt>
-              <dd>{{ formatDate(election.start_date) }}</dd>
-            </div>
-            <div>
-              <dt>Closes</dt>
-              <dd>{{ formatDate(election.end_date) }}</dd>
-            </div>
-          </dl>
+          <ElectionCountdown :election="election" />
 
           <div class="election-card-actions">
             <button
               type="button"
               class="btn-vote"
-              :disabled="election.status !== 'open'"
+              :disabled="!canVote(election)"
               @click="startVoting(election.uuid)"
             >
-              Cast vote
+              <span>Cast vote</span>
+              <i class="fas fa-arrow-right" aria-hidden="true"></i>
             </button>
           </div>
         </article>
@@ -84,6 +84,8 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { votingApi } from '@/api/voting'
 import { displayUserName } from '@/utils/user'
+import { getElectionTiming } from '@/composables/useCountdown'
+import ElectionCountdown from '@/components/student/ElectionCountdown.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -107,13 +109,10 @@ const campusLine = computed(() => {
   return parts.join(' · ')
 })
 
-function formatDate(date) {
-  if (!date) return 'TBA'
-  return new Date(date).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })
+function canVote(election) {
+  if (election.status !== 'open') return false
+  const timing = getElectionTiming(election)
+  return timing.phase === 'open' && !timing.expired
 }
 
 async function fetchElections() {
@@ -140,68 +139,103 @@ onMounted(fetchElections)
 <style scoped>
 .student-home {
   display: grid;
-  gap: 1.15rem;
+  gap: 1rem;
 }
 
-.welcome-card {
+.hero {
   background: #fdfcfa;
   border: 1px solid #e5e2db;
-  border-radius: 0.85rem;
-  padding: 1.15rem 1.1rem;
+  border-radius: 1rem;
+  padding: 1.2rem 1.15rem;
   box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
 }
 
-.welcome-eyebrow {
+.hero-eyebrow {
   margin: 0;
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   font-weight: 700;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #78716c;
 }
 
-.welcome-title {
+.hero-title {
   margin: 0.35rem 0 0;
-  font-size: 1.35rem;
+  font-size: clamp(1.25rem, 4vw, 1.65rem);
   font-weight: 700;
   letter-spacing: -0.03em;
   color: #1c1917;
+  line-height: 1.15;
 }
 
-.welcome-meta {
+.hero-meta {
   margin: 0.35rem 0 0;
-  font-size: 0.75rem;
+  font-size: 0.74rem;
+  color: #78716c;
+  line-height: 1.4;
+}
+
+.hero-note {
+  margin: 0.85rem 0 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid #ece9e2;
+  font-size: 0.74rem;
+  line-height: 1.55;
   color: #78716c;
 }
 
-.welcome-copy {
-  margin: 0.7rem 0 0;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: #78716c;
-}
-
-.welcome-copy strong {
-  color: #1c1917;
-  font-weight: 600;
-}
-
-.elections-section {
+.elections-panel {
   display: grid;
   gap: 0.85rem;
 }
 
-.section-head h2 {
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.panel-head h2 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 700;
   color: #1c1917;
 }
 
-.section-head p {
+.panel-head p {
   margin: 0.2rem 0 0;
   font-size: 0.72rem;
   color: #78716c;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: #ecfdf5;
+  border: 1px solid #99f6e4;
+  color: var(--vb-accent, #0f766e);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.live-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--vb-accent, #0f766e);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
 }
 
 .state-card {
@@ -210,9 +244,9 @@ onMounted(fetchElections)
   align-items: center;
   justify-content: center;
   gap: 0.55rem;
-  min-height: 9rem;
-  padding: 1.25rem;
-  border-radius: 0.85rem;
+  min-height: 10rem;
+  padding: 1.35rem;
+  border-radius: 1rem;
   border: 1px solid #e5e2db;
   background: #fdfcfa;
   color: #78716c;
@@ -233,20 +267,20 @@ onMounted(fetchElections)
 
 .state-card--empty h3 {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: #1c1917;
 }
 
 .state-card--empty p {
   margin: 0.25rem 0 0;
-  max-width: 18rem;
-  line-height: 1.45;
+  max-width: 20rem;
+  line-height: 1.5;
 }
 
 .empty-icon {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.6rem;
+  height: 2.6rem;
   border-radius: 999px;
   display: flex;
   align-items: center;
@@ -256,36 +290,38 @@ onMounted(fetchElections)
 }
 
 .empty-icon svg {
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
-.btn-retry {
+.btn-secondary {
   margin-top: 0.25rem;
   border: none;
   background: #b91c1c;
   color: #fff;
   font-size: 0.72rem;
   font-weight: 600;
-  padding: 0.45rem 0.8rem;
+  padding: 0.48rem 0.85rem;
   border-radius: 0.45rem;
   cursor: pointer;
 }
 
-.election-list {
+.election-grid {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.85rem;
 }
 
 .election-card {
   background: #fdfcfa;
   border: 1px solid #e5e2db;
-  border-radius: 0.85rem;
-  padding: 1rem;
+  border-radius: 1rem;
+  padding: 1rem 1rem 0.95rem;
   box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+  display: flex;
+  flex-direction: column;
 }
 
-.election-card-head {
+.election-card-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -294,16 +330,16 @@ onMounted(fetchElections)
 
 .election-card-copy h3 {
   margin: 0;
-  font-size: 0.92rem;
+  font-size: 0.98rem;
   font-weight: 700;
   color: #1c1917;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
 .election-card-copy p {
-  margin: 0.3rem 0 0;
-  font-size: 0.72rem;
-  line-height: 1.45;
+  margin: 0.35rem 0 0;
+  font-size: 0.74rem;
+  line-height: 1.5;
   color: #78716c;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -313,11 +349,11 @@ onMounted(fetchElections)
 
 .status-pill {
   flex-shrink: 0;
-  font-size: 0.58rem;
+  font-size: 0.56rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 0.25rem 0.45rem;
+  padding: 0.28rem 0.5rem;
   border-radius: 999px;
   background: #f5f4f1;
   color: #78716c;
@@ -328,62 +364,91 @@ onMounted(fetchElections)
   color: var(--vb-accent, #0f766e);
 }
 
-.election-meta {
-  margin: 0.85rem 0 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem;
-}
-
-.election-meta div {
-  padding: 0.55rem 0.65rem;
-  border-radius: 0.55rem;
-  background: #f7f6f3;
-  border: 1px solid #ece9e2;
-}
-
-.election-meta dt {
-  margin: 0;
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: #a8a29e;
-}
-
-.election-meta dd {
-  margin: 0.15rem 0 0;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #1c1917;
-}
-
 .election-card-actions {
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
   border-top: 1px solid #ece9e2;
-  display: flex;
-  justify-content: flex-end;
 }
 
 .btn-vote {
+  width: 100%;
   border: none;
   background: var(--vb-accent, #0f766e);
   color: #fff;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  padding: 0.55rem 0.95rem;
-  border-radius: 0.5rem;
+  padding: 0.68rem 1rem;
+  border-radius: 0.6rem;
   cursor: pointer;
-  transition: background 0.2s ease, opacity 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  transition: background 0.2s ease, opacity 0.2s ease, transform 0.15s ease;
 }
 
 .btn-vote:hover:not(:disabled) {
   background: var(--vb-accent-hover, #0d6b64);
 }
 
+.btn-vote:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 .btn-vote:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+@media (min-width: 640px) {
+  .hero {
+    padding: 1.35rem 1.4rem;
+  }
+
+  .election-card {
+    padding: 1.15rem 1.15rem 1.05rem;
+  }
+
+  .btn-vote {
+    width: auto;
+    min-width: 9.5rem;
+    margin-left: auto;
+    display: flex;
+  }
+
+  .election-card-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+@media (min-width: 900px) {
+  .student-home {
+    gap: 1.25rem;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 1.25rem;
+    align-items: end;
+    padding: 1.5rem 1.55rem;
+  }
+
+  .hero-note {
+    margin: 0;
+    padding: 0;
+    border-top: none;
+    align-self: center;
+  }
+
+  .election-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .election-card {
+    min-height: 100%;
+  }
 }
 </style>

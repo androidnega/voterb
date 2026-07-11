@@ -140,21 +140,39 @@ async function handleLogout() {
 .student-main {
   max-width: 42rem;
   margin: 0 auto;
-  padding: 1.35rem 1.1rem 2rem;
+  padding: 1rem 1rem 2rem;
   width: 100%;
 }
 
-@media (min-width: 769px) {
+@media (min-width: 640px) {
   .student-topbar-inner,
   .student-main {
-    max-width: 44rem;
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
+    max-width: 48rem;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
   }
 
   .student-main {
-    padding-top: 1.75rem;
-    padding-bottom: 2.5rem;
+    padding-top: 1.5rem;
+  }
+}
+
+@media (min-width: 900px) {
+  .student-topbar-inner,
+  .student-main {
+    max-width: 72rem;
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+
+  .student-main {
+    padding-top: 2rem;
+    padding-bottom: 3rem;
+  }
+
+  .student-topbar-inner {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
   }
 }
 </style>
