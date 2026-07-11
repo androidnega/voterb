@@ -1,56 +1,105 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status, generics
+from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 
 from accounts.models import User, MFALog, Role
+from accounts.permissions import IsAdminOrSuperAdmin
 from accounts.serializers import (
-    LoginSerializer, OTPVerifySerializer, UserSerializer,
-    AdminUserSerializer, UserWriteSerializer, RoleSerializer,
+    LoginSerializer,
+    OTPVerifySerializer,
+    UserSerializer,
+    AdminUserSerializer,
+    UserWriteSerializer,
+    RoleSerializer,
+    StudentOnboardingSerializer,
 )
 from accounts.services import OTPService, SessionService
-from accounts.permissions import IsAdminOrSuperAdmin
+
+
+def resolve_role_name(user):
+    if user.is_superuser:
+        return 'super_admin'
+    role_name = getattr(user.role, 'name', None)
+    if role_name:
+        return role_name
+    if user.is_staff:
+        return 'admin'
+    if user.index_number:
+        return 'student'
+    return role_name
+
+
+def student_auth_flags(user):
+    role_name = resolve_role_name(user)
+    is_student = role_name == 'student'
+    requires_onboarding = is_student and not user.onboarding_completed
+    return is_student, requires_onboarding
+
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
+    @transaction.atomic
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         identifier = serializer.validated_data['identifier']
         password = serializer.validated_data.get('password', '')
 
-        # Try to find user by email or index_number
+        if '@' not in identifier:
+            from elections.services.eligibility import normalize_index_input
+            identifier = normalize_index_input(identifier)
+
         user = User.objects.filter(email=identifier).first() or User.objects.filter(index_number=identifier).first()
+        is_new_user = False
+
+        if not user and '@' not in identifier:
+            from elections.models import VoterEligibility
+            if VoterEligibility.objects.filter(user__index_number=identifier, is_eligible=True).exists():
+                role, _ = Role.objects.get_or_create(name='student')
+                user = User.objects.create(
+                    index_number=identifier,
+                    role=role,
+                    is_active=True,
+                    is_verified=True,
+                    is_staff=False,
+                )
+                is_new_user = True
+            else:
+                return Response({'error': 'Index number not eligible for any election'}, status=status.HTTP_404_NOT_FOUND)
+
         if not user:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Determine if this is a staff login (has password)
         role_name = getattr(user.role, 'name', None)
         is_staff_user = user.is_staff or user.is_superuser or role_name in ['admin', 'super_admin', 'auditor']
-        
+
         if is_staff_user:
-            # Staff: require password
             if not password:
                 return Response({'requires_password': True}, status=status.HTTP_200_OK)
             if not user.check_password(password):
                 return Response({'error': 'Invalid password'}, status=status.HTTP_401_UNAUTHORIZED)
-        else:
-            # Student/Candidate: no password required
-            pass
 
-        # Generate OTP
         otp = OTPService.create_otp(user, purpose='login', channel='sms')
         MFALog.objects.create(user=user, event_type='login_otp_sent', ip_address=request.META.get('REMOTE_ADDR'))
+
+        _, requires_onboarding = student_auth_flags(user)
+        if not is_new_user and requires_onboarding:
+            is_new_user = True
 
         return Response({
             'requires_otp': True,
             'otp_session_id': str(otp.uuid),
-            'is_staff': is_staff_user
+            'is_staff': is_staff_user,
+            'is_new_user': is_new_user,
+            'requires_onboarding': requires_onboarding,
         })
+
 
 class OTPVerifyView(APIView):
     permission_classes = [AllowAny]
@@ -68,10 +117,20 @@ class OTPVerifyView(APIView):
         tokens = SessionService.create_session(user, request)
         MFALog.objects.create(user=user, event_type='otp_verified', ip_address=request.META.get('REMOTE_ADDR'))
 
+        role_name = resolve_role_name(user)
+        _, requires_onboarding = student_auth_flags(user)
         return Response({
             **tokens,
-            'role': getattr(user.role, 'name', None),
+            'role': role_name,
+            'role_name': role_name,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser,
+            'index_number': user.index_number,
+            'is_new_user': requires_onboarding,
+            'requires_onboarding': requires_onboarding,
+            'onboarding_completed': user.onboarding_completed,
         })
+
 
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
@@ -89,12 +148,101 @@ class LogoutView(APIView):
             pass
         return Response({'message': 'Logged out successfully'})
 
+
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
+        user = User.objects.select_related(
+            'role', 'faculty', 'department', 'level'
+        ).get(pk=request.user.pk)
+        serializer = UserSerializer(user)
         return Response(serializer.data)
+
+
+class StudentOnboardingOptionsView(APIView):
+    """Academic picklists for the student onboarding wizard."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = User.objects.select_related('role').get(pk=request.user.pk)
+        role_name = resolve_role_name(user)
+        if role_name != 'student':
+            return Response(
+                {'error': 'Only students can access onboarding options'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        from elections.models import Faculty, Department, Level
+        from elections.serializers import FacultySerializer, DepartmentSerializer, LevelSerializer
+
+        faculties = Faculty.objects.filter(is_active=True).order_by('name')
+        departments = Department.objects.filter(
+            is_active=True,
+            faculty__is_active=True,
+        ).select_related('faculty').order_by('faculty__name', 'name')
+        levels = Level.objects.all().order_by('display_order', 'name')
+
+        return Response({
+            'faculties': FacultySerializer(faculties, many=True).data,
+            'departments': DepartmentSerializer(departments, many=True).data,
+            'levels': LevelSerializer(levels, many=True).data,
+        })
+
+
+class StudentOnboardingView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = User.objects.select_related('role').get(pk=request.user.pk)
+        role_name = resolve_role_name(user)
+        if role_name != 'student':
+            return Response({'error': 'Only students can complete onboarding'}, status=status.HTTP_403_FORBIDDEN)
+
+        if user.onboarding_completed:
+            return Response({'error': 'Onboarding already completed'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = StudentOnboardingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        from elections.models import Faculty, Department, Level
+
+        try:
+            faculty = Faculty.objects.get(uuid=data['faculty_uuid'], is_active=True)
+            department = Department.objects.get(uuid=data['department_uuid'], is_active=True)
+            level = Level.objects.get(uuid=data['level_uuid'])
+        except Faculty.DoesNotExist:
+            return Response({'error': 'Faculty not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Department.DoesNotExist:
+            return Response({'error': 'Department not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Level.DoesNotExist:
+            return Response({'error': 'Level not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if department.faculty_id != faculty.id:
+            return Response({'error': 'Department does not belong to selected faculty'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.faculty = faculty
+        user.department = department
+        user.level = level
+        user.programme = data.get('programme', '') or user.programme
+        if data.get('phone_number'):
+            user.phone_number = data['phone_number']
+        if data.get('first_name'):
+            user.first_name = data['first_name']
+        if data.get('last_name'):
+            user.last_name = data['last_name']
+
+        level_digits = ''.join(ch for ch in level.name if ch.isdigit())
+        user.year_of_study = int(level_digits) if level_digits else None
+        user.onboarding_completed = True
+        user.save()
+
+        user = User.objects.select_related('role', 'faculty', 'department', 'level').get(pk=user.pk)
+        return Response({
+            'message': 'Onboarding completed successfully',
+            'user': UserSerializer(user).data,
+        })
 
 
 class UserListView(generics.ListCreateAPIView):
