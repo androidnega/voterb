@@ -1,10 +1,12 @@
 <template>
   <div class="home">
-    <div class="home-mesh" aria-hidden="true">
-      <span class="home-mesh__blob home-mesh__blob--a" />
-      <span class="home-mesh__blob home-mesh__blob--b" />
-      <span class="home-mesh__blob home-mesh__blob--c" />
-      <span class="home-mesh__grid" />
+    <div class="home-bg" aria-hidden="true">
+      <span
+        v-for="orb in orbs"
+        :key="orb.id"
+        class="home-bg__orb"
+        :style="orb.style"
+      />
     </div>
 
     <div class="home-shell">
@@ -52,23 +54,25 @@
         <section class="home-visual" aria-label="Election day">
           <div class="home-visual__stage">
             <span class="home-visual__aura" aria-hidden="true" />
-            <div class="home-visual__frame">
-              <picture>
-                <source
-                  type="image/webp"
-                  srcset="/images/election-day-sm.webp 640w, /images/election-day.webp 900w"
-                  sizes="(max-width: 900px) 90vw, 44vw"
-                />
-                <img
-                  class="home-visual__img"
-                  src="/images/election-day.jpg"
-                  width="900"
-                  height="599"
-                  alt="Student holding a sealed Electoral Commission ballot box on election day"
-                  decoding="async"
-                  fetchpriority="high"
-                />
-              </picture>
+            <div class="home-visual__mat">
+              <div class="home-visual__frame">
+                <picture>
+                  <source
+                    type="image/webp"
+                    srcset="/images/election-day-sm.webp 640w, /images/election-day.webp 900w"
+                    sizes="(max-width: 900px) 90vw, 44vw"
+                  />
+                  <img
+                    class="home-visual__img"
+                    src="/images/election-day.jpg"
+                    width="900"
+                    height="599"
+                    alt="Student holding a sealed Electoral Commission ballot box on election day"
+                    decoding="async"
+                    fetchpriority="high"
+                  />
+                </picture>
+              </div>
             </div>
           </div>
         </section>
@@ -81,6 +85,14 @@
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
+
+const orbs = [
+  { id: 1, style: { width: '220px', height: '220px', top: '12%', left: '8%', animationDuration: '18s', animationDelay: '0s' } },
+  { id: 2, style: { width: '280px', height: '280px', top: '58%', left: '18%', animationDuration: '22s', animationDelay: '2s' } },
+  { id: 3, style: { width: '190px', height: '190px', top: '18%', left: '72%', animationDuration: '16s', animationDelay: '1s' } },
+  { id: 4, style: { width: '260px', height: '260px', top: '62%', left: '68%', animationDuration: '24s', animationDelay: '3.5s' } },
+  { id: 5, style: { width: '160px', height: '160px', top: '40%', left: '48%', animationDuration: '20s', animationDelay: '5s' } },
+]
 </script>
 
 <style scoped>
@@ -101,62 +113,21 @@ const authStore = useAuthStore()
   font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
-.home-mesh {
+.home-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background:
-    radial-gradient(120% 80% at 10% 15%, rgba(20, 184, 166, 0.22), transparent 55%),
-    radial-gradient(90% 70% at 90% 20%, rgba(59, 130, 246, 0.16), transparent 50%),
-    radial-gradient(80% 60% at 70% 90%, rgba(15, 118, 110, 0.18), transparent 55%),
-    linear-gradient(160deg, #f7fbfa 0%, #eef6f4 42%, #e8f1f8 100%);
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(to bottom right, #f8fafc, #ffffff, rgba(236, 253, 245, 0.55));
 }
 
-.home-mesh__blob {
+.home-bg__orb {
   position: absolute;
   border-radius: 999px;
-  filter: blur(48px);
-  opacity: 0.55;
-  animation: mesh-drift 18s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
-}
-
-.home-mesh__blob--a {
-  width: 28rem;
-  height: 28rem;
-  left: -8%;
-  top: -12%;
-  background: rgba(45, 212, 191, 0.45);
-}
-
-.home-mesh__blob--b {
-  width: 22rem;
-  height: 22rem;
-  right: -6%;
-  top: 18%;
-  background: rgba(96, 165, 250, 0.35);
-  animation-duration: 22s;
-  animation-delay: -4s;
-}
-
-.home-mesh__blob--c {
-  width: 26rem;
-  height: 18rem;
-  left: 28%;
-  bottom: -14%;
-  background: rgba(15, 118, 110, 0.28);
-  animation-duration: 26s;
-  animation-delay: -8s;
-}
-
-.home-mesh__grid {
-  position: absolute;
-  inset: 0;
-  opacity: 0.28;
-  background-image:
-    linear-gradient(rgba(16, 42, 67, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 42, 67, 0.05) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 35%, transparent 80%);
+  background: rgba(167, 243, 208, 0.28);
+  animation: home-float ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
 .home-shell {
@@ -338,14 +309,39 @@ const authStore = useAuthStore()
 
 .home-visual__aura {
   position: absolute;
-  inset: 12% -8% -10%;
+  inset: 10% -10% -12%;
   border-radius: 50%;
   background:
-    radial-gradient(closest-side, rgba(20, 184, 166, 0.22), transparent 72%),
-    radial-gradient(closest-side at 70% 40%, rgba(125, 211, 252, 0.18), transparent 70%);
+    radial-gradient(closest-side, rgba(16, 185, 129, 0.2), transparent 72%),
+    radial-gradient(closest-side at 70% 40%, rgba(167, 243, 208, 0.25), transparent 70%);
   filter: blur(36px);
   z-index: 0;
   pointer-events: none;
+}
+
+.home-visual__mat {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding: 0.55rem;
+  border-radius: 1.65rem;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.72) 45%, rgba(236, 253, 245, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 1px 2px rgba(16, 42, 67, 0.04),
+    0 16px 36px rgba(16, 42, 67, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.home-visual__mat::before {
+  content: '';
+  position: absolute;
+  inset: 0.28rem;
+  border-radius: 1.4rem;
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .home-visual__frame {
@@ -353,12 +349,10 @@ const authStore = useAuthStore()
   z-index: 1;
   width: 100%;
   aspect-ratio: 900 / 599;
-  border-radius: 1.5rem;
+  border-radius: 1.2rem;
   overflow: hidden;
   background: #e8f2ef;
-  box-shadow:
-    0 2px 4px rgba(16, 42, 67, 0.04),
-    0 18px 40px rgba(16, 42, 67, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.08);
 }
 
 .home-visual__frame::after {
@@ -366,7 +360,13 @@ const authStore = useAuthStore()
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    transparent 28%,
+    transparent 72%,
+    rgba(16, 42, 67, 0.08) 100%
+  );
   pointer-events: none;
   z-index: 2;
 }
@@ -388,9 +388,15 @@ const authStore = useAuthStore()
   100% { transform: scale(1.1); }
 }
 
-@keyframes mesh-drift {
-  0% { transform: translate3d(0, 0, 0) scale(1); }
-  100% { transform: translate3d(3%, -4%, 0) scale(1.08); }
+@keyframes home-float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translate3d(0, -36px, 0) scale(1.14);
+    opacity: 0.85;
+  }
 }
 
 @keyframes copy-rise {
@@ -457,17 +463,31 @@ const authStore = useAuthStore()
     width: min(100%, 28rem);
   }
 
+  .home-visual__mat {
+    padding: 0.45rem;
+    border-radius: 1.35rem;
+  }
+
+  .home-visual__mat::before {
+    inset: 0.22rem;
+    border-radius: 1.15rem;
+  }
+
   .home-visual__frame {
-    border-radius: 1.25rem;
+    border-radius: 1rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-mesh__blob,
+  .home-bg__orb,
   .home-visual__img,
   .home-copy,
   .home-visual__stage {
     animation: none !important;
+  }
+
+  .home-bg__orb {
+    opacity: 0.5;
   }
 
   .home-visual__img {

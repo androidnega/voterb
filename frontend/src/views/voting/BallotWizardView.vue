@@ -43,19 +43,42 @@
             :key="pos.uuid"
             type="button"
             class="ballot-tab"
-            :class="{ 'is-active': activeStepIndex === idx }"
-            @click="activeStep = String(idx)"
+            :class="{
+              'is-active': activeStepIndex === idx && phase === 'select',
+              'is-sealed': sealedIds.has(pos.uuid),
+            }"
+            :disabled="phase === 'ceremony'"
+            @click="goToStep(idx)"
           >
+            <i v-if="sealedIds.has(pos.uuid)" class="fas fa-check" aria-hidden="true"></i>
             {{ pos.title }}
           </button>
         </div>
 
-        <article class="ballot-card">
-          <h2 class="ballot-card__title">{{ currentPosition.title }}</h2>
-          <p v-if="currentPosition.description" class="ballot-card__desc">{{ currentPosition.description }}</p>
-          <p class="ballot-card__hint">
-            Select up to {{ currentPosition.max_votes_allowed }} candidate{{ currentPosition.max_votes_allowed === 1 ? '' : 's' }}.
-          </p>
+        <article v-if="phase === 'ceremony'" class="ballot-card ballot-card--ceremony">
+          <BallotBoxCeremony
+            :position-title="ceremonyMeta.positionTitle"
+            :candidate-label="ceremonyMeta.candidateLabel"
+            :next-title="ceremonyMeta.nextTitle"
+            :is-last="ceremonyMeta.isLast"
+            @continue="finishCeremony"
+          />
+        </article>
+
+        <article v-else class="ballot-card">
+          <div class="ballot-card__top">
+            <div>
+              <h2 class="ballot-card__title">{{ currentPosition.title }}</h2>
+              <p v-if="currentPosition.description" class="ballot-card__desc">{{ currentPosition.description }}</p>
+              <p class="ballot-card__hint">
+                Select up to {{ currentPosition.max_votes_allowed }} candidate{{ currentPosition.max_votes_allowed === 1 ? '' : 's' }}.
+              </p>
+            </div>
+            <span v-if="isCurrentSealed" class="ballot-sealed-pill">
+              <i class="fas fa-lock" aria-hidden="true"></i>
+              Sealed
+            </span>
+          </div>
 
           <div class="candidate-grid">
             <button
@@ -64,6 +87,7 @@
               type="button"
               class="candidate-card"
               :class="{ 'is-selected': isSelected(currentPosition.uuid, candidate.uuid) }"
+              :disabled="isCurrentSealed"
               @click="toggleCandidate(currentPosition.uuid, candidate.uuid, currentPosition.max_votes_allowed)"
             >
               <div class="candidate-card__photo-wrap">
@@ -91,11 +115,21 @@
           </div>
 
           <div class="ballot-nav">
-            <button type="button" class="ballot-nav__btn" :disabled="activeStepIndex === 0" @click="prevStep">
+            <button
+              type="button"
+              class="ballot-nav__btn"
+              :disabled="activeStepIndex === 0 || phase === 'ceremony'"
+              @click="prevStep"
+            >
               Back
             </button>
-            <button type="button" class="ballot-nav__btn ballot-nav__btn--primary" @click="nextStep">
-              {{ activeStepIndex === positions.length - 1 ? 'Review & submit' : 'Next' }}
+            <button
+              type="button"
+              class="ballot-nav__btn ballot-nav__btn--primary"
+              :disabled="!canSealCurrent"
+              @click="sealCurrentPosition"
+            >
+              {{ primaryActionLabel }}
             </button>
           </div>
           <p v-if="submitError && !showReview" class="ballot-soft-error">{{ submitError }}</p>
@@ -134,7 +168,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { votingApi } from '@/api/voting'
 import { resolveMediaUrl } from '@/utils/media'
@@ -143,16 +177,26 @@ import { friendlyActionError } from '@/utils/friendlyFeedback'
 import { clearSvtSession, readSvtSession } from '@/utils/svtSession'
 import BallotWizardSkeleton from '@/components/student/BallotWizardSkeleton.vue'
 import FriendlyLoadState from '@/components/student/FriendlyLoadState.vue'
+import BallotBoxCeremony from '@/components/voting/BallotBoxCeremony.vue'
 import Dialog from 'primevue/dialog'
 
 const route = useRoute()
 const router = useRouter()
 const electionUuid = route.params.uuid
+const DRAFT_KEY = `ballot_draft:${electionUuid}`
 
 const electionTitle = ref('Ballot')
 const positions = ref([])
 const activeStep = ref('0')
 const selections = ref({})
+const sealedIds = ref(new Set())
+const phase = ref('select') // select | ceremony
+const ceremonyMeta = ref({
+  positionTitle: '',
+  candidateLabel: '',
+  nextTitle: '',
+  isLast: false,
+})
 const showReview = ref(false)
 const submitting = ref(false)
 const submitError = ref('')
@@ -173,6 +217,18 @@ const {
 
 const activeStepIndex = computed(() => parseInt(activeStep.value, 10) || 0)
 const currentPosition = computed(() => positions.value[activeStepIndex.value] || { candidates: [] })
+const isCurrentSealed = computed(() => sealedIds.value.has(currentPosition.value?.uuid))
+const canSealCurrent = computed(() => {
+  if (phase.value !== 'select') return false
+  if (isCurrentSealed.value) return true
+  return (selections.value[currentPosition.value?.uuid] || []).length > 0
+})
+const primaryActionLabel = computed(() => {
+  if (isCurrentSealed.value) {
+    return activeStepIndex.value === positions.value.length - 1 ? 'Review & submit' : 'Continue'
+  }
+  return activeStepIndex.value === positions.value.length - 1 ? 'Seal & review' : 'Seal ballot'
+})
 
 function initials(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean)
@@ -200,13 +256,48 @@ function clearSubmitSlow() {
   }
 }
 
+function persistDraft() {
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+      selections: selections.value,
+      sealed: [...sealedIds.value],
+      activeStep: activeStep.value,
+      electionTitle: electionTitle.value,
+      saved_at: new Date().toISOString(),
+    }))
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function restoreDraft() {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY)
+    if (!raw) return
+    const data = JSON.parse(raw)
+    if (data?.selections && typeof data.selections === 'object') {
+      selections.value = data.selections
+    }
+    if (Array.isArray(data?.sealed)) {
+      sealedIds.value = new Set(data.sealed)
+    }
+    if (data?.activeStep != null) activeStep.value = String(data.activeStep)
+  } catch {
+    // ignore
+  }
+}
+
+function clearDraft() {
+  sessionStorage.removeItem(DRAFT_KEY)
+}
+
 const fetchBallot = async () => {
   begin()
   try {
-    // Confirm secure session is still active before loading candidates
     const { data: session } = await votingApi.getSvtSession(electionUuid)
     if (session?.status !== 'validated') {
       clearSvtSession(electionUuid)
+      clearDraft()
       succeed()
       await router.replace(`/vote/${electionUuid}`)
       return
@@ -214,9 +305,15 @@ const fetchBallot = async () => {
     const response = await votingApi.getBallot(electionUuid)
     positions.value = response.data.positions || []
     electionTitle.value = response.data.election_title || 'Ballot'
+    restoreDraft()
     positions.value.forEach((pos) => {
       if (!selections.value[pos.uuid]) selections.value[pos.uuid] = []
     })
+    // Drop sealed markers for positions that no longer exist
+    sealedIds.value = new Set(
+      [...sealedIds.value].filter((id) => positions.value.some((p) => p.uuid === id)),
+    )
+    persistDraft()
     succeed()
   } catch (err) {
     console.error('Failed to load ballot:', err)
@@ -228,6 +325,7 @@ const fetchBallot = async () => {
 const isSelected = (posUuid, candidateUuid) => selections.value[posUuid]?.includes(candidateUuid) || false
 
 const toggleCandidate = (posUuid, candidateUuid, maxVotes) => {
+  if (sealedIds.value.has(posUuid)) return
   const selected = [...(selections.value[posUuid] || [])]
   const index = selected.indexOf(candidateUuid)
   if (index > -1) {
@@ -240,6 +338,7 @@ const toggleCandidate = (posUuid, candidateUuid, maxVotes) => {
   }
   selections.value = { ...selections.value, [posUuid]: selected }
   if (submitError.value) submitError.value = ''
+  persistDraft()
 }
 
 const getSelections = (posUuid) => {
@@ -249,27 +348,87 @@ const getSelections = (posUuid) => {
   return pos.candidates.filter((c) => selectedUuids.includes(c.uuid))
 }
 
-const nextStep = () => {
-  const nextIndex = activeStepIndex.value + 1
-  if (nextIndex === positions.value.length) {
-    const allSelected = positions.value.every((pos) => selections.value[pos.uuid]?.length > 0)
-    if (!allSelected) {
-      submitError.value = 'Please choose at least one candidate for each position before submitting.'
-      // Soft nudge: jump to first incomplete position
-      const missing = positions.value.findIndex((pos) => !selections.value[pos.uuid]?.length)
-      if (missing >= 0) activeStep.value = String(missing)
-      return
-    }
-    submitError.value = ''
-    showReview.value = true
-  } else {
-    activeStep.value = String(nextIndex)
+function goToStep(idx) {
+  if (phase.value === 'ceremony') return
+  if (idx < 0 || idx >= positions.value.length) return
+  // Only allow jumping to sealed positions or the first unsealed
+  const firstOpen = positions.value.findIndex((p) => !sealedIds.value.has(p.uuid))
+  if (idx > firstOpen && firstOpen >= 0 && !sealedIds.value.has(positions.value[idx].uuid)) {
+    return
   }
+  activeStep.value = String(idx)
+  persistDraft()
+}
+
+function sealCurrentPosition() {
+  const pos = currentPosition.value
+  if (!pos?.uuid) return
+
+  if (sealedIds.value.has(pos.uuid)) {
+    // Already sealed — advance or review
+    if (activeStepIndex.value >= positions.value.length - 1) {
+      openReviewIfReady()
+    } else {
+      activeStep.value = String(activeStepIndex.value + 1)
+      persistDraft()
+    }
+    return
+  }
+
+  const picks = getSelections(pos.uuid)
+  if (!picks.length) {
+    submitError.value = 'Select at least one candidate before sealing this ballot.'
+    return
+  }
+
+  submitError.value = ''
+  const nextIdx = activeStepIndex.value + 1
+  const isLast = nextIdx >= positions.value.length
+  ceremonyMeta.value = {
+    positionTitle: pos.title,
+    candidateLabel: picks.map((c) => c.full_name).join(', '),
+    nextTitle: isLast ? 'Review' : (positions.value[nextIdx]?.title || 'Next'),
+    isLast,
+  }
+
+  const next = new Set(sealedIds.value)
+  next.add(pos.uuid)
+  sealedIds.value = next
+  persistDraft()
+  phase.value = 'ceremony'
+}
+
+function finishCeremony() {
+  phase.value = 'select'
+  if (ceremonyMeta.value.isLast) {
+    openReviewIfReady()
+    return
+  }
+  const nextIdx = Math.min(activeStepIndex.value + 1, positions.value.length - 1)
+  activeStep.value = String(nextIdx)
+  persistDraft()
+}
+
+function openReviewIfReady() {
+  const allSelected = positions.value.every((pos) => selections.value[pos.uuid]?.length > 0)
+  const allSealed = positions.value.every((pos) => sealedIds.value.has(pos.uuid))
+  if (!allSelected || !allSealed) {
+    submitError.value = 'Please seal every position before submitting.'
+    const missing = positions.value.findIndex((pos) => !sealedIds.value.has(pos.uuid))
+    if (missing >= 0) activeStep.value = String(missing)
+    return
+  }
+  submitError.value = ''
+  showReview.value = true
 }
 
 const prevStep = () => {
+  if (phase.value === 'ceremony') return
   const prevIndex = activeStepIndex.value - 1
-  if (prevIndex >= 0) activeStep.value = String(prevIndex)
+  if (prevIndex >= 0) {
+    activeStep.value = String(prevIndex)
+    persistDraft()
+  }
 }
 
 const submitVote = async () => {
@@ -288,16 +447,23 @@ const submitVote = async () => {
     }
     const session = readSvtSession(electionUuid)
     const svtCode = session?.code || ''
-    await votingApi.submitVote(electionUuid, payload.selections, svtCode || undefined)
+    const { data } = await votingApi.submitVote(electionUuid, payload.selections, svtCode || undefined)
+    const code = data?.confirmation_code || ''
+    if (code) sessionStorage.setItem(`vote_confirm:${electionUuid}`, code)
     clearSvtSession(electionUuid)
+    clearDraft()
     showReview.value = false
-    router.push(`/vote/${electionUuid}/confirmation`)
-  } catch (error) {
-    console.error('Submission failed:', error)
-    const msg = friendlyActionError(error, 'We couldn’t submit your vote. Please try again.')
+    await router.push({
+      path: `/vote/${electionUuid}/confirmation`,
+      query: code ? { code } : {},
+    })
+  } catch (err) {
+    console.error('Submission failed:', err)
+    const msg = friendlyActionError(err, 'We couldn’t submit your vote. Please try again.')
     submitError.value = msg
     if (/expired|token|secure session/i.test(msg)) {
       clearSvtSession(electionUuid)
+      clearDraft()
       showReview.value = false
       router.push(`/vote/${electionUuid}`)
     }
@@ -306,6 +472,8 @@ const submitVote = async () => {
     submitting.value = false
   }
 }
+
+watch([selections, sealedIds, activeStep], persistDraft, { deep: true })
 
 onMounted(fetchBallot)
 onUnmounted(clearSubmitSlow)
@@ -386,6 +554,14 @@ onUnmounted(clearSubmitSlow)
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ballot-tab i {
+  font-size: 0.65rem;
+  color: #0f766e;
 }
 
 .ballot-tab.is-active {
@@ -393,12 +569,37 @@ onUnmounted(clearSubmitSlow)
   color: #fff;
 }
 
+.ballot-tab.is-active i {
+  color: #6ee7b7;
+}
+
+.ballot-tab.is-sealed:not(.is-active) {
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.ballot-tab:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
 .ballot-card {
   background: #fff;
   border: 1px solid #ebe8e2;
   border-radius: 1.35rem;
   padding: 1.2rem 1.15rem 1.15rem;
-  box-shadow: 0 8px 24px rgba(28, 25, 23, 0.03);
+  box-shadow: 0 4px 16px rgba(28, 25, 23, 0.03);
+}
+
+.ballot-card--ceremony {
+  padding: 1rem 0.85rem 1.15rem;
+}
+
+.ballot-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .ballot-card__title {
@@ -413,6 +614,20 @@ onUnmounted(clearSubmitSlow)
   margin: 0.35rem 0 0;
   font-size: 0.84rem;
   color: #78716c;
+}
+
+.ballot-sealed-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #0f766e;
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
 }
 
 .candidate-grid {
@@ -443,98 +658,101 @@ onUnmounted(clearSubmitSlow)
   transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
-.candidate-card:hover {
+.candidate-card:hover:not(:disabled) {
   border-color: #d6d3d1;
   transform: translateY(-1px);
 }
 
+.candidate-card:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
 .candidate-card.is-selected {
-  border-color: #0f766e;
-  background: #ecfdf5;
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
+  border-color: #34d399;
+  background: #f0fdf9;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.12);
 }
 
 .candidate-card__photo-wrap {
   position: relative;
-  width: 3.6rem;
-  height: 3.6rem;
+  width: 3.1rem;
+  height: 3.1rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e7e5e4;
   flex-shrink: 0;
 }
 
-.candidate-card__photo,
-.candidate-card__fallback {
-  width: 3.6rem;
-  height: 3.6rem;
-  border-radius: 9999px;
+.candidate-card__photo {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  display: block;
-  background: #e7e5e4;
 }
 
 .candidate-card__fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.85rem;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
   font-weight: 800;
   color: #57534e;
-  letter-spacing: 0.04em;
 }
 
 .candidate-card__check {
   position: absolute;
-  right: -0.1rem;
-  bottom: -0.1rem;
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 9999px;
+  right: 0;
+  bottom: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
   background: #0f766e;
   color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   font-size: 0.55rem;
   border: 2px solid #fff;
 }
 
 .candidate-card__name {
   margin: 0;
-  font-size: 0.92rem;
-  font-weight: 800;
+  font-size: 0.9rem;
+  font-weight: 750;
   color: #1c1917;
 }
 
 .candidate-card__meta {
-  margin: 0.2rem 0 0;
-  font-size: 0.75rem;
-  color: #78716c;
+  margin: 0.15rem 0 0;
+  font-size: 0.74rem;
+  color: #a8a29e;
 }
 
 .candidate-card__badge {
   font-size: 0.72rem;
-  font-weight: 800;
-  color: #0f766e;
+  font-weight: 750;
+  color: #78716c;
   background: #fff;
-  border: 1px solid #bbf7d0;
-  border-radius: 9999px;
-  padding: 0.25rem 0.5rem;
+  border: 1px solid #e7e5e4;
+  border-radius: 999px;
+  padding: 0.2rem 0.45rem;
 }
 
 .ballot-nav {
   display: flex;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.65rem;
   margin-top: 1.15rem;
 }
 
 .ballot-nav__btn {
   border: 1px solid #e7e5e4;
   background: #fff;
-  color: #44403c;
-  border-radius: 0.9rem;
-  padding: 0.7rem 1rem;
+  color: #1c1917;
   font-size: 0.84rem;
   font-weight: 700;
+  padding: 0.7rem 1rem;
+  border-radius: 0.85rem;
   cursor: pointer;
 }
 
@@ -549,26 +767,37 @@ onUnmounted(clearSubmitSlow)
   color: #fff;
 }
 
+.ballot-soft-error,
+.review-error {
+  margin: 0.85rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #f5e6d3;
+  border-radius: 0.7rem;
+  padding: 0.65rem 0.75rem;
+}
+
 .review-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
+  display: grid;
+  gap: 0.85rem;
 }
 
 .review-item__pos {
-  margin: 0 0 0.45rem;
-  font-weight: 800;
-  color: #1c1917;
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 750;
+  color: #78716c;
 }
 
 .review-item__empty {
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   color: #a8a29e;
 }
 
 .review-picks {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 0.45rem;
 }
 
@@ -576,15 +805,16 @@ onUnmounted(clearSubmitSlow)
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  font-size: 0.86rem;
-  color: #44403c;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: #1c1917;
 }
 
 .review-pick__photo,
 .review-pick__fallback {
   width: 1.85rem;
   height: 1.85rem;
-  border-radius: 9999px;
+  border-radius: 999px;
   object-fit: cover;
 }
 
@@ -602,17 +832,5 @@ onUnmounted(clearSubmitSlow)
   justify-content: flex-end;
   gap: 0.55rem;
   margin-top: 1.15rem;
-}
-
-.review-error,
-.ballot-soft-error {
-  margin: 0.85rem 0 0;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #f5e6d3;
-  border-radius: 0.7rem;
-  padding: 0.65rem 0.75rem;
 }
 </style>
