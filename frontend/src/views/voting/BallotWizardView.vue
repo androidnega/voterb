@@ -58,10 +58,12 @@
         <article v-if="phase === 'ceremony'" class="ballot-card ballot-card--ceremony">
           <BallotBoxCeremony
             :position-title="ceremonyMeta.positionTitle"
-            :candidate-label="ceremonyMeta.candidateLabel"
             :next-title="ceremonyMeta.nextTitle"
             :is-last="ceremonyMeta.isLast"
-            :sealed-count="sealedIds.size"
+            :election-title="electionTitle"
+            :election-year="branding.electionYear"
+            :institution-name="branding.institutionName"
+            :institution-logo="branding.logo"
             @continue="finishCeremony"
           />
         </article>
@@ -92,19 +94,25 @@
               @click="toggleCandidate(currentPosition.uuid, candidate.uuid, currentPosition.max_votes_allowed)"
             >
               <div class="candidate-card__photo-wrap">
-                <img
-                  v-if="photoUrl(candidate)"
-                  :src="photoUrl(candidate)"
-                  :alt="candidate.full_name"
-                  class="candidate-card__photo"
-                  loading="lazy"
-                  @error="onPhotoError(candidate.uuid)"
-                />
-                <div v-else class="candidate-card__fallback" aria-hidden="true">
-                  {{ initials(candidate.full_name) }}
+                <div class="candidate-card__photo-clip">
+                  <img
+                    v-if="photoUrl(candidate)"
+                    :src="photoUrl(candidate)"
+                    :alt="candidate.full_name"
+                    class="candidate-card__photo"
+                    loading="lazy"
+                    @error="onPhotoError(candidate.uuid)"
+                  />
+                  <div v-else class="candidate-card__fallback" aria-hidden="true">
+                    {{ initials(candidate.full_name) }}
+                  </div>
                 </div>
-                <span v-if="isSelected(currentPosition.uuid, candidate.uuid)" class="candidate-card__check">
-                  <i class="fas fa-check" aria-hidden="true"></i>
+                <span
+                  v-if="isSelected(currentPosition.uuid, candidate.uuid)"
+                  class="candidate-card__check"
+                  aria-hidden="true"
+                >
+                  <i class="fas fa-check"></i>
                 </span>
               </div>
               <div class="candidate-card__copy">
@@ -187,6 +195,11 @@ const electionUuid = route.params.uuid
 const DRAFT_KEY = `ballot_draft:${electionUuid}`
 
 const electionTitle = ref('Ballot')
+const branding = ref({
+  institutionName: 'Institution',
+  logo: '',
+  electionYear: '',
+})
 const positions = ref([])
 const activeStep = ref('0')
 const selections = ref({})
@@ -194,7 +207,6 @@ const sealedIds = ref(new Set())
 const phase = ref('select') // select | ceremony
 const ceremonyMeta = ref({
   positionTitle: '',
-  candidateLabel: '',
   nextTitle: '',
   isLast: false,
 })
@@ -306,6 +318,16 @@ const fetchBallot = async () => {
     const response = await votingApi.getBallot(electionUuid)
     positions.value = response.data.positions || []
     electionTitle.value = response.data.election_title || 'Ballot'
+    const b = response.data.branding || {}
+    const rawName = b.institution_name || b.institution_short_name || ''
+    const cleaned = ['voterb', 'votebridge'].includes(String(rawName).toLowerCase())
+      ? ''
+      : rawName
+    branding.value = {
+      institutionName: cleaned,
+      logo: b.logo || '',
+      electionYear: b.election_year || '',
+    }
     restoreDraft()
     positions.value.forEach((pos) => {
       if (!selections.value[pos.uuid]) selections.value[pos.uuid] = []
@@ -387,7 +409,6 @@ function sealCurrentPosition() {
   const isLast = nextIdx >= positions.value.length
   ceremonyMeta.value = {
     positionTitle: pos.title,
-    candidateLabel: picks.map((c) => c.full_name).join(', '),
     nextTitle: isLast ? 'Review' : (positions.value[nextIdx]?.title || 'Next'),
     isLast,
   }
@@ -593,7 +614,8 @@ onUnmounted(clearSubmitSlow)
 }
 
 .ballot-card--ceremony {
-  padding: 1rem 0.85rem 1.15rem;
+  padding: 0.85rem 0.65rem 1.1rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 55%);
 }
 
 .ballot-card__top {
@@ -656,6 +678,7 @@ onUnmounted(clearSubmitSlow)
   border: 1px solid #ebe8e2;
   background: #fafaf9;
   cursor: pointer;
+  overflow: visible;
   transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
 }
 
@@ -679,16 +702,23 @@ onUnmounted(clearSubmitSlow)
   position: relative;
   width: 3.1rem;
   height: 3.1rem;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.candidate-card__photo-clip {
+  width: 100%;
+  height: 100%;
   border-radius: 999px;
   overflow: hidden;
   background: #e7e5e4;
-  flex-shrink: 0;
 }
 
 .candidate-card__photo {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .candidate-card__fallback {
@@ -703,10 +733,11 @@ onUnmounted(clearSubmitSlow)
 
 .candidate-card__check {
   position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 1.15rem;
-  height: 1.15rem;
+  right: -0.15rem;
+  bottom: -0.15rem;
+  z-index: 2;
+  width: 1.2rem;
+  height: 1.2rem;
   border-radius: 999px;
   background: #0f766e;
   color: #fff;
@@ -714,6 +745,8 @@ onUnmounted(clearSubmitSlow)
   place-items: center;
   font-size: 0.55rem;
   border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
 }
 
 .candidate-card__name {

@@ -1,32 +1,30 @@
 <template>
   <div class="ceremony" role="dialog" aria-live="polite" aria-label="Ballot sealed">
     <div class="ceremony__stage">
-      <!-- Falling slip -->
       <div
-        class="ceremony__slip"
-        :class="{ 'is-dropping': phase !== 'idle', 'is-settled': phase === 'catch' || phase === 'done' }"
+        class="slip"
+        :class="{
+          'is-dropping': phase === 'drop',
+          'is-gone': phase === 'catch' || phase === 'done',
+        }"
+        aria-hidden="true"
       >
-        <span class="ceremony__slip-title">{{ positionTitle }}</span>
-        <span class="ceremony__slip-name">{{ candidateLabel }}</span>
-        <span class="ceremony__slip-seal">SEALED</span>
+        <span class="slip__left" />
+        <span class="slip__right" />
       </div>
 
-      <div class="ceremony__box" :class="{ 'is-catch': phase === 'catch' || phase === 'done' }">
-        <div class="ceremony__box-lid" />
-        <div class="ceremony__box-slot" />
-        <div class="ceremony__box-body">
-          <!-- Papers already / settling inside the glass box -->
-          <div class="ceremony__papers" aria-hidden="true">
-            <span
-              v-for="(paper, idx) in stackedPapers"
-              :key="paper.id"
-              class="ceremony__paper"
-              :class="{ 'is-new': paper.fresh && (phase === 'catch' || phase === 'done') }"
-              :style="paperStyle(idx, paper)"
-            />
-          </div>
-          <div class="ceremony__glass-sheen" aria-hidden="true" />
-          <span class="ceremony__box-logo">EC</span>
+      <div class="box" :class="{ 'is-catch': phase === 'catch' || phase === 'done' }">
+        <img
+          class="box__art"
+          src="/images/ballot-box.png"
+          alt=""
+          draggable="false"
+        />
+
+        <div class="box__label">
+          <p v-if="displayOrg" class="box__org">{{ displayOrg }}</p>
+          <p class="box__election">{{ electionTitle }}</p>
+          <p class="box__position">{{ positionTitle }}</p>
         </div>
       </div>
     </div>
@@ -46,10 +44,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   positionTitle: { type: String, default: 'Position' },
-  candidateLabel: { type: String, default: 'Your selection' },
   nextTitle: { type: String, default: 'Next' },
   isLast: { type: Boolean, default: false },
-  sealedCount: { type: Number, default: 1 },
+  electionTitle: { type: String, default: 'Election' },
+  electionYear: { type: [String, Number], default: '' },
+  institutionName: { type: String, default: '' },
+  institutionLogo: { type: String, default: '' },
 })
 
 defineEmits(['continue'])
@@ -57,24 +57,13 @@ defineEmits(['continue'])
 const phase = ref('idle')
 let timers = []
 
-const stackedPapers = computed(() => {
-  const prior = Math.max(0, Math.min(4, (props.sealedCount || 1) - 1))
-  const papers = []
-  for (let i = 0; i < prior; i += 1) {
-    papers.push({ id: `p-${i}`, fresh: false, tilt: -10 + i * 7 })
-  }
-  papers.push({ id: 'fresh', fresh: true, tilt: 4 })
-  return papers
+const displayOrg = computed(() => {
+  const name = String(props.institutionName || '').trim()
+  if (!name) return ''
+  const lower = name.toLowerCase()
+  if (lower === 'voterb' || lower === 'votebridge') return ''
+  return name
 })
-
-function paperStyle(idx, paper) {
-  const base = 0.55 + idx * 0.38
-  return {
-    bottom: `${base}rem`,
-    transform: `rotate(${paper.tilt}deg)`,
-    zIndex: idx + 1,
-  }
-}
 
 function wait(ms, fn) {
   const id = setTimeout(fn, ms)
@@ -82,7 +71,7 @@ function wait(ms, fn) {
 }
 
 onMounted(() => {
-  wait(40, () => { phase.value = 'drop' })
+  wait(60, () => { phase.value = 'drop' })
   wait(780, () => { phase.value = 'catch' })
   wait(1200, () => { phase.value = 'done' })
 })
@@ -96,206 +85,147 @@ onUnmounted(() => {
 <style scoped>
 .ceremony {
   display: grid;
-  gap: 1.15rem;
+  gap: 0.95rem;
   justify-items: center;
-  padding: 1.1rem 0.5rem 0.35rem;
+  padding: 0.25rem 0.2rem 0.1rem;
   text-align: center;
 }
 
 .ceremony__stage {
   position: relative;
-  width: min(100%, 16rem);
-  height: 14rem;
+  width: min(100%, 20rem);
+  aspect-ratio: 1 / 1;
 }
 
-.ceremony__slip {
+.slip {
   position: absolute;
   left: 50%;
-  top: 0.15rem;
+  top: 1%;
   z-index: 5;
-  width: 7.2rem;
-  padding: 0.6rem 0.5rem 0.5rem;
-  border-radius: 0.4rem;
-  background: linear-gradient(180deg, #fffef9, #f3eee6);
-  border: 1px solid #e7e0d2;
-  box-shadow: 0 8px 18px rgba(28, 25, 23, 0.12);
-  transform: translateX(-50%) translateY(0) rotate(-4deg) scale(1);
-  opacity: 1;
-  display: grid;
-  gap: 0.18rem;
-  text-align: left;
-}
-
-.ceremony__slip.is-dropping {
-  animation: slip-drop 0.9s cubic-bezier(0.33, 0.9, 0.4, 1) forwards;
-}
-
-.ceremony__slip.is-settled {
-  opacity: 0;
+  width: 1.75rem;
+  height: 1.1rem;
+  display: flex;
+  transform: translateX(-50%) rotate(-6deg);
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.28));
   pointer-events: none;
 }
 
-.ceremony__slip-title {
-  font-size: 0.56rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #a8a29e;
+.slip.is-dropping {
+  animation: slip-drop 0.72s cubic-bezier(0.42, 0.05, 0.4, 1) forwards;
 }
 
-.ceremony__slip-name {
-  font-size: 0.7rem;
-  font-weight: 750;
-  color: #1c1917;
+.slip.is-gone {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.slip__left,
+.slip__right {
+  flex: 1;
+  background: linear-gradient(180deg, #fff, #f3efe6);
+  border: 1px solid #d7d0c4;
+}
+
+.slip__left {
+  border-right: none;
+  border-radius: 0.08rem 0 0 0.08rem;
+  transform: skewY(-12deg);
+  transform-origin: right bottom;
+}
+
+.slip__right {
+  border-left: none;
+  border-radius: 0 0.08rem 0.08rem 0;
+  transform: skewY(12deg);
+  transform-origin: left bottom;
+  background: linear-gradient(180deg, #f7f3eb, #e8e0d4);
+}
+
+.box {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.box__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Transparent text overlay on the art's white panel — no extra background */
+.box__label {
+  position: absolute;
+  left: 26.3%;
+  top: 42.5%;
+  width: 48.7%;
+  height: 28.9%;
+  padding: 0.45rem 0.5rem 0.55rem;
+  margin: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  text-align: left;
   line-height: 1.25;
+  z-index: 3;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.22rem;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
-.ceremony__slip-seal {
-  margin-top: 0.15rem;
-  width: fit-content;
+.box__org,
+.box__election,
+.box__position,
+.box__year {
+  margin: 0;
+  background: transparent;
+  color: #0f172a;
+  word-break: break-word;
+  overflow: visible;
+  white-space: normal;
+}
+
+.box__org {
   font-size: 0.52rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #059669;
-  background: rgba(16, 185, 129, 0.14);
-  border-radius: 999px;
-  padding: 0.1rem 0.38rem;
-}
-
-.ceremony__box {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 11rem;
-  transform: translateX(-50%);
-  z-index: 1;
-}
-
-.ceremony__box.is-catch .ceremony__box-lid {
-  transform: translateY(-1px);
-}
-
-.ceremony__box.is-catch .ceremony__box-body {
-  animation: box-thump 0.35s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.ceremony__box-lid {
-  height: 0.7rem;
-  margin: 0 auto;
-  width: 94%;
-  border-radius: 0.55rem 0.55rem 0.2rem 0.2rem;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.72),
-    rgba(236, 253, 245, 0.45)
-  );
-  border: 1px solid rgba(15, 118, 110, 0.18);
-  border-bottom: none;
-  backdrop-filter: blur(10px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  transition: transform 0.3s ease;
-}
-
-.ceremony__box-slot {
-  height: 0.38rem;
-  margin: 0 auto;
-  width: 58%;
-  border-radius: 999px;
-  background: rgba(28, 25, 23, 0.55);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
-  position: relative;
-  z-index: 2;
-}
-
-.ceremony__box-body {
-  position: relative;
-  margin-top: -0.05rem;
-  height: 6.1rem;
-  border-radius: 0.35rem 0.35rem 1rem 1rem;
-  overflow: hidden;
-  background: linear-gradient(
-    165deg,
-    rgba(255, 255, 255, 0.42) 0%,
-    rgba(236, 253, 245, 0.28) 40%,
-    rgba(203, 213, 225, 0.22) 100%
-  );
-  border: 1.5px solid rgba(255, 255, 255, 0.65);
-  box-shadow:
-    0 14px 28px rgba(28, 25, 23, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.75),
-    inset 0 -8px 20px rgba(15, 118, 110, 0.06);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.ceremony__papers {
-  position: absolute;
-  left: 50%;
-  bottom: 0.85rem;
-  width: 6.4rem;
-  height: 3.4rem;
-  transform: translateX(-50%);
-  z-index: 1;
-}
-
-.ceremony__paper {
-  position: absolute;
-  left: 50%;
-  width: 5.6rem;
-  height: 0.85rem;
-  margin-left: -2.8rem;
-  border-radius: 0.18rem;
-  background: linear-gradient(180deg, #fffefb, #efe8dc);
-  border: 1px solid #e4dccf;
-  box-shadow: 0 2px 6px rgba(28, 25, 23, 0.1);
-  opacity: 0.95;
-}
-
-.ceremony__paper.is-new {
-  animation: paper-land 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.ceremony__glass-sheen {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    115deg,
-    rgba(255, 255, 255, 0.45) 0%,
-    rgba(255, 255, 255, 0.08) 28%,
-    transparent 48%,
-    rgba(255, 255, 255, 0.12) 100%
-  );
-  pointer-events: none;
-  z-index: 3;
-}
-
-.ceremony__box-logo {
-  position: absolute;
-  top: 0.55rem;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 4;
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: 999px;
-  border: 1.5px solid rgba(15, 118, 110, 0.35);
-  display: grid;
-  place-items: center;
-  font-size: 0.55rem;
-  font-weight: 800;
-  color: #0f766e;
-  background: rgba(255, 255, 255, 0.55);
   letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.box__election {
+  font-size: 0.5rem;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #1e293b;
+}
+
+.box__position {
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.box.is-catch {
+  animation: box-thump 0.38s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ceremony__copy {
   opacity: 0;
-  transform: translateY(0.55rem);
+  transform: translateY(0.5rem);
   transition:
     opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
     transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
   display: grid;
-  gap: 0.75rem;
+  gap: 0.7rem;
   justify-items: center;
 }
 
@@ -310,7 +240,7 @@ onUnmounted(() => {
   font-weight: 750;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #059669;
+  color: #16a34a;
 }
 
 .ceremony__btn {
@@ -340,27 +270,16 @@ onUnmounted(() => {
 
 @keyframes slip-drop {
   0% {
-    transform: translateX(-50%) translateY(0) rotate(-4deg) scale(1);
+    transform: translateX(-50%) translateY(0) rotate(-6deg) scale(1);
     opacity: 1;
   }
-  60% {
-    transform: translateX(-50%) translateY(5.2rem) rotate(2deg) scale(0.9);
+  58% {
+    transform: translateX(-50%) translateY(2.15rem) rotate(2deg) scale(0.82);
     opacity: 1;
   }
   100% {
-    transform: translateX(-50%) translateY(7.6rem) rotate(0deg) scale(0.55);
+    transform: translateX(-50%) translateY(2.85rem) rotate(0deg) scale(0.4);
     opacity: 0;
-  }
-}
-
-@keyframes paper-land {
-  0% {
-    opacity: 0;
-    transform: rotate(8deg) translateY(-1.2rem) scale(1.1);
-  }
-  100% {
-    opacity: 0.95;
-    transform: rotate(4deg) translateY(0) scale(1);
   }
 }
 
@@ -377,7 +296,7 @@ onUnmounted(() => {
   }
   50% {
     transform: translateY(-2px);
-    box-shadow: 0 14px 28px rgba(5, 150, 105, 0.22);
+    box-shadow: 0 14px 28px rgba(22, 163, 74, 0.22);
   }
 }
 
@@ -387,16 +306,17 @@ onUnmounted(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ceremony__slip.is-dropping,
-  .ceremony__paper.is-new,
-  .ceremony__box.is-catch .ceremony__box-body,
+  .slip.is-dropping,
+  .box.is-catch,
   .ceremony__btn,
   .ceremony__btn i {
     animation: none !important;
   }
 
-  .ceremony__slip.is-dropping {
+  .slip.is-dropping,
+  .slip.is-gone {
     opacity: 0;
+    visibility: hidden;
   }
 
   .ceremony__copy {
