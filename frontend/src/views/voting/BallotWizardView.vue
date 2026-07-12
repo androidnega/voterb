@@ -61,6 +61,7 @@
             :candidate-label="ceremonyMeta.candidateLabel"
             :next-title="ceremonyMeta.nextTitle"
             :is-last="ceremonyMeta.isLast"
+            :sealed-count="sealedIds.size"
             @continue="finishCeremony"
           />
         </article>
