@@ -1,11 +1,9 @@
 import hashlib
-import os
 import random
 import re
 import string
 from datetime import timedelta
 
-from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -125,11 +123,7 @@ class SVTRequestView(APIView):
         payload = {
             'message': 'SVT sent to your phone',
             'svt_id': svt.svt_id,
-            'format': 'v-xxx-0000',
         }
-        if settings.DEBUG or os.environ.get('LAN_DEV') == '1':
-            payload['svt_code'] = code
-            payload['dev_hint'] = 'Shown only in local/LAN development.'
 
         return Response(payload)
 
@@ -147,7 +141,7 @@ class SVTValidateView(APIView):
 
         if not SVT_PATTERN.fullmatch(svt_code):
             return Response(
-                {'error': 'Invalid SVT format. Use v-xxx-0000 (example: v-sda-4539).'},
+                {'error': 'Invalid Secure Voting Token. Check the code you received and try again.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

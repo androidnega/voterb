@@ -18,8 +18,8 @@
         <div class="svt-note">
           <i class="fas fa-lock" aria-hidden="true"></i>
           <div>
-            <strong>SVT format</strong>
-            <p>Tokens look like <code>v-sda-4539</code> — letters and digits, not a plain PIN.</p>
+            <strong>Secure Voting Token</strong>
+            <p>Request a one-time token sent to your registered channel, then enter it here to unlock your ballot.</p>
           </div>
         </div>
         <button type="button" class="svt-btn svt-btn--primary" :disabled="requesting" @click="requestSVT">
@@ -39,11 +39,6 @@
           </div>
         </div>
 
-        <div v-if="devCode" class="svt-dev">
-          <span>Local test token</span>
-          <button type="button" class="svt-dev__code" @click="fillDevCode">{{ devCode }}</button>
-        </div>
-
         <label class="svt-field">
           <span class="svt-field__label">
             <i class="fas fa-key" aria-hidden="true"></i>
@@ -59,7 +54,7 @@
               autocomplete="one-time-code"
               spellcheck="false"
               maxlength="10"
-              placeholder="v-sda-4539"
+              placeholder="Enter your token"
               aria-label="Secure Voting Token"
               @focus="fieldFocused = true"
               @blur="fieldFocused = false"
@@ -68,7 +63,6 @@
             />
             <i class="fas fa-fingerprint svt-field__seal" aria-hidden="true"></i>
           </div>
-          <span class="svt-field__hint">Pattern: v · three letters · four digits</span>
         </label>
 
         <div class="svt-actions">
@@ -120,7 +114,6 @@ const requesting = ref(false)
 const validating = ref(false)
 const errorMessage = ref('')
 const fieldFocused = ref(false)
-const devCode = ref('')
 const svtInput = ref(null)
 const verifyStep = ref(0)
 const verifyTitle = ref('Securing your session…')
@@ -171,13 +164,6 @@ function onSvtInput(event) {
   errorMessage.value = ''
 }
 
-function fillDevCode() {
-  if (!devCode.value) return
-  svtDisplay.value = formatSvtInput(devCode.value)
-  svtNormalized.value = normalizeSvt(devCode.value)
-  nextTick(() => svtInput.value?.focus())
-}
-
 function storeSvt(code) {
   sessionStorage.setItem(`svt:${electionUuid}`, code)
 }
@@ -209,8 +195,7 @@ const requestSVT = async () => {
   requesting.value = true
   errorMessage.value = ''
   try {
-    const { data } = await votingApi.requestSVT(electionUuid)
-    devCode.value = data?.svt_code || ''
+    await votingApi.requestSVT(electionUuid)
     step.value = 'validate'
     await nextTick()
     svtInput.value?.focus()
@@ -223,7 +208,7 @@ const requestSVT = async () => {
 
 const validateSVT = async () => {
   if (!canValidate.value) {
-    errorMessage.value = 'Enter a token like v-sda-4539.'
+    errorMessage.value = 'Enter the full Secure Voting Token you received.'
     return
   }
   validating.value = true
@@ -245,8 +230,7 @@ const resendSVT = async () => {
   requesting.value = true
   errorMessage.value = ''
   try {
-    const { data } = await votingApi.requestSVT(electionUuid)
-    devCode.value = data?.svt_code || ''
+    await votingApi.requestSVT(electionUuid)
     svtDisplay.value = ''
     svtNormalized.value = ''
   } catch (error) {
@@ -375,37 +359,6 @@ const resendSVT = async () => {
   opacity: 0.9;
 }
 
-.svt-note code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.78rem;
-  background: rgba(255, 255, 255, 0.7);
-  padding: 0.05rem 0.3rem;
-  border-radius: 0.3rem;
-}
-
-.svt-dev {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.65rem 0.8rem;
-  border-radius: 0.85rem;
-  background: #1c1917;
-  color: #fafaf9;
-  font-size: 0.75rem;
-}
-
-.svt-dev__code {
-  border: none;
-  background: transparent;
-  color: #a3b18a;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.9rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
-
 .svt-field {
   display: flex;
   flex-direction: column;
@@ -465,8 +418,10 @@ const resendSVT = async () => {
 
 .svt-field__input::placeholder {
   color: #d6d3d1;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   font-weight: 600;
+  font-family: inherit;
+  font-size: 0.92rem;
 }
 
 .svt-field__seal {
