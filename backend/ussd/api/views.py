@@ -5,23 +5,23 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 
-from accounts.permissions import IsAdminOrSuperAdmin
+from accounts.permissions import IsAdmin
 from ussd.models import USSDSession, USSDRequestLog
 from ussd.serializers import USSDSessionSerializer, USSDRequestLogSerializer
 
 class USSDSessionListView(generics.ListAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     serializer_class = USSDSessionSerializer
     queryset = USSDSession.objects.all().order_by('-created_at')
 
 class USSDSessionDetailView(generics.RetrieveAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     serializer_class = USSDSessionSerializer
     lookup_field = 'uuid'
     queryset = USSDSession.objects.all()
 
 class USSDRequestLogListView(generics.ListAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     serializer_class = USSDRequestLogSerializer
     queryset = USSDRequestLog.objects.all().order_by('-timestamp')
 
@@ -33,7 +33,7 @@ class USSDRequestLogListView(generics.ListAPIView):
         return super().get_queryset()
 
 class USSDStatsView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
 
     def get(self, request):
         total_sessions = USSDSession.objects.count()

@@ -288,7 +288,7 @@ const canManageElections = computed(() => authStore.isElectionManager)
 
 const canOpenMonitor = computed(() => {
   const status = election.value?.status
-  const canView = authStore.isElectionManager || authStore.isAuditor || authStore.isSuperAdmin
+  const canView = authStore.isElectionManager || authStore.isAuditor
   return canView && ['open', 'paused', 'closed'].includes(status)
 })
 

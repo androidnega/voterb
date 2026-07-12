@@ -7,9 +7,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import MFALog, User
-from accounts.permissions import IsAdminOrSuperAdmin, IsAuditor, IsSuperAdmin
+from accounts.permissions import IsAuditor, IsSuperAdmin
 from candidates.models import Candidate
-from elections.models import Election, VoterEligibility
+from elections.models import Department, Election, Faculty, Level, VoterEligibility
+from system.models import FeatureFlag, MaintenanceState
 from voting.models import Vote
 
 
@@ -185,28 +186,39 @@ class AdminDashboardView(APIView):
 
 
 class SuperAdminDashboardView(APIView):
+    """Platform governance dashboard — no election or voting metrics."""
+
     permission_classes = [IsSuperAdmin]
 
     def get(self, request):
+        total_users = User.objects.count()
+        staff_users = User.objects.filter(role__name__in=['admin', 'super_admin', 'auditor']).count()
+        student_users = User.objects.filter(role__name='student').count()
+        active_users = User.objects.filter(is_active=True).count()
+
+        role_rows = (
+            User.objects.exclude(role__isnull=True)
+            .values('role__name')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+        role_labels = []
+        role_values = []
+        for row in role_rows:
+            name = row['role__name'] or 'unknown'
+            role_labels.append(ROLE_LABELS.get(name, name.replace('_', ' ').title()))
+            role_values.append(row['count'])
+
         month_labels = []
-        vote_series = []
         user_series = []
         cumulative_users = []
-
-        vote_rows = (
-            Vote.objects.annotate(month=TruncMonth('timestamp'))
-            .values('month')
-            .annotate(count=Count('id'))
-            .order_by('month')
-        )
         user_rows = (
             User.objects.annotate(month=TruncMonth('created_at'))
             .values('month')
             .annotate(count=Count('id'))
             .order_by('month')
         )
-        vote_map = {row['month'].strftime('%b'): row['count'] for row in vote_rows if row['month']}
-        user_map = {row['month'].strftime('%b'): row['count'] for row in user_rows if row['month']}
+        user_map = {row['month'].strftime('%b %Y'): row['count'] for row in user_rows if row['month']}
 
         anchor = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         months = []
@@ -217,40 +229,67 @@ class SuperAdminDashboardView(APIView):
 
         for month_start in months:
             label = month_start.strftime('%b')
+            key = month_start.strftime('%b %Y')
             month_labels.append(label)
-            vote_series.append(vote_map.get(label, 0))
-            user_series.append(user_map.get(label, 0))
+            user_series.append(user_map.get(key, 0))
             month_end = (month_start + timedelta(days=32)).replace(day=1)
             cumulative_users.append(User.objects.filter(created_at__lt=month_end).count())
 
-        election_status_labels = []
-        election_status_values = []
-        for status, label in [
-            ('open', 'Active'),
-            ('scheduled', 'Scheduled'),
-            ('closed', 'Closed'),
-            ('draft', 'Draft'),
-            ('archived', 'Archived'),
-        ]:
-            count = Election.objects.filter(status=status).count()
-            if count > 0:
-                election_status_labels.append(label)
-                election_status_values.append(count)
+        flags = FeatureFlag.objects.all()
+        flags_enabled = flags.filter(is_enabled=True).count()
+        flags_total = flags.count()
+        maintenance = MaintenanceState.objects.first()
+        maintenance_active = bool(maintenance and maintenance.is_active)
+
+        cutoff = timezone.now() - timedelta(days=7)
+        mfa_logs = MFALog.objects.filter(created_at__gte=cutoff).order_by('-created_at')[:10]
+        activities = []
+        for log in mfa_logs:
+            actor = (log.user.email if log.user and log.user.email else None) or (
+                log.user.index_number if log.user else 'Unknown'
+            )
+            activities.append({
+                'type': 'login' if 'login' in log.event_type or 'otp' in log.event_type else 'other',
+                'icon': 'fas fa-shield-alt' if 'otp' in log.event_type else 'fas fa-sign-in-alt',
+                'message': f"{actor} — {log.event_type.replace('_', ' ')}",
+                'time': log.created_at.strftime('%b %d, %I:%M %p'),
+            })
 
         return Response({
-            'platform_activity': {
-                'labels': month_labels,
-                'datasets': [
-                    {'label': 'Votes', 'data': vote_series},
-                    {'label': 'New users', 'data': user_series},
-                ],
+            'context': {
+                'display_name': _display_name(request.user),
+                'role_name': _role_name(request.user),
+                'role_label': ROLE_LABELS.get(_role_name(request.user), 'Platform Governance'),
+                'greeting': _greeting(),
+                'today_date': timezone.now().strftime('%A, %B %d, %Y'),
+            },
+            'stats': {
+                'total_users': total_users,
+                'active_users': active_users,
+                'staff_users': staff_users,
+                'student_users': student_users,
+                'faculties': Faculty.objects.count(),
+                'departments': Department.objects.count(),
+                'levels': Level.objects.count(),
+                'flags_enabled': flags_enabled,
+                'flags_total': flags_total,
+                'maintenance_active': maintenance_active,
+            },
+            'role_breakdown': {
+                'labels': role_labels,
+                'values': role_values,
             },
             'user_growth': {
                 'labels': month_labels,
-                'data': cumulative_users,
+                'new_users': user_series,
+                'cumulative': cumulative_users,
             },
-            'election_stats': {
-                'labels': election_status_labels,
-                'data': election_status_values,
-            },
+            'recent_activities': activities,
+            'shortcuts': [
+                {'path': '/users', 'title': 'User management', 'description': 'Roles and account access', 'icon': 'fas fa-users'},
+                {'path': '/academic', 'title': 'Academic structure', 'description': 'Faculties and departments', 'icon': 'fas fa-university'},
+                {'path': '/operations', 'title': 'Operations', 'description': 'Health and infrastructure', 'icon': 'fas fa-server'},
+                {'path': '/settings', 'title': 'Settings', 'description': 'Theme and feature flags', 'icon': 'fas fa-sliders-h'},
+                {'path': '/audit', 'title': 'Audit trail', 'description': 'Security and admin events', 'icon': 'fas fa-clipboard-list'},
+            ],
         })

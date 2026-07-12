@@ -55,24 +55,24 @@ class IsStudentOrCandidate(BasePermission):
 
 
 class IsElectionViewer(BasePermission):
-    """Election Committee, Auditors, and Super Admin can view election data."""
+    """Election Committee and Auditors can view election data."""
 
     def has_permission(self, request, view):
         role = get_role_name(request.user)
-        return role in ['admin', 'auditor', 'super_admin'] or bool(getattr(request.user, 'is_superuser', False))
+        return role in ['admin', 'auditor']
 
 
 class IsElectionMonitorViewer(BasePermission):
-    """Live election monitor — admin, auditor, and super admin."""
+    """Live election monitor — admin and auditor only."""
 
     def has_permission(self, request, view):
         role = get_role_name(request.user)
-        return role in ['admin', 'auditor', 'super_admin'] or bool(getattr(request.user, 'is_superuser', False))
+        return role in ['admin', 'auditor']
 
 
 class IsStrongroomViewer(BasePermission):
-    """Admin, Super Admin, and Auditor can access strongroom oversight."""
+    """Admin and Auditor can access strongroom oversight."""
 
     def has_permission(self, request, view):
         role = get_role_name(request.user)
-        return role in ['admin', 'super_admin', 'auditor']
+        return role in ['admin', 'auditor']

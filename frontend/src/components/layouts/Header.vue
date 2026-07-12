@@ -162,7 +162,9 @@ const initials = computed(() => {
 const subtitle = computed(() => {
   const path = route.path
   if (path === '/dashboard') {
-    return 'Explore elections, turnout, and activity across your platform'
+    return authStore.isSuperAdmin
+      ? 'Manage users, academic structure, and platform operations'
+      : 'Explore elections, turnout, and activity across your platform'
   }
   if (path.startsWith('/elections')) return 'Create, schedule, and manage election cycles'
   if (path.startsWith('/results')) return 'Review, certify, and publish election results'
@@ -179,24 +181,35 @@ const subtitle = computed(() => {
 
 const unreadCount = computed(() => notifications.value.filter((n) => !n.is_read).length)
 
-const searchTargets = [
-  { match: ['election', 'elections'], path: '/elections' },
-  { match: ['result', 'results'], path: '/results' },
-  { match: ['strong', 'vault', 'seal'], path: '/strongroom' },
-  { match: ['fraud'], path: '/fraud' },
-  { match: ['ussd', 'mobile'], path: '/ussd' },
-  { match: ['audit', 'log'], path: '/audit' },
-  { match: ['user', 'users'], path: '/users' },
-  { match: ['setting', 'theme'], path: '/settings' },
-  { match: ['academic', 'faculty', 'department'], path: '/academic' },
-  { match: ['operation', 'ops'], path: '/operations' },
-  { match: ['dashboard', 'home'], path: '/dashboard' },
+const allSearchTargets = [
+  { match: ['election', 'elections'], path: '/elections', roles: ['admin', 'auditor'] },
+  { match: ['result', 'results'], path: '/results', roles: ['admin', 'auditor'] },
+  { match: ['strong', 'vault', 'seal'], path: '/strongroom', roles: ['admin', 'auditor'] },
+  { match: ['fraud'], path: '/fraud', roles: ['admin'] },
+  { match: ['ussd', 'mobile'], path: '/ussd', roles: ['admin'] },
+  { match: ['audit', 'log'], path: '/audit', roles: ['admin', 'auditor', 'super_admin'] },
+  { match: ['user', 'users'], path: '/users', roles: ['super_admin'] },
+  { match: ['setting', 'theme'], path: '/settings', roles: ['super_admin'] },
+  { match: ['academic', 'faculty', 'department'], path: '/academic', roles: ['super_admin'] },
+  { match: ['operation', 'ops'], path: '/operations', roles: ['super_admin'] },
+  { match: ['dashboard', 'home'], path: '/dashboard', roles: ['admin', 'auditor', 'super_admin'] },
 ]
+
+const searchTargets = computed(() => {
+  const role = authStore.roleName
+  return allSearchTargets.filter((t) => {
+    if (t.roles.includes(role)) return true
+    if (t.roles.includes('super_admin') && authStore.isSuperAdmin) return true
+    if (t.roles.includes('admin') && authStore.isElectionManager) return true
+    if (t.roles.includes('auditor') && authStore.isAuditor) return true
+    return false
+  })
+})
 
 const goSearch = () => {
   const q = searchQuery.value.trim().toLowerCase()
   if (!q) return
-  const hit = searchTargets.find((t) => t.match.some((m) => q.includes(m) || m.includes(q)))
+  const hit = searchTargets.value.find((t) => t.match.some((m) => q.includes(m) || m.includes(q)))
   if (hit) {
     router.push(hit.path)
     searchQuery.value = ''

@@ -116,13 +116,8 @@ const menuItems = computed(() => {
   if (role === 'super_admin' || authStore.isSuperAdmin) {
     return [
       { path: '/dashboard', label: 'Dashboard', icon: 'fas fa-th-large' },
-      { path: '/elections', label: 'Elections', icon: 'fas fa-calendar-check' },
-      { path: '/results', label: 'Results', icon: 'fas fa-chart-bar' },
-      { path: '/strongroom', label: 'Strongroom', icon: 'fas fa-shield-alt' },
       { path: '/users', label: 'Users', icon: 'fas fa-users' },
       { path: '/academic', label: 'Academic', icon: 'fas fa-university' },
-      { path: '/fraud', label: 'Fraud', icon: 'fas fa-user-shield' },
-      { path: '/ussd', label: 'USSD', icon: 'fas fa-phone' },
       { path: '/audit', label: 'Audit', icon: 'fas fa-clipboard-list' },
       { path: '/operations', label: 'Operations', icon: 'fas fa-server' },
     ]

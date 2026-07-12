@@ -1,10 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
-const adminRoles = ['admin', 'super_admin']
-const ecViewerRoles = ['admin', 'auditor', 'super_admin']
-const monitorRoles = ['admin', 'auditor', 'super_admin']
-const auditorRoles = ['auditor', 'admin', 'super_admin']
+/** Election Committee only — fraud / USSD ops */
+const ecRoles = ['admin']
+/** EC + auditor — elections, results, monitor, strongroom */
+const electionViewerRoles = ['admin', 'auditor']
+/** Platform + election oversight dashboards and audit */
+const staffDashboardRoles = ['auditor', 'admin', 'super_admin']
 const studentRoles = ['student', 'candidate']
 const publicPaths = new Set(['/', '/login', '/otp', '/verify'])
 
@@ -65,40 +67,40 @@ const routes = [
   ], { roles: studentRoles }),
 
   layoutRoute('/dashboard', [
-    { path: '', component: () => import('../views/DashboardView.vue'), meta: { roles: auditorRoles } },
-  ], { roles: auditorRoles }),
+    { path: '', component: () => import('../views/DashboardView.vue'), meta: { roles: staffDashboardRoles } },
+  ], { roles: staffDashboardRoles }),
 
   layoutRoute('/elections', [
-    { path: '', component: () => import('../views/elections/ElectionListView.vue'), meta: { roles: ecViewerRoles } },
-    { path: ':uuid', component: () => import('../views/elections/ElectionDetailView.vue'), meta: { roles: ecViewerRoles } },
-  ], { roles: ecViewerRoles }),
+    { path: '', component: () => import('../views/elections/ElectionListView.vue'), meta: { roles: electionViewerRoles } },
+    { path: ':uuid', component: () => import('../views/elections/ElectionDetailView.vue'), meta: { roles: electionViewerRoles } },
+  ], { roles: electionViewerRoles }),
 
   layoutRoute('/results', [
-    { path: '', component: () => import('../views/results/ResultsListView.vue'), meta: { roles: ecViewerRoles } },
-    { path: ':uuid', component: () => import('../views/results/ResultDetailView.vue'), meta: { roles: ecViewerRoles } },
-  ], { roles: ecViewerRoles }),
+    { path: '', component: () => import('../views/results/ResultsListView.vue'), meta: { roles: electionViewerRoles } },
+    { path: ':uuid', component: () => import('../views/results/ResultDetailView.vue'), meta: { roles: electionViewerRoles } },
+  ], { roles: electionViewerRoles }),
 
   layoutRoute('/strongroom', [
-    { path: '', component: () => import('../views/admin/StrongroomView.vue'), meta: { roles: auditorRoles } },
-    { path: ':uuid', component: () => import('../views/admin/StrongroomDetailView.vue'), meta: { roles: auditorRoles } },
-  ], { roles: auditorRoles }),
+    { path: '', component: () => import('../views/admin/StrongroomView.vue'), meta: { roles: electionViewerRoles } },
+    { path: ':uuid', component: () => import('../views/admin/StrongroomDetailView.vue'), meta: { roles: electionViewerRoles } },
+  ], { roles: electionViewerRoles }),
 
   layoutRoute('/users', [
     { path: '', component: () => import('../views/admin/UserManagementView.vue'), meta: { roles: ['super_admin'] } },
   ], { roles: ['super_admin'] }),
 
   layoutRoute('/fraud', [
-    { path: '', component: () => import('../views/admin/FraudDashboardView.vue'), meta: { roles: adminRoles } },
-  ], { roles: adminRoles }),
+    { path: '', component: () => import('../views/admin/FraudDashboardView.vue'), meta: { roles: ecRoles } },
+  ], { roles: ecRoles }),
 
   layoutRoute('/ussd', [
-    { path: '', component: () => import('../views/admin/USSDMonitorView.vue'), meta: { roles: adminRoles } },
-    { path: ':uuid', component: () => import('../views/admin/USSDSessionDetailView.vue'), meta: { roles: adminRoles } },
-  ], { roles: adminRoles }),
+    { path: '', component: () => import('../views/admin/USSDMonitorView.vue'), meta: { roles: ecRoles } },
+    { path: ':uuid', component: () => import('../views/admin/USSDSessionDetailView.vue'), meta: { roles: ecRoles } },
+  ], { roles: ecRoles }),
 
   layoutRoute('/audit', [
-    { path: '', component: () => import('../views/admin/AuditLogsView.vue'), meta: { roles: auditorRoles } },
-  ], { roles: auditorRoles }),
+    { path: '', component: () => import('../views/admin/AuditLogsView.vue'), meta: { roles: staffDashboardRoles } },
+  ], { roles: staffDashboardRoles }),
 
   layoutRoute('/operations', [
     { path: '', component: () => import('../views/admin/OperationsCenterView.vue'), meta: { roles: ['super_admin'] } },
@@ -115,7 +117,7 @@ const routes = [
   {
     path: '/monitor/:uuid',
     component: () => import('../views/admin/ElectionMonitorRoom.vue'),
-    meta: { requiresAuth: true, roles: monitorRoles },
+    meta: { requiresAuth: true, roles: electionViewerRoles },
   },
   {
     path: '/elections/:uuid/monitor',
@@ -148,8 +150,8 @@ function userHasRequiredRoles(authStore, requiredRoles) {
   const role = authStore.roleName
   if (requiredRoles.includes(role)) return true
   if (requiredRoles.includes('super_admin') && authStore.isSuperAdmin) return true
-  if (requiredRoles.some((r) => adminRoles.includes(r)) && authStore.isAdmin) return true
-  if (requiredRoles.some((r) => ecViewerRoles.includes(r)) && (authStore.isAuditor || authStore.roleName === 'admin')) return true
+  if (requiredRoles.includes('admin') && authStore.isElectionManager) return true
+  if (requiredRoles.includes('auditor') && authStore.isAuditor) return true
   if (requiredRoles.some((r) => studentRoles.includes(r)) && authStore.isStudent) return true
   return false
 }

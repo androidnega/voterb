@@ -5,23 +5,23 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Count, Q
 from django.utils import timezone
 
-from accounts.permissions import IsAdminOrSuperAdmin
+from accounts.permissions import IsAdmin
 from fraud.models import SecurityAlert, FraudCase
 from fraud.serializers import SecurityAlertSerializer, FraudCaseSerializer
 
 class AlertListView(generics.ListCreateAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     serializer_class = SecurityAlertSerializer
     queryset = SecurityAlert.objects.all().order_by('-detected_at')
 
 class AlertDetailView(generics.RetrieveUpdateAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     serializer_class = SecurityAlertSerializer
     lookup_field = 'uuid'
     queryset = SecurityAlert.objects.all()
 
 class AlertResolveView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     
     def post(self, request, uuid):
         alert = get_object_or_404(SecurityAlert, uuid=uuid)
@@ -30,7 +30,7 @@ class AlertResolveView(APIView):
         return Response({'message': 'Alert resolved'})
 
 class AlertEscalateView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     
     def post(self, request, uuid):
         alert = get_object_or_404(SecurityAlert, uuid=uuid)
@@ -40,7 +40,7 @@ class AlertEscalateView(APIView):
         return Response({'message': 'Alert escalated to fraud case', 'case_uuid': case.uuid})
 
 class CaseListView(generics.ListCreateAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     serializer_class = FraudCaseSerializer
     queryset = FraudCase.objects.all().order_by('-created_at')
     
@@ -48,13 +48,13 @@ class CaseListView(generics.ListCreateAPIView):
         serializer.save(investigator=self.request.user)
 
 class CaseDetailView(generics.RetrieveUpdateAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     serializer_class = FraudCaseSerializer
     lookup_field = 'uuid'
     queryset = FraudCase.objects.all()
 
 class CaseAddNoteView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     
     def post(self, request, uuid):
         case = get_object_or_404(FraudCase, uuid=uuid)
@@ -72,7 +72,7 @@ class CaseAddNoteView(APIView):
         return Response({'message': 'Note added'})
 
 class CaseResolveView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     
     def post(self, request, uuid):
         case = get_object_or_404(FraudCase, uuid=uuid)
@@ -84,7 +84,7 @@ class CaseResolveView(APIView):
         return Response({'message': 'Case resolved'})
 
 class FraudDashboardStatsView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     
     def get(self, request):
         total_alerts = SecurityAlert.objects.count()
