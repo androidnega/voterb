@@ -9,22 +9,29 @@
     </header>
 
     <section class="ballots">
-      <div v-if="loading" class="state">
-        <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
-        <span>Loading ballots…</span>
-      </div>
+      <BallotListSkeleton
+        v-if="loading || showSkeleton"
+        :hint="showSlowHint ? slowHint : ''"
+      />
 
-      <div v-else-if="error" class="state state--error">
-        <p>{{ error }}</p>
-        <button type="button" class="btn-ghost" @click="fetchElections">Try again</button>
-      </div>
+      <FriendlyLoadState
+        v-else-if="error"
+        tone="error"
+        title="Couldn’t load your ballots"
+        :message="error"
+        action-label="Try again"
+        @action="fetchElections"
+      />
 
-      <div v-else-if="!elections.length" class="state state--empty">
-        <p class="state-title">No ballots open</p>
-        <p class="state-copy">When an election starts and you're eligible, it will show up here.</p>
-      </div>
+      <FriendlyLoadState
+        v-else-if="!loading && !elections.length"
+        tone="empty"
+        title="No ballots open"
+        message="When an election starts and you’re eligible, it will show up here."
+        icon="far fa-calendar"
+      />
 
-      <div v-else class="ballot-list">
+      <div v-else-if="elections.length" class="ballot-list">
         <article
           v-for="election in elections"
           :key="election.uuid"
@@ -70,15 +77,26 @@ import { useAuthStore } from '@/stores/auth'
 import { votingApi } from '@/api/voting'
 import { displayUserName } from '@/utils/user'
 import { getElectionTiming } from '@/composables/useCountdown'
+import { useFriendlyLoad } from '@/composables/useFriendlyLoad'
 import ElectionCountdown from '@/components/student/ElectionCountdown.vue'
+import BallotListSkeleton from '@/components/student/BallotListSkeleton.vue'
+import FriendlyLoadState from '@/components/student/FriendlyLoadState.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
 const elections = ref([])
-const loading = ref(true)
-const error = ref('')
 const launchingId = ref('')
+const {
+  loading,
+  showSkeleton,
+  showSlowHint,
+  slowHint,
+  error,
+  begin,
+  succeed,
+  fail,
+} = useFriendlyLoad({ subject: 'your ballots', skeletonDelayMs: 0 })
 
 const firstName = computed(() => {
   const name = displayUserName(authStore.user, 'Student').trim()
@@ -104,16 +122,15 @@ function canVote(election) {
 }
 
 async function fetchElections() {
-  loading.value = true
-  error.value = ''
+  begin()
   try {
     const { data } = await votingApi.getEligibleElections()
     elections.value = data || []
+    succeed()
   } catch (err) {
     console.error('Failed to fetch elections:', err)
-    error.value = err.response?.data?.error || 'Could not load ballots.'
-  } finally {
-    loading.value = false
+    elections.value = []
+    fail(err)
   }
 }
 
@@ -192,49 +209,6 @@ onMounted(fetchElections)
 .ballots {
   display: grid;
   gap: 0.75rem;
-}
-
-.state {
-  display: grid;
-  justify-items: center;
-  gap: 0.5rem;
-  padding: 2.5rem 1rem;
-  text-align: center;
-  color: #78716c;
-  font-size: 0.78rem;
-}
-
-.state i {
-  color: var(--vb-accent, #0f766e);
-}
-
-.state--error {
-  color: #b91c1c;
-}
-
-.state-title {
-  margin: 0;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: #1c1917;
-}
-
-.state-copy {
-  margin: 0;
-  max-width: 16rem;
-  line-height: 1.5;
-  color: #a8a29e;
-}
-
-.btn-ghost {
-  border: 1px solid #e5e2db;
-  background: #fff;
-  color: #1c1917;
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 0.45rem 0.8rem;
-  border-radius: 0.45rem;
-  cursor: pointer;
 }
 
 .ballot-list {

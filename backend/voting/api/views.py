@@ -67,6 +67,37 @@ def _active_issued_svt(user, election):
     )
 
 
+def _active_validated_svt(user, election):
+    now = timezone.now()
+    svt = (
+        SVTToken.objects.filter(
+            user=user,
+            election=election,
+            status='validated',
+        )
+        .order_by('-validated_at', '-issued_at')
+        .first()
+    )
+    if not svt:
+        return None
+    if svt.expires_at <= now:
+        svt.status = 'expired'
+        svt.save(update_fields=['status'])
+        return None
+    return svt
+
+
+def _svt_session_payload(svt, status_name):
+    now = timezone.now()
+    expires_in = max(0, int((svt.expires_at - now).total_seconds())) if svt else 0
+    return {
+        'status': status_name,
+        'svt_id': str(svt.svt_id) if svt else None,
+        'expires_at': svt.expires_at.isoformat() if svt else None,
+        'expires_in_seconds': expires_in,
+    }
+
+
 def _revoke_open_svts(user, election):
     """Expire any issued/validated tokens so older codes cannot be reused."""
     SVTToken.objects.filter(
@@ -217,6 +248,15 @@ class SVTValidateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Idempotent resume: already validated + still active + matching code
+        active_validated = _active_validated_svt(user, election)
+        if active_validated and hash_svt(svt_code) == active_validated.token_hash:
+            return Response({
+                'message': 'SVT already validated',
+                'already_validated': True,
+                **_svt_session_payload(active_validated, 'validated'),
+            })
+
         svt = (
             SVTToken.objects.filter(user=user, election=election, status='issued')
             .order_by('-issued_at')
@@ -264,7 +304,48 @@ class SVTValidateView(APIView):
         svt.validated_at = timezone.now()
         svt.save(update_fields=['status', 'validated_at'])
 
-        return Response({'message': 'SVT validated successfully'})
+        return Response({
+            'message': 'SVT validated successfully',
+            'already_validated': False,
+            **_svt_session_payload(svt, 'validated'),
+        })
+
+
+class SVTSessionView(APIView):
+    """Return whether the voter has an issued/validated SVT for this election."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, uuid):
+        election = get_object_or_404(Election, uuid=uuid)
+        user = request.user
+
+        validated = _active_validated_svt(user, election)
+        if validated:
+            return Response(_svt_session_payload(validated, 'validated'))
+
+        issued = _active_issued_svt(user, election)
+        if issued:
+            return Response(_svt_session_payload(issued, 'issued'))
+
+        # Surface expired so the client can clear local session
+        expired = (
+            SVTToken.objects.filter(
+                user=user,
+                election=election,
+                status__in=['expired', 'issued', 'validated'],
+            )
+            .order_by('-issued_at')
+            .first()
+        )
+        if expired and expired.status == 'expired':
+            return Response({'status': 'expired'})
+        if expired and expired.expires_at <= timezone.now():
+            if expired.status in ('issued', 'validated'):
+                expired.status = 'expired'
+                expired.save(update_fields=['status'])
+            return Response({'status': 'expired'})
+
+        return Response({'status': 'none'})
 
 
 class BallotView(APIView):
@@ -277,11 +358,7 @@ class BallotView(APIView):
         if election.status != 'open':
             return Response({'error': 'Election is not open'}, status=status.HTTP_400_BAD_REQUEST)
 
-        svt = SVTToken.objects.filter(
-            user=user,
-            election=election,
-            status='validated',
-        ).first()
+        svt = _active_validated_svt(user, election)
         if not svt:
             return Response({'error': 'Valid SVT required'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -315,7 +392,12 @@ class BallotView(APIView):
                 ],
             })
 
-        return Response({'positions': ballot_data, 'election_title': election.title})
+        return Response({
+            'positions': ballot_data,
+            'election_title': election.title,
+            'svt_expires_at': svt.expires_at.isoformat(),
+            'svt_expires_in_seconds': max(0, int((svt.expires_at - timezone.now()).total_seconds())),
+        })
 
 
 class SubmitVoteView(APIView):
@@ -328,18 +410,15 @@ class SubmitVoteView(APIView):
         svt_code = normalize_svt(request.data.get('svt_code'))
         selections = request.data.get('selections', [])
 
-        if not svt_code:
-            return Response({'error': 'SVT code required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        svt = SVTToken.objects.filter(
-            user=user,
-            election=election,
-            status='validated',
-        ).first()
+        svt = _active_validated_svt(user, election)
         if not svt:
-            return Response({'error': 'Valid SVT required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'Your secure token expired. Request a new one to continue.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if hash_svt(svt_code) != svt.token_hash:
+        # If a code is provided, it must match; otherwise the validated session is enough
+        if svt_code and hash_svt(svt_code) != svt.token_hash:
             return Response({'error': 'Invalid SVT code'}, status=status.HTTP_400_BAD_REQUEST)
 
         if election.status != 'open':

@@ -1,88 +1,107 @@
 <template>
   <div class="ballot-page">
-    <header class="ballot-head">
-      <div>
-        <p class="ballot-eyebrow">Cast your vote</p>
-        <h1 class="ballot-title">{{ electionTitle }}</h1>
+    <BallotWizardSkeleton
+      v-if="loading || showSkeleton"
+      :hint="showSlowHint ? slowHint : ''"
+    />
+
+    <FriendlyLoadState
+      v-else-if="error"
+      tone="error"
+      title="Couldn’t open your ballot"
+      :message="error"
+      action-label="Try again"
+      @action="fetchBallot"
+    />
+
+    <template v-else>
+      <header class="ballot-head">
+        <div>
+          <p class="ballot-eyebrow">Cast your vote</p>
+          <h1 class="ballot-title">{{ electionTitle }}</h1>
+        </div>
+        <span v-if="positions.length" class="ballot-step">
+          Step {{ activeStepIndex + 1 }} of {{ positions.length }}
+        </span>
+      </header>
+
+      <div v-if="positions.length === 0" class="ballot-state">
+        <FriendlyLoadState
+          tone="empty"
+          title="Nothing to vote on yet"
+          message="This ballot doesn’t have any positions right now."
+          action-label="Go back"
+          icon="far fa-folder-open"
+          @action="$router.push(`/vote/${electionUuid}`)"
+        />
       </div>
-      <span v-if="positions.length" class="ballot-step">
-        Step {{ activeStepIndex + 1 }} of {{ positions.length }}
-      </span>
-    </header>
 
-    <div v-if="loading" class="ballot-state">
-      <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
-      <span>Loading ballot…</span>
-    </div>
-
-    <div v-else-if="positions.length === 0" class="ballot-state">
-      <p>No positions available for this election.</p>
-    </div>
-
-    <div v-else class="ballot-body">
-      <div class="ballot-tabs">
-        <button
-          v-for="(pos, idx) in positions"
-          :key="pos.uuid"
-          type="button"
-          class="ballot-tab"
-          :class="{ 'is-active': activeStepIndex === idx }"
-          @click="activeStep = String(idx)"
-        >
-          {{ pos.title }}
-        </button>
-      </div>
-
-      <article class="ballot-card">
-        <h2 class="ballot-card__title">{{ currentPosition.title }}</h2>
-        <p v-if="currentPosition.description" class="ballot-card__desc">{{ currentPosition.description }}</p>
-        <p class="ballot-card__hint">
-          Select up to {{ currentPosition.max_votes_allowed }} candidate{{ currentPosition.max_votes_allowed === 1 ? '' : 's' }}.
-        </p>
-
-        <div class="candidate-grid">
+      <div v-else class="ballot-body">
+        <div class="ballot-tabs">
           <button
-            v-for="candidate in currentPosition.candidates"
-            :key="candidate.uuid"
+            v-for="(pos, idx) in positions"
+            :key="pos.uuid"
             type="button"
-            class="candidate-card"
-            :class="{ 'is-selected': isSelected(currentPosition.uuid, candidate.uuid) }"
-            @click="toggleCandidate(currentPosition.uuid, candidate.uuid, currentPosition.max_votes_allowed)"
+            class="ballot-tab"
+            :class="{ 'is-active': activeStepIndex === idx }"
+            @click="activeStep = String(idx)"
           >
-            <div class="candidate-card__photo-wrap">
-              <img
-                v-if="photoUrl(candidate)"
-                :src="photoUrl(candidate)"
-                :alt="candidate.full_name"
-                class="candidate-card__photo"
-                loading="lazy"
-                @error="onPhotoError(candidate.uuid)"
-              />
-              <div v-else class="candidate-card__fallback" aria-hidden="true">
-                {{ initials(candidate.full_name) }}
-              </div>
-              <span v-if="isSelected(currentPosition.uuid, candidate.uuid)" class="candidate-card__check">
-                <i class="fas fa-check" aria-hidden="true"></i>
-              </span>
-            </div>
-            <div class="candidate-card__copy">
-              <p class="candidate-card__name">{{ candidate.full_name }}</p>
-              <p v-if="candidate.department" class="candidate-card__meta">{{ candidate.department }}</p>
-            </div>
-            <span v-if="candidate.ballot_number" class="candidate-card__badge">#{{ candidate.ballot_number }}</span>
+            {{ pos.title }}
           </button>
         </div>
 
-        <div class="ballot-nav">
-          <button type="button" class="ballot-nav__btn" :disabled="activeStepIndex === 0" @click="prevStep">
-            Back
-          </button>
-          <button type="button" class="ballot-nav__btn ballot-nav__btn--primary" @click="nextStep">
-            {{ activeStepIndex === positions.length - 1 ? 'Review & submit' : 'Next' }}
-          </button>
-        </div>
-      </article>
-    </div>
+        <article class="ballot-card">
+          <h2 class="ballot-card__title">{{ currentPosition.title }}</h2>
+          <p v-if="currentPosition.description" class="ballot-card__desc">{{ currentPosition.description }}</p>
+          <p class="ballot-card__hint">
+            Select up to {{ currentPosition.max_votes_allowed }} candidate{{ currentPosition.max_votes_allowed === 1 ? '' : 's' }}.
+          </p>
+
+          <div class="candidate-grid">
+            <button
+              v-for="candidate in currentPosition.candidates"
+              :key="candidate.uuid"
+              type="button"
+              class="candidate-card"
+              :class="{ 'is-selected': isSelected(currentPosition.uuid, candidate.uuid) }"
+              @click="toggleCandidate(currentPosition.uuid, candidate.uuid, currentPosition.max_votes_allowed)"
+            >
+              <div class="candidate-card__photo-wrap">
+                <img
+                  v-if="photoUrl(candidate)"
+                  :src="photoUrl(candidate)"
+                  :alt="candidate.full_name"
+                  class="candidate-card__photo"
+                  loading="lazy"
+                  @error="onPhotoError(candidate.uuid)"
+                />
+                <div v-else class="candidate-card__fallback" aria-hidden="true">
+                  {{ initials(candidate.full_name) }}
+                </div>
+                <span v-if="isSelected(currentPosition.uuid, candidate.uuid)" class="candidate-card__check">
+                  <i class="fas fa-check" aria-hidden="true"></i>
+                </span>
+              </div>
+              <div class="candidate-card__copy">
+                <p class="candidate-card__name">{{ candidate.full_name }}</p>
+                <p v-if="candidate.department" class="candidate-card__meta">{{ candidate.department }}</p>
+              </div>
+              <span v-if="candidate.ballot_number" class="candidate-card__badge">#{{ candidate.ballot_number }}</span>
+            </button>
+          </div>
+
+          <div class="ballot-nav">
+            <button type="button" class="ballot-nav__btn" :disabled="activeStepIndex === 0" @click="prevStep">
+              Back
+            </button>
+            <button type="button" class="ballot-nav__btn ballot-nav__btn--primary" @click="nextStep">
+              {{ activeStepIndex === positions.length - 1 ? 'Review & submit' : 'Next' }}
+            </button>
+          </div>
+          <p v-if="submitError && !showReview" class="ballot-soft-error">{{ submitError }}</p>
+        </article>
+      </div>
+    </template>
 
     <Dialog v-model:visible="showReview" header="Review your vote" :modal="true" class="w-full max-w-lg">
       <div class="review-list">
@@ -103,10 +122,11 @@
           </div>
         </div>
       </div>
+      <p v-if="submitError" class="review-error">{{ submitError }}</p>
       <div class="review-actions">
-        <button type="button" class="ballot-nav__btn" @click="showReview = false">Go back</button>
+        <button type="button" class="ballot-nav__btn" :disabled="submitting" @click="showReview = false">Go back</button>
         <button type="button" class="ballot-nav__btn ballot-nav__btn--primary" :disabled="submitting" @click="submitVote">
-          {{ submitting ? 'Submitting…' : 'Submit vote' }}
+          {{ submitting ? (submitSlow ? 'Still working…' : 'Submitting…') : 'Submit vote' }}
         </button>
       </div>
     </Dialog>
@@ -114,10 +134,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { votingApi } from '@/api/voting'
 import { resolveMediaUrl } from '@/utils/media'
+import { useFriendlyLoad } from '@/composables/useFriendlyLoad'
+import { friendlyActionError } from '@/utils/friendlyFeedback'
+import { clearSvtSession, readSvtSession } from '@/utils/svtSession'
+import BallotWizardSkeleton from '@/components/student/BallotWizardSkeleton.vue'
+import FriendlyLoadState from '@/components/student/FriendlyLoadState.vue'
 import Dialog from 'primevue/dialog'
 
 const route = useRoute()
@@ -130,8 +155,21 @@ const activeStep = ref('0')
 const selections = ref({})
 const showReview = ref(false)
 const submitting = ref(false)
-const loading = ref(true)
+const submitError = ref('')
+const submitSlow = ref(false)
 const brokenPhotos = ref(new Set())
+let submitSlowTimer = null
+
+const {
+  loading,
+  showSkeleton,
+  showSlowHint,
+  slowHint,
+  error,
+  begin,
+  succeed,
+  fail,
+} = useFriendlyLoad({ subject: 'your ballot', skeletonDelayMs: 0 })
 
 const activeStepIndex = computed(() => parseInt(activeStep.value, 10) || 0)
 const currentPosition = computed(() => positions.value[activeStepIndex.value] || { candidates: [] })
@@ -154,21 +192,36 @@ function onPhotoError(uuid) {
   brokenPhotos.value = next
 }
 
+function clearSubmitSlow() {
+  submitSlow.value = false
+  if (submitSlowTimer) {
+    clearTimeout(submitSlowTimer)
+    submitSlowTimer = null
+  }
+}
+
 const fetchBallot = async () => {
-  loading.value = true
+  begin()
   try {
+    // Confirm secure session is still active before loading candidates
+    const { data: session } = await votingApi.getSvtSession(electionUuid)
+    if (session?.status !== 'validated') {
+      clearSvtSession(electionUuid)
+      succeed()
+      await router.replace(`/vote/${electionUuid}`)
+      return
+    }
     const response = await votingApi.getBallot(electionUuid)
     positions.value = response.data.positions || []
     electionTitle.value = response.data.election_title || 'Ballot'
     positions.value.forEach((pos) => {
       if (!selections.value[pos.uuid]) selections.value[pos.uuid] = []
     })
-  } catch (error) {
-    console.error('Failed to load ballot:', error)
-    alert(error.response?.data?.error || 'Failed to load ballot. Please try again.')
-    router.push(`/vote/${electionUuid}`)
-  } finally {
-    loading.value = false
+    succeed()
+  } catch (err) {
+    console.error('Failed to load ballot:', err)
+    positions.value = []
+    fail(err)
   }
 }
 
@@ -179,14 +232,14 @@ const toggleCandidate = (posUuid, candidateUuid, maxVotes) => {
   const index = selected.indexOf(candidateUuid)
   if (index > -1) {
     selected.splice(index, 1)
-  } else {
-    if (selected.length >= maxVotes) {
-      alert(`You can only select up to ${maxVotes} candidate(s) for this position.`)
-      return
-    }
+  } else if (selected.length < maxVotes) {
     selected.push(candidateUuid)
+  } else {
+    submitError.value = `You can select up to ${maxVotes} candidate${maxVotes === 1 ? '' : 's'} for this position.`
+    return
   }
   selections.value = { ...selections.value, [posUuid]: selected }
+  if (submitError.value) submitError.value = ''
 }
 
 const getSelections = (posUuid) => {
@@ -201,9 +254,13 @@ const nextStep = () => {
   if (nextIndex === positions.value.length) {
     const allSelected = positions.value.every((pos) => selections.value[pos.uuid]?.length > 0)
     if (!allSelected) {
-      alert('Please select at least one candidate for each position.')
+      submitError.value = 'Please choose at least one candidate for each position before submitting.'
+      // Soft nudge: jump to first incomplete position
+      const missing = positions.value.findIndex((pos) => !selections.value[pos.uuid]?.length)
+      if (missing >= 0) activeStep.value = String(missing)
       return
     }
+    submitError.value = ''
     showReview.value = true
   } else {
     activeStep.value = String(nextIndex)
@@ -217,6 +274,11 @@ const prevStep = () => {
 
 const submitVote = async () => {
   submitting.value = true
+  submitError.value = ''
+  clearSubmitSlow()
+  submitSlowTimer = setTimeout(() => {
+    submitSlow.value = true
+  }, 3500)
   try {
     const payload = {
       selections: positions.value.map((pos) => ({
@@ -224,27 +286,29 @@ const submitVote = async () => {
         candidate_uuids: selections.value[pos.uuid] || [],
       })),
     }
-    const svtCode = sessionStorage.getItem(`svt:${electionUuid}`)
-    if (!svtCode || !/^v-[a-z]{3}-\d{4}$/i.test(svtCode)) {
-      alert('Your secure session expired. Please re-enter your SVT.')
-      router.push(`/vote/${electionUuid}`)
-      return
-    }
-    await votingApi.submitVote(electionUuid, payload.selections, svtCode)
-    sessionStorage.removeItem(`svt:${electionUuid}`)
+    const session = readSvtSession(electionUuid)
+    const svtCode = session?.code || ''
+    await votingApi.submitVote(electionUuid, payload.selections, svtCode || undefined)
+    clearSvtSession(electionUuid)
+    showReview.value = false
     router.push(`/vote/${electionUuid}/confirmation`)
   } catch (error) {
     console.error('Submission failed:', error)
-    alert(error.response?.data?.error || 'Failed to submit vote. Please try again.')
+    const msg = friendlyActionError(error, 'We couldn’t submit your vote. Please try again.')
+    submitError.value = msg
+    if (/expired|token|secure session/i.test(msg)) {
+      clearSvtSession(electionUuid)
+      showReview.value = false
+      router.push(`/vote/${electionUuid}`)
+    }
   } finally {
+    clearSubmitSlow()
     submitting.value = false
-    showReview.value = false
   }
 }
 
-onMounted(() => {
-  fetchBallot()
-})
+onMounted(fetchBallot)
+onUnmounted(clearSubmitSlow)
 </script>
 
 <style scoped>
@@ -538,5 +602,17 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 0.55rem;
   margin-top: 1.15rem;
+}
+
+.review-error,
+.ballot-soft-error {
+  margin: 0.85rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #f5e6d3;
+  border-radius: 0.7rem;
+  padding: 0.65rem 0.75rem;
 }
 </style>

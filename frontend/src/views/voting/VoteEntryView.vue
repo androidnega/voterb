@@ -1,122 +1,201 @@
 <template>
   <div class="svt-page">
-    <button type="button" class="svt-back" @click="$router.push('/student')">
-      <i class="fas fa-arrow-left" aria-hidden="true"></i>
-      Back
-    </button>
+    <SvtGateSkeleton
+      v-if="booting || showSkeleton"
+      :hint="showSlowHint ? slowHint : ''"
+    />
 
-    <article class="svt-card">
-      <div class="svt-card__shield" aria-hidden="true">
-        <i class="fas fa-shield-alt"></i>
-      </div>
-      <p class="svt-card__eyebrow">Secure voting gate</p>
-      <h1 class="svt-card__title">{{ electionTitle }}</h1>
-      <p class="svt-card__sub">Confirm your Secure Voting Token to unlock the ballot.</p>
+    <template v-else-if="bootError">
+      <button type="button" class="svt-back" @click="$router.push('/student')">
+        <i class="fas fa-arrow-left" aria-hidden="true"></i>
+        Back
+      </button>
+      <FriendlyLoadState
+        tone="error"
+        title="Couldn’t open this ballot"
+        :message="bootError"
+        action-label="Try again"
+        @action="bootPage"
+      />
+    </template>
 
-      <!-- Request -->
-      <div v-if="step === 'request'" class="svt-panel">
-        <div class="svt-note">
-          <i class="fas fa-lock" aria-hidden="true"></i>
-          <div>
-            <strong>Secure Voting Token</strong>
-            <p>Request a one-time token sent to your registered channel, then enter it here to unlock your ballot.</p>
-          </div>
+    <template v-else>
+      <button type="button" class="svt-back" @click="$router.push('/student')">
+        <i class="fas fa-arrow-left" aria-hidden="true"></i>
+        Back
+      </button>
+
+      <article class="svt-card">
+        <div class="svt-card__shield" aria-hidden="true">
+          <i class="fas fa-shield-alt"></i>
         </div>
-        <button type="button" class="svt-btn svt-btn--primary" :disabled="requesting" @click="requestSVT">
-          <i v-if="requesting" class="fas fa-spinner fa-spin" aria-hidden="true"></i>
-          <span>{{ requesting ? 'Issuing token…' : 'Request SVT' }}</span>
-        </button>
-        <p v-if="errorMessage" class="svt-error">{{ errorMessage }}</p>
-      </div>
+        <p class="svt-card__eyebrow">Secure voting gate</p>
+        <h1 class="svt-card__title">{{ electionTitle }}</h1>
+        <p class="svt-card__sub">
+          {{ step === 'verifying'
+            ? 'Confirming your secure session…'
+            : 'Confirm your Secure Voting Token to unlock the ballot.' }}
+        </p>
 
-      <!-- Enter token -->
-      <div v-else-if="step === 'validate'" class="svt-panel">
-        <div class="svt-note svt-note--ok">
-          <i class="fas fa-check-circle" aria-hidden="true"></i>
-          <div>
-            <strong>Token issued</strong>
-            <p>Enter the SVT exactly as received. It expires in 10 minutes.</p>
+        <div v-if="step === 'request'" class="svt-panel">
+          <div class="svt-note">
+            <i class="fas fa-lock" aria-hidden="true"></i>
+            <div>
+              <strong>Secure Voting Token</strong>
+              <p>Request a one-time token sent to your registered channel, then enter it here to unlock your ballot.</p>
+            </div>
           </div>
-        </div>
-
-        <label class="svt-field">
-          <span class="svt-field__label">
-            <i class="fas fa-key" aria-hidden="true"></i>
-            Secure Voting Token
-          </span>
-          <div class="svt-field__shell" :class="{ 'is-focus': fieldFocused }">
-            <span class="svt-field__prefix" aria-hidden="true">SVT</span>
-            <input
-              ref="svtInput"
-              v-model="svtDisplay"
-              type="text"
-              class="svt-field__input"
-              autocomplete="one-time-code"
-              spellcheck="false"
-              maxlength="10"
-              placeholder="v-xxx-0000"
-              aria-label="Secure Voting Token"
-              @focus="fieldFocused = true"
-              @blur="fieldFocused = false"
-              @input="onSvtInput"
-              @keyup.enter="validateSVT"
-            />
-            <i class="fas fa-fingerprint svt-field__seal" aria-hidden="true"></i>
-          </div>
-        </label>
-
-        <div class="svt-actions">
-          <button type="button" class="svt-btn svt-btn--primary" :disabled="!canValidate || validating" @click="validateSVT">
-            Unlock ballot
+          <button type="button" class="svt-btn svt-btn--primary" :disabled="requesting" @click="requestSVT">
+            <i v-if="requesting" class="fas fa-spinner fa-spin" aria-hidden="true"></i>
+            <span>{{ requesting ? (actionSlow ? 'Still working…' : 'Sending…') : 'Request SVT' }}</span>
           </button>
-          <button type="button" class="svt-btn svt-btn--ghost" :disabled="requesting" @click="resendSVT">
-            Resend
-          </button>
+          <p v-if="actionSlow && requesting" class="svt-soft">{{ slowHint }}</p>
+          <p v-if="errorMessage" class="svt-error">{{ errorMessage }}</p>
         </div>
-        <p v-if="errorMessage" class="svt-error">{{ errorMessage }}</p>
-      </div>
 
-      <!-- Validating animation -->
-      <div v-else-if="step === 'verifying'" class="svt-verify" aria-live="polite">
-        <div class="svt-orbit" aria-hidden="true">
-          <span class="svt-orbit__ring"></span>
-          <span class="svt-orbit__ring svt-orbit__ring--delay"></span>
-          <span class="svt-orbit__core">
-            <i class="fas fa-shield-alt"></i>
-          </span>
+        <div v-else-if="step === 'validate'" class="svt-panel">
+          <div class="svt-note svt-note--ok">
+            <i class="fas fa-check-circle" aria-hidden="true"></i>
+            <div>
+              <strong>Token issued</strong>
+              <p>Enter each character of your Secure Voting Token.</p>
+            </div>
+          </div>
+
+          <div class="svt-otp" role="group" aria-label="Secure Voting Token">
+            <span class="svt-otp__prefix" aria-hidden="true">v-</span>
+            <div class="svt-otp__group">
+              <input
+                v-for="(_, index) in letterCount"
+                :key="`L${index}`"
+                :ref="(el) => setLetterRef(el, index)"
+                v-model="letterDigits[index]"
+                type="text"
+                inputmode="text"
+                maxlength="1"
+                class="svt-otp__box"
+                :class="{ 'is-filled': letterDigits[index] }"
+                :disabled="validating || requesting"
+                :aria-label="`Letter ${index + 1}`"
+                autocomplete="one-time-code"
+                spellcheck="false"
+                @input="onLetterInput(index, $event)"
+                @keydown="onLetterKeydown(index, $event)"
+                @paste="onPaste"
+              />
+            </div>
+            <span class="svt-otp__dash" aria-hidden="true">-</span>
+            <div class="svt-otp__group">
+              <input
+                v-for="(_, index) in digitCount"
+                :key="`D${index}`"
+                :ref="(el) => setDigitRef(el, index)"
+                v-model="numberDigits[index]"
+                type="text"
+                inputmode="numeric"
+                maxlength="1"
+                class="svt-otp__box"
+                :class="{ 'is-filled': numberDigits[index] }"
+                :disabled="validating || requesting"
+                :aria-label="`Digit ${index + 1}`"
+                autocomplete="one-time-code"
+                spellcheck="false"
+                @input="onDigitInput(index, $event)"
+                @keydown="onDigitKeydown(index, $event)"
+                @paste="onPaste"
+              />
+            </div>
+          </div>
+
+          <div class="svt-actions">
+            <button type="button" class="svt-btn svt-btn--primary" :disabled="!canValidate || validating" @click="validateSVT">
+              <i v-if="validating" class="fas fa-spinner fa-spin" aria-hidden="true"></i>
+              <span>{{ validating ? (actionSlow ? 'Still working…' : 'Checking…') : 'Unlock ballot' }}</span>
+            </button>
+            <button type="button" class="svt-btn svt-btn--ghost" :disabled="requesting || validating" @click="resendSVT">
+              {{ requesting ? 'Sending…' : 'Resend' }}
+            </button>
+          </div>
+          <p v-if="actionSlow && (validating || requesting)" class="svt-soft">{{ slowHint }}</p>
+          <p v-if="errorMessage" class="svt-error">{{ errorMessage }}</p>
         </div>
-        <p class="svt-verify__title">{{ verifyTitle }}</p>
-        <ul class="svt-verify__log">
-          <li v-for="(line, idx) in verifyLines" :key="line" :class="{ 'is-done': idx < verifyStep, 'is-active': idx === verifyStep }">
-            <i :class="idx < verifyStep ? 'fas fa-check' : (idx === verifyStep ? 'fas fa-spinner fa-spin' : 'far fa-circle')" aria-hidden="true"></i>
-            <span>{{ line }}</span>
-          </li>
-        </ul>
-      </div>
-    </article>
+
+        <div v-else-if="step === 'verifying'" class="svt-verify" aria-live="polite">
+          <div class="svt-orbit" aria-hidden="true">
+            <span class="svt-orbit__ring"></span>
+            <span class="svt-orbit__ring svt-orbit__ring--delay"></span>
+            <span class="svt-orbit__core">
+              <i class="fas fa-shield-alt"></i>
+            </span>
+          </div>
+          <p class="svt-verify__title">{{ verifyTitle }}</p>
+          <ul class="svt-verify__log">
+            <li
+              v-for="(line, idx) in verifyLines"
+              :key="line"
+              :class="{ 'is-done': idx < verifyStep, 'is-active': idx === verifyStep }"
+            >
+              <i
+                :class="idx < verifyStep ? 'fas fa-check' : (idx === verifyStep ? 'fas fa-spinner fa-spin' : 'far fa-circle')"
+                aria-hidden="true"
+              ></i>
+              <span>{{ line }}</span>
+            </li>
+          </ul>
+        </div>
+      </article>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { votingApi } from '@/api/voting'
+import { useFriendlyLoad } from '@/composables/useFriendlyLoad'
+import { friendlyActionError } from '@/utils/friendlyFeedback'
+import {
+  clearSvtSession,
+  isValidSvtFormat,
+  normalizeSvt,
+  readSvtSession,
+  writeSvtSession,
+} from '@/utils/svtSession'
+import SvtGateSkeleton from '@/components/student/SvtGateSkeleton.vue'
+import FriendlyLoadState from '@/components/student/FriendlyLoadState.vue'
 
 const route = useRoute()
 const router = useRouter()
 const electionUuid = route.params.uuid
 
+const letterCount = 3
+const digitCount = 4
+
 const electionTitle = ref('Election')
 const step = ref('request')
-const svtDisplay = ref('')
-const svtNormalized = ref('')
+const letterDigits = ref(Array.from({ length: letterCount }, () => ''))
+const numberDigits = ref(Array.from({ length: digitCount }, () => ''))
+const letterInputs = ref([])
+const digitInputs = ref([])
 const requesting = ref(false)
 const validating = ref(false)
 const errorMessage = ref('')
-const fieldFocused = ref(false)
-const svtInput = ref(null)
 const verifyStep = ref(0)
 const verifyTitle = ref('Securing your session…')
+const actionSlow = ref(false)
+let actionSlowTimer = null
+let resumeStarted = false
+
+const {
+  loading: booting,
+  showSkeleton,
+  showSlowHint,
+  slowHint,
+  error: bootError,
+  begin,
+  succeed,
+  fail,
+} = useFriendlyLoad({ subject: 'this ballot', skeletonDelayMs: 0 })
 
 const verifyLines = [
   'Checking token signature',
@@ -124,107 +203,238 @@ const verifyLines = [
   'Opening sealed ballot positions',
 ]
 
-const canValidate = computed(() => /^v-[a-z]{3}-\d{4}$/.test(svtNormalized.value))
+const svtNormalized = computed(() => {
+  const letters = letterDigits.value.join('').toLowerCase()
+  const digits = numberDigits.value.join('')
+  return normalizeSvt(`v-${letters}-${digits}`)
+})
 
-function normalizeSvt(value) {
-  const raw = String(value || '').trim().toLowerCase().replace(/\s+/g, '')
-  const compact = raw.replace(/-/g, '')
-  if (/^v[a-z]{3}\d{4}$/.test(compact)) {
-    return `v-${compact.slice(1, 4)}-${compact.slice(4)}`
-  }
-  return raw
+const canValidate = computed(() => isValidSvtFormat(svtNormalized.value))
+
+function setLetterRef(el, index) {
+  if (el) letterInputs.value[index] = el
 }
 
-function formatSvtInput(value) {
-  const compact = String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-  let out = ''
-  for (const ch of compact) {
-    if (out.length >= 10) break
-    if (out.length === 0) {
-      if (ch === 'v') out = 'v'
-      continue
-    }
-    if (out.length === 1) out += '-'
-    if (out.length >= 2 && out.length < 5) {
-      if (/[a-z]/.test(ch)) out += ch
-      continue
-    }
-    if (out.length === 5) out += '-'
-    if (out.length >= 6 && /[0-9]/.test(ch)) out += ch
-  }
-  return out
+function setDigitRef(el, index) {
+  if (el) digitInputs.value[index] = el
 }
 
-function onSvtInput(event) {
-  const formatted = formatSvtInput(event.target.value)
-  svtDisplay.value = formatted
-  svtNormalized.value = normalizeSvt(formatted)
+function clearBoxes() {
+  letterDigits.value = Array.from({ length: letterCount }, () => '')
+  numberDigits.value = Array.from({ length: digitCount }, () => '')
+}
+
+function focusFirstBox() {
+  nextTick(() => letterInputs.value[0]?.focus())
+}
+
+function clearActionSlow() {
+  actionSlow.value = false
+  if (actionSlowTimer) {
+    clearTimeout(actionSlowTimer)
+    actionSlowTimer = null
+  }
+}
+
+function markActionPending() {
+  clearActionSlow()
+  actionSlowTimer = setTimeout(() => {
+    actionSlow.value = true
+  }, 3500)
+}
+
+function onLetterInput(index, event) {
+  const value = String(event.target.value || '').toLowerCase().replace(/[^a-z]/g, '').slice(0, 1)
+  letterDigits.value[index] = value
   errorMessage.value = ''
+  if (value && index < letterCount - 1) {
+    letterInputs.value[index + 1]?.focus()
+  } else if (value && index === letterCount - 1) {
+    digitInputs.value[0]?.focus()
+  }
+  maybeAutoValidate()
 }
 
-function storeSvt(code) {
-  sessionStorage.setItem(`svt:${electionUuid}`, code)
+function onDigitInput(index, event) {
+  const value = String(event.target.value || '').replace(/\D/g, '').slice(0, 1)
+  numberDigits.value[index] = value
+  errorMessage.value = ''
+  if (value && index < digitCount - 1) {
+    digitInputs.value[index + 1]?.focus()
+  }
+  maybeAutoValidate()
 }
 
-async function playVerifySequence() {
+function onLetterKeydown(index, event) {
+  if (event.key === 'Backspace' && !letterDigits.value[index] && index > 0) {
+    letterInputs.value[index - 1]?.focus()
+  }
+  if (event.key === 'ArrowLeft' && index > 0) letterInputs.value[index - 1]?.focus()
+  if (event.key === 'ArrowRight' && index < letterCount - 1) letterInputs.value[index + 1]?.focus()
+  if (event.key === 'ArrowRight' && index === letterCount - 1) digitInputs.value[0]?.focus()
+}
+
+function onDigitKeydown(index, event) {
+  if (event.key === 'Backspace' && !numberDigits.value[index] && index > 0) {
+    digitInputs.value[index - 1]?.focus()
+  } else if (event.key === 'Backspace' && !numberDigits.value[index] && index === 0) {
+    letterInputs.value[letterCount - 1]?.focus()
+  }
+  if (event.key === 'ArrowLeft' && index > 0) digitInputs.value[index - 1]?.focus()
+  if (event.key === 'ArrowLeft' && index === 0) letterInputs.value[letterCount - 1]?.focus()
+  if (event.key === 'ArrowRight' && index < digitCount - 1) digitInputs.value[index + 1]?.focus()
+  if (event.key === 'Enter') validateSVT()
+}
+
+function applyTokenParts(letters, digits) {
+  for (let i = 0; i < letterCount; i += 1) letterDigits.value[i] = letters[i] || ''
+  for (let i = 0; i < digitCount; i += 1) numberDigits.value[i] = digits[i] || ''
+}
+
+function onPaste(event) {
+  event.preventDefault()
+  const pasted = String(event.clipboardData.getData('text') || '').trim().toLowerCase()
+  const normalized = normalizeSvt(pasted)
+  const compact = normalized.replace(/-/g, '')
+  if (!/^v[a-z]{3}\d{4}$/.test(compact)) return
+  applyTokenParts(compact.slice(1, 4).split(''), compact.slice(4).split(''))
+  digitInputs.value[digitCount - 1]?.focus()
+  maybeAutoValidate()
+}
+
+function maybeAutoValidate() {
+  if (canValidate.value && !validating.value && !requesting.value) {
+    setTimeout(() => validateSVT(), 280)
+  }
+}
+
+async function playVerifySequence({ resume = false } = {}) {
   step.value = 'verifying'
   verifyStep.value = 0
-  verifyTitle.value = 'Validating secure token…'
+  verifyTitle.value = resume ? 'Restoring your secure session…' : 'Validating secure token…'
   for (let i = 0; i < verifyLines.length; i += 1) {
     verifyStep.value = i
-    await new Promise((r) => setTimeout(r, 520 + i * 120))
+    await new Promise((r) => setTimeout(r, 480 + i * 100))
   }
   verifyStep.value = verifyLines.length
   verifyTitle.value = 'Ballot unlocked'
-  await new Promise((r) => setTimeout(r, 420))
+  await new Promise((r) => setTimeout(r, 380))
 }
 
-onMounted(async () => {
-  try {
-    const { data } = await votingApi.getEligibleElections()
-    const match = (Array.isArray(data) ? data : []).find((e) => String(e.uuid) === String(electionUuid))
-    if (match?.title) electionTitle.value = match.title
-  } catch {
-    electionTitle.value = 'Election'
+async function openBallotAfterVerify({ resume = false } = {}) {
+  await playVerifySequence({ resume })
+  await router.replace(`/vote/${electionUuid}/ballot`)
+}
+
+async function resumeValidatedSession(sessionPayload = {}) {
+  if (resumeStarted) return
+  resumeStarted = true
+  const local = readSvtSession(electionUuid)
+  if (local?.code) {
+    writeSvtSession(electionUuid, {
+      code: local.code,
+      expires_at: sessionPayload.expires_at || local.expires_at,
+      status: 'validated',
+    })
+  } else if (sessionPayload.expires_at) {
+    // Keep a lightweight marker so the ballot flow knows a session is active
+    sessionStorage.setItem(
+      `svt:${electionUuid}`,
+      JSON.stringify({
+        code: '',
+        expires_at: sessionPayload.expires_at,
+        status: 'validated',
+        saved_at: new Date().toISOString(),
+      }),
+    )
   }
-})
+  await openBallotAfterVerify({ resume: true })
+}
+
+async function bootPage() {
+  begin()
+  resumeStarted = false
+  try {
+    const [eligibleRes, sessionRes] = await Promise.all([
+      votingApi.getEligibleElections(),
+      votingApi.getSvtSession(electionUuid),
+    ])
+    const elections = eligibleRes.data
+    const session = sessionRes.data || { status: 'none' }
+    const match = (Array.isArray(elections) ? elections : []).find(
+      (e) => String(e.uuid) === String(electionUuid),
+    )
+    electionTitle.value = match?.title || 'Election'
+    succeed()
+
+    if (session.status === 'validated') {
+      await resumeValidatedSession(session)
+      return
+    }
+
+    if (session.status === 'expired') {
+      clearSvtSession(electionUuid)
+      step.value = 'request'
+      errorMessage.value = 'Your previous token expired. Request a new one to continue.'
+      return
+    }
+
+    if (session.status === 'issued') {
+      step.value = 'validate'
+      await nextTick()
+      focusFirstBox()
+      return
+    }
+
+    // Local leftover without server session → clear and start fresh
+    clearSvtSession(electionUuid)
+    step.value = 'request'
+  } catch (err) {
+    console.error('Failed to open voting gate:', err)
+    fail(err)
+  }
+}
 
 const requestSVT = async () => {
   requesting.value = true
   errorMessage.value = ''
+  markActionPending()
   try {
-    const { data } = await votingApi.requestSVT(electionUuid)
+    await votingApi.requestSVT(electionUuid)
     step.value = 'validate'
-    if (data?.already_issued) {
-      errorMessage.value = ''
-    }
+    clearBoxes()
     await nextTick()
-    svtInput.value?.focus()
+    focusFirstBox()
   } catch (error) {
-    errorMessage.value = error.response?.data?.error || 'Failed to send SVT. Please try again.'
+    errorMessage.value = friendlyActionError(error, 'We couldn’t send your token. Please try again.')
   } finally {
+    clearActionSlow()
     requesting.value = false
   }
 }
 
 const validateSVT = async () => {
-  if (!canValidate.value) {
-    errorMessage.value = 'Enter the full Secure Voting Token you received.'
-    return
-  }
+  if (!canValidate.value || validating.value) return
   validating.value = true
   errorMessage.value = ''
+  markActionPending()
   try {
-    await votingApi.validateSVT(electionUuid, svtNormalized.value)
-    storeSvt(svtNormalized.value)
-    await playVerifySequence()
-    router.push(`/vote/${electionUuid}/ballot`)
+    const { data } = await votingApi.validateSVT(electionUuid, svtNormalized.value)
+    writeSvtSession(electionUuid, {
+      code: svtNormalized.value,
+      expires_at: data?.expires_at || null,
+      status: 'validated',
+    })
+    clearActionSlow()
+    await openBallotAfterVerify({ resume: !!data?.already_validated })
   } catch (error) {
     step.value = 'validate'
-    errorMessage.value = error.response?.data?.error || 'Invalid code. Please try again.'
+    errorMessage.value = friendlyActionError(error, 'That token didn’t work. Please try again.')
+    clearBoxes()
+    await nextTick()
+    focusFirstBox()
   } finally {
+    clearActionSlow()
     validating.value = false
   }
 }
@@ -232,18 +442,23 @@ const validateSVT = async () => {
 const resendSVT = async () => {
   requesting.value = true
   errorMessage.value = ''
+  markActionPending()
   try {
     await votingApi.requestSVT(electionUuid, { resend: true })
-    svtDisplay.value = ''
-    svtNormalized.value = ''
+    clearSvtSession(electionUuid)
+    clearBoxes()
     await nextTick()
-    svtInput.value?.focus()
+    focusFirstBox()
   } catch (error) {
-    errorMessage.value = error.response?.data?.error || 'Failed to resend. Please try again.'
+    errorMessage.value = friendlyActionError(error, 'We couldn’t resend your token. Please try again.')
   } finally {
+    clearActionSlow()
     requesting.value = false
   }
 }
+
+onMounted(bootPage)
+onUnmounted(clearActionSlow)
 </script>
 
 <style scoped>
@@ -353,98 +568,82 @@ const resendSVT = async () => {
 
 .svt-note strong {
   display: block;
-  font-size: 0.82rem;
-  color: inherit;
+  font-size: 0.84rem;
+  margin-bottom: 0.15rem;
 }
 
 .svt-note p {
-  margin: 0.2rem 0 0;
+  margin: 0;
   font-size: 0.78rem;
-  line-height: 1.4;
-  opacity: 0.9;
+  line-height: 1.45;
 }
 
-.svt-field {
+.svt-otp {
   display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.svt-field__label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: #57534e;
-}
-
-.svt-field__shell {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.35rem 0.55rem 0.35rem 0.75rem;
-  border-radius: 1rem;
-  background: #f6f5f2;
-  border: 1px solid #e7e5e4;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-}
-
-.svt-field__shell.is-focus {
-  background: #fff;
-  border-color: #d6d3d1;
-  box-shadow: 0 0 0 3px rgba(28, 25, 23, 0.04);
-}
-
-.svt-field__prefix {
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #a8a29e;
-}
-
-.svt-field__input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  color: #1c1917;
-}
-
-.svt-field__input::placeholder {
-  color: rgba(168, 162, 158, 0.45);
-  letter-spacing: 0.14em;
-  font-weight: 600;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 1.05rem;
-}
-
-.svt-field__seal {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 9999px;
-  display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  background: #fff;
-  color: #0f766e;
-  font-size: 0.85rem;
-  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.06);
+  gap: 0.45rem;
+  padding: 0.25rem 0;
 }
 
-.svt-field__hint {
-  font-size: 0.72rem;
+.svt-otp__prefix {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #059669;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 999px;
+  padding: 0.28rem 0.65rem;
+}
+
+.svt-otp__dash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
   color: #a8a29e;
+  padding: 0 0.1rem;
+}
+
+.svt-otp__group {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.svt-otp__box {
+  width: 2.35rem;
+  height: 2.75rem;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-transform: lowercase;
+  color: #1c1917;
+  background: #fafaf8;
+  border: 2px solid #e7e5e4;
+  border-radius: 0.75rem;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.svt-otp__box.is-filled {
+  border-color: #34d399;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
+.svt-otp__box:focus {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+  background: #fff;
+}
+
+.svt-otp__box:disabled {
+  opacity: 0.6;
 }
 
 .svt-actions {
   display: grid;
-  grid-template-columns: 1.4fr 0.8fr;
   gap: 0.55rem;
 }
 
@@ -453,11 +652,11 @@ const resendSVT = async () => {
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  border-radius: 0.95rem;
   border: none;
+  border-radius: 0.85rem;
   padding: 0.85rem 1rem;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 650;
   cursor: pointer;
 }
 
@@ -480,6 +679,13 @@ const resendSVT = async () => {
   margin: 0;
   font-size: 0.8rem;
   color: #b91c1c;
+}
+
+.svt-soft {
+  margin: 0;
+  text-align: center;
+  font-size: 0.74rem;
+  color: #a8a29e;
 }
 
 .svt-verify {
@@ -507,41 +713,36 @@ const resendSVT = async () => {
 
 .svt-orbit__ring--delay {
   inset: 0.55rem;
-  border-top-color: #a3b18a;
   animation-duration: 1.6s;
   animation-direction: reverse;
+  border-top-color: #a3b18a;
 }
 
 .svt-orbit__core {
   position: absolute;
   inset: 1.35rem;
   border-radius: 9999px;
-  background: linear-gradient(145deg, #ecfdf5, #fff);
-  border: 1px solid #d8e0cf;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: #ecfdf5;
   color: #0f766e;
-  font-size: 1.25rem;
-  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.8);
+  display: grid;
+  place-items: center;
+  font-size: 1.15rem;
 }
 
 .svt-verify__title {
-  margin: 0 0 1rem;
+  margin: 0 0 0.85rem;
   font-size: 1rem;
-  font-weight: 800;
+  font-weight: 700;
   color: #1c1917;
 }
 
 .svt-verify__log {
   list-style: none;
-  margin: 0 auto;
+  margin: 0;
   padding: 0;
-  width: min(100%, 18rem);
+  display: grid;
+  gap: 0.45rem;
   text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
 }
 
 .svt-verify__log li {
@@ -550,19 +751,26 @@ const resendSVT = async () => {
   gap: 0.55rem;
   font-size: 0.8rem;
   color: #a8a29e;
-  transition: color 0.2s ease;
 }
 
 .svt-verify__log li.is-active {
   color: #0f766e;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .svt-verify__log li.is-done {
-  color: #166534;
+  color: #57534e;
 }
 
 @keyframes svt-spin {
   to { transform: rotate(360deg); }
+}
+
+@media (max-width: 420px) {
+  .svt-otp__box {
+    width: 2.1rem;
+    height: 2.5rem;
+    font-size: 0.95rem;
+  }
 }
 </style>
