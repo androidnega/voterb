@@ -262,29 +262,31 @@ onUnmounted(() => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1.25rem;
-  padding: 0.35rem 0 1.35rem;
+  gap: 0.85rem;
+  padding: 0.2rem 0 1rem;
   flex-wrap: wrap;
 }
 
 .soft-header__left {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: 0.65rem;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .soft-icon-btn--menu {
-  margin-top: 0.15rem;
+  margin-top: 0.1rem;
 }
 
 .soft-header__greeting {
   min-width: 0;
+  flex: 1;
 }
 
 .soft-header__title {
   margin: 0;
-  font-size: clamp(1.55rem, 2.4vw, 2rem);
+  font-size: clamp(1.35rem, 5vw, 2rem);
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--vb-ink);
@@ -292,8 +294,8 @@ onUnmounted(() => {
 }
 
 .soft-header__subtitle {
-  margin: 0.35rem 0 0;
-  font-size: 0.9rem;
+  margin: 0.3rem 0 0;
+  font-size: 0.84rem;
   color: var(--vb-muted);
   line-height: 1.45;
   max-width: 28rem;
@@ -302,8 +304,9 @@ onUnmounted(() => {
 .soft-header__right {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.5rem;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .soft-search {
@@ -464,6 +467,29 @@ onUnmounted(() => {
 @media (max-width: 900px) {
   .soft-search {
     display: none;
+  }
+
+  .soft-header__subtitle {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .soft-icon-btn {
+    width: 2.55rem;
+    height: 2.55rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .soft-header {
+    gap: 0.65rem;
+    padding-bottom: 0.85rem;
+  }
+
+  .soft-header__right {
+    gap: 0.4rem;
   }
 }
 </style>

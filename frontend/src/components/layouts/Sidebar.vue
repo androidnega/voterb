@@ -23,15 +23,6 @@
         </svg>
         <span v-if="showLabels" class="soft-sidebar__title">VoterB</span>
       </router-link>
-
-      <button
-        type="button"
-        class="soft-sidebar__close lg:hidden"
-        aria-label="Close menu"
-        @click="closeMobileMenu"
-      >
-        <i class="fas fa-times"></i>
-      </button>
     </div>
 
     <nav class="soft-sidebar__nav">
@@ -228,7 +219,7 @@ const logout = async () => {
 }
 
 .soft-sidebar.has-labels .soft-sidebar__brand {
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 0 0.25rem;
 }
 
@@ -251,19 +242,6 @@ const logout = async () => {
   font-weight: 800;
   color: var(--vb-ink);
   letter-spacing: -0.02em;
-}
-
-.soft-sidebar__close {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 9999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--vb-muted);
-  background: transparent;
-  border: none;
-  cursor: pointer;
 }
 
 .soft-sidebar__nav {

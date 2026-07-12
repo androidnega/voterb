@@ -89,13 +89,13 @@ onUnmounted(() => {
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: 1rem 1rem 2rem;
+  padding: 0.75rem 0.85rem 1.75rem;
   transition: padding 0.3s ease;
 }
 
 @media (min-width: 640px) {
   .soft-main__inner {
-    padding: 1.15rem 1.35rem 2.25rem;
+    padding: 1.1rem 1.25rem 2.25rem;
   }
 }
 
