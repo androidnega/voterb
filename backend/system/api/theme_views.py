@@ -7,14 +7,15 @@ from system.models import SystemSetting
 
 THEME_SETTING_KEY = 'ui_theme'
 DASHBOARD_SETTING_KEY = 'ui_dashboard'
-ALLOWED_THEMES = {'classic', 'pulse'}
-ALLOWED_DASHBOARDS = {'atelier', 'operations'}
+ALLOWED_THEMES = {'classic', 'pulse', 'amber'}
+ALLOWED_DASHBOARDS = {'atelier', 'operations', 'lumen'}
 DEFAULT_THEME = 'classic'
 DEFAULT_DASHBOARD = 'atelier'
 
 THEME_OPTIONS = [
     {'id': 'classic', 'label': 'Classic', 'description': 'Sage soft-UI palette for the admin shell'},
     {'id': 'pulse', 'label': 'Pulse', 'description': 'Coral accent on light surfaces'},
+    {'id': 'amber', 'label': 'Amber', 'description': 'Warm cream surfaces with gold and charcoal accents'},
 ]
 
 DASHBOARD_OPTIONS = [
@@ -27,6 +28,11 @@ DASHBOARD_OPTIONS = [
         'id': 'operations',
         'label': 'Operations',
         'description': 'Compact stats, charts, and quick-access links for dense election ops.',
+    },
+    {
+        'id': 'lumen',
+        'label': 'Lumen',
+        'description': 'Warm soft-UI workspace with gauge, schedule cards, KPI chart, and activity table.',
     },
 ]
 

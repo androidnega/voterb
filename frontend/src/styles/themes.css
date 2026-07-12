@@ -30,7 +30,7 @@
   --vb-sage: #a3b18a;
   --vb-sage-soft: #d8e0cf;
   --vb-card-radius: 1.5rem;
-  --vb-card-shadow: 0 1px 3px rgba(28, 28, 28, 0.04), 0 4px 14px rgba(28, 28, 28, 0.03);
+  --vb-card-shadow: 0 1px 2px rgba(28, 28, 28, 0.035);
   --vb-positive: #3d4f44;
   --vb-positive-bg: #e8efe6;
   --vb-negative: #c45c5c;
@@ -74,9 +74,53 @@
   --vb-sage: #ff8fa3;
   --vb-sage-soft: #ffe4ea;
   --vb-card-radius: 1.5rem;
-  --vb-card-shadow: 0 1px 3px rgba(26, 26, 26, 0.04), 0 4px 14px rgba(26, 26, 26, 0.03);
+  --vb-card-shadow: 0 1px 2px rgba(26, 26, 26, 0.035);
   --vb-positive: #ff3b5c;
   --vb-positive-bg: #fff0f3;
+  --vb-negative: #c45c5c;
+  --vb-negative-bg: #fdeaea;
+
+  --admin-ink: var(--vb-ink);
+  --admin-muted: var(--vb-muted);
+  --admin-line: var(--vb-line);
+  --admin-surface: var(--vb-surface);
+  --admin-panel: var(--vb-panel);
+  --admin-teal: var(--vb-accent);
+  --admin-teal-soft: var(--vb-accent-soft);
+}
+
+[data-theme='amber'] {
+  --vb-accent: #e8b92a;
+  --vb-accent-hover: #d4a61f;
+  --vb-accent-soft: #fbf3d6;
+  --vb-accent-border: #f0d67a;
+  --vb-accent-shadow: rgba(232, 185, 42, 0.28);
+  --vb-ink: #2d2d2d;
+  --vb-surface: #ffffff;
+  --vb-panel: #f8f7f2;
+  --vb-muted: #8a877c;
+  --vb-line: #ebeae4;
+  --vb-shell-bg: #f8f7f2;
+  --vb-header-bg: transparent;
+  --vb-header-border: transparent;
+  --vb-sidebar-bg: #ffffff;
+  --vb-sidebar-border: transparent;
+  --vb-sidebar-text: #9a978c;
+  --vb-sidebar-text-hover: #2d2d2d;
+  --vb-sidebar-hover-bg: #f3f2ec;
+  --vb-sidebar-active-bg: #2d2d2d;
+  --vb-sidebar-active-text: #ffffff;
+  --vb-focus-ring: rgba(232, 185, 42, 0.22);
+  --vb-gradient-from: #f4c430;
+  --vb-gradient-to: #e8b92a;
+  --vb-pill-bg: #f0efe9;
+  --vb-pill-text: #5c5a52;
+  --vb-sage: #e8b92a;
+  --vb-sage-soft: #fbf3d6;
+  --vb-card-radius: 1.65rem;
+  --vb-card-shadow: 0 1px 3px rgba(45, 45, 45, 0.04);
+  --vb-positive: #3d4f44;
+  --vb-positive-bg: #e8efe6;
   --vb-negative: #c45c5c;
   --vb-negative-bg: #fdeaea;
 
@@ -141,6 +185,12 @@
 @media (min-width: 640px) {
   .theme-picker {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 960px) {
+  .theme-picker:not(.dashboard-picker) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -335,4 +385,52 @@
   background: var(--vb-accent-soft);
   border-color: var(--vb-accent-border);
   color: var(--vb-accent-hover);
+}
+
+[data-theme='amber'] .bg-emerald-50 { background-color: var(--vb-accent-soft) !important; }
+[data-theme='amber'] .bg-emerald-100 { background-color: #fbf3d6 !important; }
+[data-theme='amber'] .bg-emerald-500,
+[data-theme='amber'] .bg-emerald-600,
+[data-theme='amber'] .bg-emerald-700 { background-color: var(--vb-accent) !important; }
+[data-theme='amber'] .text-emerald-500,
+[data-theme='amber'] .text-emerald-600,
+[data-theme='amber'] .text-emerald-700,
+[data-theme='amber'] .text-emerald-800 { color: #b89214 !important; }
+[data-theme='amber'] .border-emerald-200,
+[data-theme='amber'] .border-emerald-300 { border-color: var(--vb-accent-border) !important; }
+[data-theme='amber'] .p-button.p-button-primary,
+[data-theme='amber'] .btn-primary {
+  background: var(--vb-ink);
+  border-color: var(--vb-ink);
+  color: #fff;
+}
+[data-theme='amber'] .p-button.p-button-primary:not(:disabled):hover,
+[data-theme='amber'] .btn-primary:hover {
+  background: #1f1f1f;
+  border-color: #1f1f1f;
+}
+[data-theme='amber'] .tone-teal {
+  background: var(--vb-accent-soft);
+  color: #b89214;
+}
+[data-theme='amber'] .text-teal-700,
+[data-theme='amber'] .text-emerald-700 {
+  color: #b89214 !important;
+}
+[data-theme='amber'] .hub-progress-fill {
+  background: linear-gradient(90deg, var(--vb-gradient-from), var(--vb-gradient-to));
+}
+[data-theme='amber'] .toggle.on {
+  background: var(--vb-accent);
+}
+[data-theme='amber'] .access-notice {
+  background: var(--vb-accent-soft);
+  border-color: var(--vb-accent-border);
+  color: #8a6f12;
+}
+[data-theme='amber'] input:focus,
+[data-theme='amber'] select:focus,
+[data-theme='amber'] .filter-input-wrap input:focus {
+  border-color: var(--vb-accent);
+  box-shadow: 0 0 0 3px var(--vb-focus-ring);
 }

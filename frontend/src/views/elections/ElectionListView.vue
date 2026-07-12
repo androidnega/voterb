@@ -43,14 +43,6 @@
       </TransitionGroup>
 
       <div class="filter-bar page-section">
-        <div class="filter-input-wrap">
-          <i class="fas fa-search"></i>
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="Search by title or description…"
-          />
-        </div>
         <select v-model="statusFilter" class="filter-select">
           <option value="">All statuses</option>
           <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
@@ -226,7 +218,6 @@ const canManageElections = computed(() => authStore.isElectionManager)
 const elections = ref([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
-const searchQuery = ref('')
 const statusFilter = ref('')
 
 const statusOptions = [
@@ -285,12 +276,6 @@ const filteredElections = computed(() => {
   if (statusFilter.value) {
     list = list.filter((e) => e.status === statusFilter.value)
   }
-  if (searchQuery.value) {
-    const q = searchQuery.value.toLowerCase()
-    list = list.filter(
-      (e) => e.title.toLowerCase().includes(q) || e.description?.toLowerCase().includes(q)
-    )
-  }
   return list
 })
 
@@ -304,7 +289,7 @@ const sortedElections = computed(() =>
   })
 )
 
-const hasActiveFilters = computed(() => !!searchQuery.value || !!statusFilter.value)
+const hasActiveFilters = computed(() => !!statusFilter.value)
 
 const panelSubtitle = computed(() => {
   if (loading.value) return 'Loading…'
@@ -313,7 +298,7 @@ const panelSubtitle = computed(() => {
 })
 
 const emptyMessage = computed(() => {
-  if (hasActiveFilters.value) return 'Try adjusting your search or status filter.'
+  if (hasActiveFilters.value) return 'Try adjusting your status filter.'
   if (canManageElections.value) return 'Create your first election to get started.'
   return 'No elections available.'
 })
@@ -362,7 +347,6 @@ const statusTone = (status) => {
 }
 
 const clearFilters = () => {
-  searchQuery.value = ''
   statusFilter.value = ''
 }
 

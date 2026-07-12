@@ -31,19 +31,6 @@
         </button>
       </form>
 
-      <div class="relative" ref="messagesRef">
-        <button
-          type="button"
-          class="soft-icon-btn"
-          :class="{ 'is-active': showMessages }"
-          aria-label="Messages"
-          @click.stop="toggleMessages"
-        >
-          <i class="far fa-comment-dots"></i>
-          <span v-if="unreadCount > 0" class="soft-icon-btn__dot"></span>
-        </button>
-      </div>
-
       <div class="relative" ref="notificationsRef">
         <button
           type="button"
@@ -85,6 +72,37 @@
           </div>
         </div>
       </div>
+
+      <div class="header-profile" ref="profileRef">
+        <button
+          type="button"
+          class="header-profile__trigger"
+          :aria-expanded="showProfile"
+          aria-haspopup="true"
+          @click.stop="toggleProfile"
+        >
+          <span class="header-profile__avatar" aria-hidden="true">{{ initials }}</span>
+          <span class="header-profile__meta">
+            <span class="header-profile__name">{{ profileName }}</span>
+            <span class="header-profile__role">{{ roleLabel }}</span>
+          </span>
+          <i class="fas fa-chevron-down header-profile__chevron" :class="{ 'is-open': showProfile }" aria-hidden="true"></i>
+        </button>
+
+        <div v-if="showProfile" class="header-profile__panel" role="menu">
+          <div class="header-profile__head">
+            <span class="header-profile__avatar header-profile__avatar--lg" aria-hidden="true">{{ initials }}</span>
+            <div>
+              <p class="header-profile__panel-name">{{ profileName }}</p>
+              <p class="header-profile__panel-email">{{ profileEmail }}</p>
+            </div>
+          </div>
+          <button type="button" class="header-profile__signout" role="menuitem" @click="handleLogout">
+            <i class="fas fa-sign-out-alt"></i>
+            Sign out
+          </button>
+        </div>
+      </div>
     </div>
   </header>
 </template>
@@ -110,9 +128,9 @@ defineProps({
 const emit = defineEmits(['toggle-sidebar'])
 
 const showNotifications = ref(false)
-const showMessages = ref(false)
+const showProfile = ref(false)
 const notificationsRef = ref(null)
-const messagesRef = ref(null)
+const profileRef = ref(null)
 const notifications = ref([])
 const loading = ref(false)
 const searchQuery = ref('')
@@ -122,6 +140,23 @@ const firstName = computed(() => {
   const user = authStore.user
   if (user?.first_name) return user.first_name
   return displayUserName(user).split(' ')[0]
+})
+
+const profileName = computed(() => displayUserName(authStore.user, 'Administrator'))
+
+const profileEmail = computed(() => authStore.user?.email || '—')
+
+const roleLabel = computed(() => {
+  const role = authStore.roleName || authStore.user?.role?.name || 'admin'
+  return String(role).replaceAll('_', ' ')
+})
+
+const initials = computed(() => {
+  const name = profileName.value.trim()
+  if (!name) return 'A'
+  const parts = name.split(/\s+/).filter(Boolean)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase()
 })
 
 const subtitle = computed(() => {
@@ -214,23 +249,24 @@ const timeAgo = (date) => {
 
 const closeMenus = () => {
   showNotifications.value = false
-  showMessages.value = false
+  showProfile.value = false
 }
 
 const toggleNotifications = () => {
-  showMessages.value = false
+  showProfile.value = false
   showNotifications.value = !showNotifications.value
   if (showNotifications.value) fetchNotifications()
 }
 
-const toggleMessages = () => {
+const toggleProfile = () => {
   showNotifications.value = false
-  showMessages.value = !showMessages.value
-  if (showMessages.value) {
-    showNotifications.value = true
-    fetchNotifications()
-    showMessages.value = false
-  }
+  showProfile.value = !showProfile.value
+}
+
+const handleLogout = async () => {
+  showProfile.value = false
+  await authStore.logout()
+  await router.replace('/login')
 }
 
 const toggleSidebar = () => {
@@ -239,8 +275,8 @@ const toggleSidebar = () => {
 
 const handleClickOutside = (event) => {
   const inNotifications = notificationsRef.value?.contains(event.target)
-  const inMessages = messagesRef.value?.contains(event.target)
-  if (!inNotifications && !inMessages) closeMenus()
+  const inProfile = profileRef.value?.contains(event.target)
+  if (!inNotifications && !inProfile) closeMenus()
 }
 
 onMounted(() => {
@@ -491,5 +527,155 @@ onUnmounted(() => {
   .soft-header__right {
     gap: 0.4rem;
   }
+
+  .header-profile__meta {
+    display: none;
+  }
+
+  .header-profile__chevron {
+    display: none;
+  }
+}
+
+.header-profile {
+  position: relative;
+  margin-left: 0.15rem;
+}
+
+.header-profile__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: none;
+  background: #fff;
+  border-radius: 9999px;
+  padding: 0.28rem 0.65rem 0.28rem 0.28rem;
+  box-shadow: var(--vb-card-shadow);
+  cursor: pointer;
+  max-width: 14rem;
+}
+
+.header-profile__trigger:hover,
+.header-profile__trigger[aria-expanded='true'] {
+  box-shadow: 0 2px 8px rgba(28, 28, 28, 0.06);
+}
+
+.header-profile__avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vb-accent-soft);
+  color: var(--vb-accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.header-profile__avatar--lg {
+  width: 2.55rem;
+  height: 2.55rem;
+  font-size: 0.75rem;
+}
+
+.header-profile__meta {
+  display: grid;
+  gap: 0.05rem;
+  text-align: left;
+  min-width: 0;
+}
+
+.header-profile__name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--vb-ink);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 7.5rem;
+  text-transform: capitalize;
+}
+
+.header-profile__role {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--vb-muted);
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 7.5rem;
+  text-transform: capitalize;
+}
+
+.header-profile__chevron {
+  font-size: 0.55rem;
+  color: #b0b0b0;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.header-profile__chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.header-profile__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.65rem);
+  width: min(16.5rem, calc(100vw - 1.5rem));
+  background: #fff;
+  border-radius: 1.1rem;
+  box-shadow: 0 12px 32px rgba(28, 28, 28, 0.08);
+  border: 1px solid #f0efe9;
+  padding: 0.85rem;
+  z-index: 40;
+}
+
+.header-profile__head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.65rem;
+  border-bottom: 1px solid #f0efe9;
+}
+
+.header-profile__panel-name {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--vb-ink);
+}
+
+.header-profile__panel-email {
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  color: var(--vb-muted);
+  word-break: break-all;
+}
+
+.header-profile__signout {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: none;
+  border-radius: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  background: #1c1c1c;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.header-profile__signout:hover {
+  background: #111;
 }
 </style>

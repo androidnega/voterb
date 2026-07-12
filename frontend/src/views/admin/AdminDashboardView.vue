@@ -230,6 +230,183 @@
     </section>
     </div>
 
+    <!-- Lumen template (warm soft-UI workspace) -->
+    <div v-else-if="isLumen" class="lumen-dash">
+      <div class="lumen-toolbar">
+        <router-link to="/elections" class="lumen-hero-btn">
+          <i class="fas fa-calendar-alt"></i>
+          Elections
+        </router-link>
+        <button type="button" class="lumen-hero-btn lumen-hero-btn--solid" :disabled="loading" @click="fetchDashboard">
+          <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
+          Refresh
+        </button>
+      </div>
+
+      <section class="lumen-metrics">
+        <div class="lumen-metrics__stats">
+          <article v-for="card in lumenStatCards" :key="card.label" class="lumen-metric">
+            <span class="lumen-metric__icon" :class="card.tone"><i :class="card.icon"></i></span>
+            <div>
+              <p class="lumen-metric__label">{{ card.label }}</p>
+              <p class="lumen-metric__value">{{ loading ? '—' : card.value }}</p>
+            </div>
+          </article>
+        </div>
+        <article class="lumen-gauge-card">
+          <div class="lumen-gauge-card__copy">
+            <p class="lumen-gauge-card__label">Participation</p>
+            <p class="lumen-gauge-card__hint">
+              {{ loading ? 'Loading…' : `${formatNumber(stats.unique_voters)} of ${formatNumber(stats.eligible_voters)} eligible` }}
+            </p>
+          </div>
+          <div class="lumen-gauge-card__chart">
+            <GaugeChart
+              v-if="!loading"
+              :value="stats.turnout"
+              :max="100"
+              color="#e8b92a"
+              :center-label="`${Math.round(stats.turnout)}%`"
+              height="7.5rem"
+              aria-label="Turnout percentage"
+            />
+            <div v-else class="chart-loading"><i class="fas fa-spinner fa-spin"></i></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="lumen-mid">
+        <article class="lumen-card lumen-schedule">
+          <div class="lumen-card__head">
+            <h2 class="lumen-card__title">Live schedule</h2>
+            <span class="lumen-card__meta">{{ filteredLiveElections.length }} shown</span>
+          </div>
+          <div class="lumen-pills">
+            <button
+              v-for="tab in scheduleTabs"
+              :key="tab.key"
+              type="button"
+              class="lumen-pill"
+              :class="{ 'is-active': scheduleTab === tab.key }"
+              @click="scheduleTab = tab.key"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+          <ul v-if="!loading && filteredLiveElections.length" class="lumen-schedule-list">
+            <li v-for="election in filteredLiveElections.slice(0, 4)" :key="election.uuid" class="lumen-schedule-item">
+              <div class="lumen-schedule-item__accent"></div>
+              <div class="lumen-schedule-item__body">
+                <p class="lumen-schedule-item__title">{{ election.title }}</p>
+                <p class="lumen-schedule-item__meta">
+                  {{ election.status }} · {{ formatNumber(election.votes_cast) }} votes · {{ election.turnout }}% turnout
+                </p>
+                <div class="lumen-schedule-item__footer">
+                  <span>{{ formatNumber(election.candidates) }} candidates</span>
+                  <router-link
+                    :to="election.status === 'open' ? `/monitor/${election.uuid}` : `/elections/${election.uuid}`"
+                    class="lumen-schedule-item__link"
+                  >
+                    {{ election.status === 'open' ? 'Monitor' : 'Open' }}
+                  </router-link>
+                </div>
+              </div>
+            </li>
+          </ul>
+          <p v-else-if="loading" class="empty-note">Loading…</p>
+          <p v-else class="empty-note">No elections match this filter.</p>
+        </article>
+
+        <article class="lumen-card lumen-kpi">
+          <div class="lumen-card__head">
+            <div>
+              <p class="lumen-kpi__eyebrow">7-day average share</p>
+              <h2 class="lumen-card__title">{{ loading ? '—' : `${lumenKpiAvg}%` }} voting activity</h2>
+            </div>
+          </div>
+          <div class="lumen-kpi__chart">
+            <AreaChart
+              v-if="!loading"
+              :labels="chartData.labels"
+              :data="chartData.values"
+              label="Votes"
+              color="#e8b92a"
+              height="10rem"
+              aria-label="Votes over the last seven days"
+            />
+            <div v-else class="chart-loading"><i class="fas fa-spinner fa-spin"></i></div>
+          </div>
+          <div class="lumen-mini-grid">
+            <div v-for="chip in lumenMiniChips" :key="chip.label" class="lumen-mini">
+              <p class="lumen-mini__label">{{ chip.label }}</p>
+              <p class="lumen-mini__value">{{ loading ? '—' : chip.value }}</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="lumen-card lumen-status">
+          <div class="lumen-card__head">
+            <h2 class="lumen-card__title">Election status</h2>
+          </div>
+          <p class="lumen-status__total">
+            <strong>{{ loading ? '—' : formatNumber(stats.total_elections) }}</strong>
+            total elections
+          </p>
+          <ul v-if="!loading && statusBars.length" class="lumen-status-list">
+            <li v-for="bar in statusBars" :key="bar.label">
+              <div class="lumen-status-list__row">
+                <span>{{ bar.label }}</span>
+                <strong>{{ bar.value }} · {{ bar.pct }}%</strong>
+              </div>
+              <div class="lumen-status-list__track">
+                <span class="lumen-status-list__fill" :style="{ width: `${bar.pct}%`, background: bar.color }"></span>
+              </div>
+            </li>
+          </ul>
+          <p v-else-if="loading" class="empty-note">Loading…</p>
+          <p v-else class="empty-note">No election status data yet.</p>
+        </article>
+      </section>
+
+      <section class="lumen-card lumen-table-card">
+        <div class="lumen-card__head">
+          <h2 class="lumen-card__title">Recent activity</h2>
+          <span class="lumen-card__meta">{{ recentActivities.length }} events</span>
+        </div>
+        <div class="lumen-table-wrap">
+          <table v-if="!loading && recentActivities.length" class="lumen-table">
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th>Type</th>
+                <th>When</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(item, idx) in recentActivities.slice(0, 8)" :key="`${item.time}-${idx}`">
+                <td>
+                  <div class="lumen-table__person">
+                    <span class="lumen-table__avatar" :class="`tone-${item.type}`">
+                      <i :class="item.icon"></i>
+                    </span>
+                    <span>{{ item.message }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span class="lumen-badge">{{ activityLabel(item.type) }}</span>
+                </td>
+                <td>{{ item.time }}</td>
+                <td class="lumen-table__action"><i class="fas fa-ellipsis-v"></i></td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else-if="loading" class="chart-loading"><i class="fas fa-spinner fa-spin"></i></div>
+          <p v-else class="empty-note">No recent activity yet.</p>
+        </div>
+      </section>
+    </div>
+
     <!-- Operations template -->
     <div v-else class="ops-dash">
       <div class="stat-grid page-section">
@@ -310,9 +487,13 @@ import StatCard from '@/components/admin/StatCard.vue'
 import DataPanel from '@/components/admin/DataPanel.vue'
 
 const REFRESH_MS = 30000
+const LUMEN_GOLD = '#e8b92a'
+const LUMEN_INK = '#2d2d2d'
+const LUMEN_MUTED = '#c5c2b6'
 
 const themeStore = useThemeStore()
 const isAtelier = computed(() => themeStore.isAtelierDashboard)
+const isLumen = computed(() => themeStore.isLumenDashboard)
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
 const chartHeight = computed(() => (viewportWidth.value < 640 ? '8.5rem' : '11.5rem'))
 const gaugeHeight = computed(() => (viewportWidth.value < 640 ? '8rem' : '9.5rem'))
@@ -322,6 +503,7 @@ const onResize = () => {
 }
 const loading = ref(true)
 const errorMessage = ref('')
+const scheduleTab = ref('all')
 
 const context = ref({
   display_name: '…',
@@ -347,6 +529,82 @@ const stats = ref({
 const liveElections = ref([])
 const chartData = ref({ labels: [], values: [] })
 const recentActivities = ref([])
+const statusBreakdown = ref({ labels: [], values: [] })
+
+const scheduleTabs = [
+  { key: 'all', label: 'All' },
+  { key: 'open', label: 'Open' },
+  { key: 'scheduled', label: 'Scheduled' },
+]
+
+const filteredLiveElections = computed(() => {
+  if (scheduleTab.value === 'all') return liveElections.value
+  return liveElections.value.filter((e) => e.status === scheduleTab.value)
+})
+
+const lumenStatCards = computed(() => [
+  {
+    label: 'Eligible voters',
+    value: formatNumber(stats.value.eligible_voters),
+    icon: 'fas fa-users',
+    tone: 'is-gold',
+  },
+  {
+    label: 'Votes cast',
+    value: formatNumber(stats.value.total_votes),
+    icon: 'fas fa-check-double',
+    tone: 'is-ink',
+  },
+  {
+    label: 'Turnout',
+    value: `${stats.value.turnout}%`,
+    icon: 'fas fa-chart-line',
+    tone: 'is-soft',
+  },
+  {
+    label: 'Candidates',
+    value: formatNumber(stats.value.total_candidates),
+    icon: 'fas fa-user-check',
+    tone: 'is-soft',
+  },
+])
+
+const lumenMiniChips = computed(() => [
+  { label: 'Votes today', value: formatNumber(stats.value.votes_today) },
+  { label: 'Unique voters', value: formatNumber(stats.value.unique_voters) },
+  { label: 'Open', value: formatNumber(stats.value.active_elections) },
+  { label: 'Scheduled', value: formatNumber(stats.value.scheduled_elections) },
+])
+
+const lumenKpiAvg = computed(() => {
+  const values = chartData.value.values || []
+  if (!values.length) return 0
+  const max = Math.max(...values, 1)
+  const avg = values.reduce((a, b) => a + b, 0) / values.length
+  return Math.round((avg / max) * 1000) / 10
+})
+
+const statusBars = computed(() => {
+  const labels = statusBreakdown.value.labels || []
+  const values = statusBreakdown.value.values || []
+  if (!labels.length) {
+    const fallback = [
+      { label: 'Open', value: stats.value.active_elections, color: LUMEN_GOLD },
+      { label: 'Scheduled', value: stats.value.scheduled_elections, color: LUMEN_INK },
+      { label: 'Closed', value: stats.value.closed_elections, color: LUMEN_MUTED },
+    ]
+    const total = fallback.reduce((s, r) => s + r.value, 0) || 1
+    return fallback.map((r) => ({ ...r, pct: Math.round((r.value / total) * 100) }))
+  }
+  const total = values.reduce((s, v) => s + v, 0) || 1
+  const colors = [LUMEN_GOLD, LUMEN_INK, LUMEN_MUTED, '#a3b18a', '#8a877c']
+  return labels.map((label, i) => ({
+    label,
+    value: values[i] || 0,
+    pct: Math.round(((values[i] || 0) / total) * 100),
+    color: colors[i % colors.length],
+  }))
+})
 
 const turnoutOnTrack = computed(() => Number(stats.value.turnout) >= 40)
 
@@ -467,6 +725,10 @@ const applyDashboardData = (data) => {
     labels: data.chart_data?.labels || [],
     values: data.chart_data?.values || [],
   }
+  statusBreakdown.value = {
+    labels: data.status_breakdown?.labels || [],
+    values: data.status_breakdown?.values || [],
+  }
 }
 
 const fetchDashboard = async (options = {}) => {
@@ -514,7 +776,8 @@ onUnmounted(() => {
 
 <style scoped>
 .soft-dash,
-.ops-dash {
+.ops-dash,
+.lumen-dash {
   max-width: none;
   width: 100%;
 }
@@ -1373,6 +1636,495 @@ onUnmounted(() => {
 
   .transfer-item .trend-pill {
     display: none;
+  }
+}
+
+/* ——— Lumen dashboard ——— */
+.lumen-dash {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  color: #2d2d2d;
+}
+
+.lumen-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.lumen-hero-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.7rem 1rem;
+  border-radius: 0.95rem;
+  border: 1px solid #ebeae4;
+  background: #fff;
+  color: #2d2d2d;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(45, 45, 45, 0.04);
+}
+
+.lumen-hero-btn--solid {
+  background: #2d2d2d;
+  border-color: #2d2d2d;
+  color: #fff;
+}
+
+.lumen-hero-btn--solid:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.lumen-metrics {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 1100px) {
+  .lumen-metrics {
+    grid-template-columns: minmax(0, 1fr) 16.5rem;
+    align-items: stretch;
+  }
+}
+
+.lumen-metrics__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 720px) {
+  .lumen-metrics__stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.lumen-metric {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.05rem;
+  background: #fff;
+  border-radius: 1.35rem;
+  box-shadow: 0 1px 3px rgba(45, 45, 45, 0.04);
+  min-width: 0;
+}
+
+.lumen-metric__icon {
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+
+.lumen-metric__icon.is-gold {
+  background: #fbf3d6;
+  color: #b89214;
+}
+
+.lumen-metric__icon.is-ink {
+  background: #2d2d2d;
+  color: #fff;
+}
+
+.lumen-metric__icon.is-soft {
+  background: #f0efe9;
+  color: #5c5a52;
+}
+
+.lumen-metric__label {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #8a877c;
+  font-weight: 600;
+}
+
+.lumen-metric__value {
+  margin: 0.15rem 0 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #2d2d2d;
+}
+
+.lumen-gauge-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.1rem;
+  background: #fff;
+  border-radius: 1.5rem;
+  box-shadow: 0 1px 3px rgba(45, 45, 45, 0.04);
+}
+
+.lumen-gauge-card__label {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #8a877c;
+}
+
+.lumen-gauge-card__hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #2d2d2d;
+  max-width: 9rem;
+  line-height: 1.35;
+}
+
+.lumen-gauge-card__chart {
+  width: 7.5rem;
+  flex-shrink: 0;
+}
+
+.lumen-mid {
+  display: grid;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+@media (min-width: 1100px) {
+  .lumen-mid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.2fr) minmax(14rem, 0.85fr);
+  }
+}
+
+.lumen-card {
+  background: #fff;
+  border-radius: 1.5rem;
+  padding: 1.15rem 1.2rem 1.2rem;
+  box-shadow: 0 1px 3px rgba(45, 45, 45, 0.04);
+}
+
+.lumen-mid > .lumen-card {
+  height: 100%;
+  min-height: 22rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.lumen-schedule-list,
+.lumen-status-list,
+.lumen-mid > .lumen-card > .empty-note {
+  flex: 1;
+}
+
+.lumen-kpi__chart {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0.25rem 0 0.85rem;
+  min-height: 10rem;
+}
+
+.lumen-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: auto;
+}
+
+.lumen-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.lumen-card__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #2d2d2d;
+}
+
+.lumen-card__meta {
+  font-size: 0.75rem;
+  color: #9a978c;
+  font-weight: 600;
+}
+
+.lumen-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.lumen-pill {
+  border: none;
+  border-radius: 9999px;
+  padding: 0.45rem 0.9rem;
+  background: #f3f2ec;
+  color: #6b685e;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lumen-pill.is-active {
+  background: #2d2d2d;
+  color: #fff;
+}
+
+.lumen-schedule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.lumen-schedule-item {
+  display: flex;
+  gap: 0;
+  border-radius: 1.15rem;
+  overflow: hidden;
+  background: linear-gradient(90deg, #fbf3d6 0%, #fff 42%);
+  border: 1px solid #f0efe9;
+}
+
+.lumen-schedule-item__accent {
+  width: 0.35rem;
+  background: #e8b92a;
+  flex-shrink: 0;
+}
+
+.lumen-schedule-item__body {
+  flex: 1;
+  min-width: 0;
+  padding: 0.85rem 0.95rem;
+}
+
+.lumen-schedule-item__title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #2d2d2d;
+}
+
+.lumen-schedule-item__meta {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: #8a877c;
+  text-transform: capitalize;
+}
+
+.lumen-schedule-item__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+  font-size: 0.72rem;
+  color: #9a978c;
+}
+
+.lumen-schedule-item__link {
+  font-weight: 800;
+  color: #2d2d2d;
+  text-decoration: none;
+}
+
+.lumen-kpi__eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.75rem;
+  color: #8a877c;
+  font-weight: 600;
+}
+
+@media (min-width: 520px) {
+  .lumen-mini-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.lumen-mini {
+  padding: 0.7rem 0.75rem;
+  border-radius: 1rem;
+  background: #f8f7f2;
+}
+
+.lumen-mini__label {
+  margin: 0;
+  font-size: 0.68rem;
+  color: #8a877c;
+  font-weight: 600;
+}
+
+.lumen-mini__value {
+  margin: 0.25rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #2d2d2d;
+}
+
+.lumen-status__total {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: #8a877c;
+}
+
+.lumen-status__total strong {
+  display: block;
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: #2d2d2d;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.15rem;
+}
+
+.lumen-status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.lumen-status-list__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: #6b685e;
+  margin-bottom: 0.4rem;
+}
+
+.lumen-status-list__row strong {
+  color: #2d2d2d;
+  font-weight: 800;
+}
+
+.lumen-status-list__track {
+  height: 0.45rem;
+  border-radius: 9999px;
+  background: #f0efe9;
+  overflow: hidden;
+}
+
+.lumen-status-list__fill {
+  display: block;
+  height: 100%;
+  border-radius: 9999px;
+  min-width: 0.35rem;
+}
+
+.lumen-table-card {
+  padding-bottom: 0.65rem;
+}
+
+.lumen-table-wrap {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lumen-table-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.lumen-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 36rem;
+}
+
+.lumen-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #9a978c;
+  padding: 0.55rem 0.5rem 0.75rem;
+  border-bottom: 1px solid #f0efe9;
+}
+
+.lumen-table td {
+  padding: 0.85rem 0.5rem;
+  border-bottom: 1px solid #f5f4ef;
+  font-size: 0.84rem;
+  color: #2d2d2d;
+  vertical-align: middle;
+}
+
+.lumen-table tr:last-child td {
+  border-bottom: none;
+}
+
+.lumen-table__person {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.lumen-table__person span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.lumen-table__avatar {
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  background: #f0efe9;
+  color: #5c5a52;
+}
+
+.lumen-table__avatar.tone-vote,
+.lumen-table__avatar.tone-election {
+  background: #fbf3d6;
+  color: #b89214;
+}
+
+.lumen-table__avatar.tone-login {
+  background: #2d2d2d;
+  color: #fff;
+}
+
+.lumen-badge {
+  display: inline-flex;
+  padding: 0.28rem 0.65rem;
+  border-radius: 9999px;
+  background: #f0efe9;
+  color: #5c5a52;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.lumen-table__action {
+  color: #c5c2b6;
+  text-align: right;
+  width: 2rem;
+}
+
+@media (max-width: 639px) {
+  .lumen-gauge-card {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

@@ -57,24 +57,14 @@
         <span class="soft-sidebar__icon"><i class="fas fa-cog"></i></span>
         <span v-if="showLabels" class="soft-sidebar__text">Settings</span>
       </router-link>
-
-      <button type="button" class="soft-sidebar__link" title="Sign out" @click="logout">
-        <span class="soft-sidebar__icon"><i class="fas fa-sign-out-alt"></i></span>
-        <span v-if="showLabels" class="soft-sidebar__text">Sign out</span>
-      </button>
-
-      <div class="soft-sidebar__avatar" :title="userDisplayName">
-        <span>{{ userInitial }}</span>
-      </div>
     </div>
   </aside>
 </template>
 
 <script setup>
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { displayUserName } from '@/utils/user'
 
 const props = defineProps({
   isMobileMenuOpen: {
@@ -86,7 +76,6 @@ const props = defineProps({
 const emit = defineEmits(['close-mobile'])
 
 const route = useRoute()
-const router = useRouter()
 const authStore = useAuthStore()
 const isCollapsed = inject('sidebarCollapsed')
 const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true)
@@ -102,8 +91,6 @@ const showLabels = computed(() => {
   if (!isDesktop.value) return false
   return !isCollapsed.value
 })
-const userDisplayName = computed(() => displayUserName(authStore.user))
-const userInitial = computed(() => userDisplayName.value.charAt(0).toUpperCase())
 
 onMounted(() => {
   syncViewport()
@@ -185,12 +172,6 @@ const isActive = (path) => {
 
 const closeMobileMenu = () => {
   emit('close-mobile')
-}
-
-const logout = async () => {
-  closeMobileMenu()
-  await authStore.logout()
-  router.push('/login')
 }
 </script>
 
@@ -362,24 +343,5 @@ const logout = async () => {
 
 .soft-sidebar.has-labels .soft-sidebar__footer {
   align-items: stretch;
-}
-
-.soft-sidebar__avatar {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 9999px;
-  margin-top: 0.45rem;
-  background: linear-gradient(145deg, var(--vb-sage-soft), var(--vb-sage));
-  color: var(--vb-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 0.9rem;
-  box-shadow: inset 0 0 0 3px #fff;
-}
-
-.soft-sidebar.has-labels .soft-sidebar__avatar {
-  margin-left: 0.28rem;
 }
 </style>

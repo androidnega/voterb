@@ -154,6 +154,7 @@ const maintenanceSaving = ref(false)
 const THEME_SWATCHES = {
   classic: ['#3d4f44', '#a3b18a', '#f2f1ec', '#1c1c1c'],
   pulse: ['#ff3b5c', '#1a1a1a', '#f3f4f6', '#71717a'],
+  amber: ['#e8b92a', '#2d2d2d', '#f8f7f2', '#8a877c'],
 }
 
 const FLAG_LABELS = {
@@ -192,6 +193,7 @@ const dashboardOptions = computed(() => (
     : [
         { id: 'atelier', label: 'Atelier Soft', description: 'Soft-UI mosaic dashboard' },
         { id: 'operations', label: 'Operations', description: 'Compact ops layout' },
+        { id: 'lumen', label: 'Lumen', description: 'Warm soft-UI workspace dashboard' },
       ]
 ))
 
@@ -326,6 +328,12 @@ onMounted(async () => {
   }
 }
 
+@media (min-width: 1100px) {
+  .dashboard-picker {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .dashboard-card__preview {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -350,6 +358,20 @@ onMounted(async () => {
   background: #e8efe6;
 }
 .preview--operations span:nth-child(4) { display: none; }
+.preview--lumen {
+  background: #f8f7f2;
+  grid-template-columns: 1.2fr 1fr 0.8fr;
+}
+.preview--lumen span:nth-child(1) {
+  grid-row: 1 / 3;
+  background: linear-gradient(180deg, #fbf3d6, #fff);
+}
+.preview--lumen span:nth-child(2) { background: #fff; }
+.preview--lumen span:nth-child(3) { background: #2d2d2d; }
+.preview--lumen span:nth-child(4) {
+  grid-column: 2 / 4;
+  background: #e8b92a;
+}
 
 .settings-loading,
 .settings-empty {

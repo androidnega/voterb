@@ -4,12 +4,13 @@ import { systemApi } from '@/api/system'
 const THEME_KEY = 'voterb_ui_theme'
 const DASHBOARD_KEY = 'voterb_ui_dashboard'
 
-export const THEME_IDS = ['classic', 'pulse']
-export const DASHBOARD_IDS = ['atelier', 'operations']
+export const THEME_IDS = ['classic', 'pulse', 'amber']
+export const DASHBOARD_IDS = ['atelier', 'operations', 'lumen']
 
 const FALLBACK_THEME_OPTIONS = [
   { id: 'classic', label: 'Classic', description: 'Sage soft-UI palette for the admin shell' },
   { id: 'pulse', label: 'Pulse', description: 'Coral accent on light surfaces' },
+  { id: 'amber', label: 'Amber', description: 'Warm cream surfaces with gold and charcoal accents' },
 ]
 
 const FALLBACK_DASHBOARD_OPTIONS = [
@@ -22,6 +23,11 @@ const FALLBACK_DASHBOARD_OPTIONS = [
     id: 'operations',
     label: 'Operations',
     description: 'Compact stats, charts, and quick-access links for dense election ops.',
+  },
+  {
+    id: 'lumen',
+    label: 'Lumen',
+    description: 'Warm soft-UI workspace with gauge, schedule cards, KPI chart, and activity table.',
   },
 ]
 
@@ -57,8 +63,10 @@ export const useThemeStore = defineStore('theme', {
 
   getters: {
     isPulse: (state) => state.theme === 'pulse',
+    isAmber: (state) => state.theme === 'amber',
     isAtelierDashboard: (state) => state.dashboard === 'atelier',
     isOperationsDashboard: (state) => state.dashboard === 'operations',
+    isLumenDashboard: (state) => state.dashboard === 'lumen',
   },
 
   actions: {
