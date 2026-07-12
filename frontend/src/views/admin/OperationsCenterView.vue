@@ -12,7 +12,7 @@
     <div class="stat-grid page-section">
       <StatCard label="Total Users" :value="overview.total_users || 0" icon="fas fa-users" tone="tone-slate" />
       <StatCard label="Active Sessions" :value="overview.active_sessions || 0" icon="fas fa-plug" tone="tone-teal" value-tone="text-teal-700" />
-      <StatCard label="Queue Tasks" :value="queues.active_tasks || 0" hint="Currently active" icon="fas fa-tasks" tone="tone-blue" value-tone="text-blue-700" />
+      <StatCard label="Active Queue" :value="queues.active_tasks || 0" hint="Background jobs" icon="fas fa-tasks" tone="tone-blue" value-tone="text-blue-700" />
       <StatCard
         label="System Status"
         :value="health.status === 'healthy' ? 'Healthy' : 'Degraded'"
@@ -46,16 +46,16 @@
         </div>
         <p class="panel-foot">Uptime: {{ formatUptime(infra.uptime) }}</p>
       </DataPanel>
-    </div>
 
-    <DataPanel title="Queue status" subtitle="Background job throughput" class="page-section">
-      <div class="stat-grid stat-grid-3 stat-grid--flush">
-        <StatCard label="Active" :value="queues.active_tasks || 0" icon="fas fa-play" tone="tone-teal" value-tone="text-teal-700" />
-        <StatCard label="Scheduled" :value="queues.scheduled_tasks || 0" icon="fas fa-clock" tone="tone-blue" value-tone="text-blue-700" />
-        <StatCard label="Reserved" :value="queues.reserved_tasks || 0" icon="fas fa-pause" tone="tone-amber" value-tone="text-amber-700" />
-      </div>
-      <p class="panel-foot">Celery: {{ queues.celery_enabled ? 'Enabled' : 'Not configured' }}</p>
-    </DataPanel>
+      <DataPanel title="Queue status" subtitle="Background job throughput">
+        <div class="metric-card-grid">
+          <div class="metric-row"><span>Active</span><strong>{{ queues.active_tasks || 0 }}</strong></div>
+          <div class="metric-row"><span>Scheduled</span><strong>{{ queues.scheduled_tasks || 0 }}</strong></div>
+          <div class="metric-row"><span>Reserved</span><strong>{{ queues.reserved_tasks || 0 }}</strong></div>
+          <div class="metric-row"><span>Celery</span><strong>{{ queues.celery_enabled ? 'Enabled' : 'Off' }}</strong></div>
+        </div>
+      </DataPanel>
+    </div>
 
     <DataPanel title="Recent system logs" subtitle="Latest platform events" no-padding class="page-section">
       <div class="admin-table-wrap">

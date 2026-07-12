@@ -71,7 +71,7 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { displayUserName } from '@/utils/user'
@@ -89,11 +89,30 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const isCollapsed = inject('sidebarCollapsed')
+const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true)
+
+const syncViewport = () => {
+  isDesktop.value = window.innerWidth >= 1024
+}
 
 const homeRoute = computed(() => authStore.homeRoute || '/dashboard')
-const showLabels = computed(() => props.isMobileMenuOpen || !isCollapsed.value)
+// Never render label text while the mobile drawer is closed — overflowing "VoterB" was peeking on screen.
+const showLabels = computed(() => {
+  if (props.isMobileMenuOpen) return true
+  if (!isDesktop.value) return false
+  return !isCollapsed.value
+})
 const userDisplayName = computed(() => displayUserName(authStore.user))
 const userInitial = computed(() => userDisplayName.value.charAt(0).toUpperCase())
+
+onMounted(() => {
+  syncViewport()
+  window.addEventListener('resize', syncViewport)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', syncViewport)
+})
 
 const showSettings = computed(() => {
   const role = authStore.roleName
@@ -191,6 +210,14 @@ const logout = async () => {
   padding: 1rem 0.65rem;
   transform: translateX(calc(-100% - 1.5rem));
   transition: transform 0.3s ease, width 0.3s ease;
+  overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+  .soft-sidebar:not(.is-open) {
+    visibility: hidden;
+    pointer-events: none;
+  }
 }
 
 @media (min-width: 1024px) {

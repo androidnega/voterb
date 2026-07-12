@@ -9,15 +9,28 @@
       @refresh="fetchAll"
     />
 
-    <div class="stat-grid stat-grid-5 page-section">
+    <div class="stat-grid page-section">
       <StatCard label="Total Alerts" :value="stats.total_alerts" icon="fas fa-bell" tone="tone-slate" />
       <StatCard label="Open Alerts" :value="stats.open_alerts" icon="fas fa-exclamation-circle" tone="tone-amber" value-tone="text-amber-700" />
       <StatCard label="High Risk" :value="stats.high_risk" icon="fas fa-radiation" tone="tone-rose" value-tone="text-rose-700" />
-      <StatCard label="Total Cases" :value="stats.total_cases" icon="fas fa-folder-open" tone="tone-indigo" value-tone="text-indigo-700" />
       <StatCard label="Open Cases" :value="stats.open_cases" icon="fas fa-search" tone="tone-blue" value-tone="text-blue-700" />
     </div>
 
-    <TabNav v-model="activeTab" :tabs="tabs" class="page-section" />
+    <div class="fraud-layout page-section">
+      <DataPanel title="Severity mix" subtitle="Open and recent alerts by severity">
+        <DonutChart
+          :labels="severityLabels"
+          :data="severityValues"
+          :empty="!severityValues.some((v) => v > 0)"
+          height="13rem"
+          empty-text="No alerts to chart"
+          aria-label="Alert severity breakdown"
+        />
+      </DataPanel>
+      <div>
+        <TabNav v-model="activeTab" :tabs="tabs" />
+      </div>
+    </div>
 
     <DataPanel v-if="activeTab === 'alerts'" title="Security alerts" subtitle="Automated detections requiring review" no-padding>
       <div class="admin-table-wrap">
@@ -124,6 +137,7 @@ import DataPanel from '@/components/admin/DataPanel.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
 import TabNav from '@/components/admin/TabNav.vue'
 import TablePagination from '@/components/admin/TablePagination.vue'
+import DonutChart from '@/components/charts/DonutChart.vue'
 
 const stats = ref({ total_alerts: 0, open_alerts: 0, high_risk: 0, total_cases: 0, open_cases: 0 })
 const alerts = ref([])
@@ -166,6 +180,17 @@ const tabs = computed(() => [
   { key: 'alerts', label: 'Alerts', icon: 'fas fa-bell', count: alerts.value.length },
   { key: 'cases', label: 'Cases', icon: 'fas fa-folder-open', count: cases.value.length },
 ])
+
+const severityOrder = ['critical', 'high', 'medium', 'low']
+const severityLabels = computed(() => {
+  const counts = severityOrder.map((level) => alerts.value.filter((a) => a.severity === level).length)
+  return severityOrder.filter((_, i) => counts[i] > 0).map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+})
+const severityValues = computed(() => (
+  severityOrder
+    .map((level) => alerts.value.filter((a) => a.severity === level).length)
+    .filter((count) => count > 0)
+))
 
 const fetchAll = async () => {
   loading.value = true
@@ -210,3 +235,17 @@ const resolveCase = async (uuid) => {
 
 onMounted(fetchAll)
 </script>
+
+<style scoped>
+.fraud-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 900px) {
+  .fraud-layout {
+    grid-template-columns: 0.9fr 1.1fr;
+    align-items: end;
+  }
+}
+</style>

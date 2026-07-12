@@ -17,13 +17,6 @@
       </template>
     </PageHeader>
 
-    <div class="stat-grid page-section">
-      <StatCard label="Faculties" :value="stats.faculties" icon="fas fa-university" tone="tone-indigo" value-tone="text-indigo-700" />
-      <StatCard label="Departments" :value="stats.departments" icon="fas fa-book" tone="tone-blue" value-tone="text-blue-700" />
-      <StatCard label="Levels" :value="stats.levels" icon="fas fa-layer-group" tone="tone-teal" value-tone="text-teal-700" />
-      <StatCard label="Active" :value="stats.active" hint="Faculties & departments" icon="fas fa-check-circle" tone="tone-slate" />
-    </div>
-
     <TabNav v-model="activeTab" :tabs="tabs" class="page-section" />
 
     <div class="filter-bar page-section">
@@ -158,7 +151,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { academicApi } from '@/api/academic'
 import PageHeader from '@/components/admin/PageHeader.vue'
-import StatCard from '@/components/admin/StatCard.vue'
 import DataPanel from '@/components/admin/DataPanel.vue'
 import TabNav from '@/components/admin/TabNav.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
@@ -197,13 +189,6 @@ const tabs = computed(() => [
   { key: 'departments', label: 'Departments', icon: 'fas fa-book', count: departments.value.length, tone: 'blue' },
   { key: 'levels', label: 'Levels', icon: 'fas fa-layer-group', count: levels.value.length, tone: 'teal' },
 ])
-
-const stats = computed(() => ({
-  faculties: faculties.value.length,
-  departments: departments.value.length,
-  levels: levels.value.length,
-  active: faculties.value.filter((f) => f.is_active).length + departments.value.filter((d) => d.is_active).length,
-}))
 
 const panelTitle = computed(() => ({
   faculties: 'Faculties',

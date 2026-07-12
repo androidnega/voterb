@@ -82,10 +82,7 @@
               {{ turnoutOnTrack ? 'On track' : 'Needs push' }}
             </span>
           </div>
-          <div class="period-select">
-            <span>Last 7 days</span>
-            <i class="fas fa-chevron-down"></i>
-          </div>
+          <span class="period-select">Last 7 days</span>
         </div>
 
         <div class="balance-metrics">
@@ -156,57 +153,45 @@
         </div>
       </article>
 
-      <article class="soft-card profile-card">
-        <div class="profile-card__avatar">{{ userInitial }}</div>
-        <h3 class="profile-card__name">{{ userDisplayName }}</h3>
-        <p class="profile-card__email">{{ userEmail || context.role_label }}</p>
-        <div class="profile-card__stats">
-          <div>
-            <strong>{{ loading ? '—' : formatNumber(stats.total_elections) }}</strong>
-            <span>Elections</span>
-          </div>
-          <div>
-            <strong>{{ loading ? '—' : formatNumber(stats.total_voters) }}</strong>
-            <span>Students</span>
-          </div>
-          <div>
-            <strong>{{ loading ? '—' : formatNumber(stats.active_elections) }}</strong>
-            <span>Live</span>
-          </div>
+      <article class="soft-card live-card">
+        <div class="transfers-card__head">
+          <h2 class="soft-card__title">Live elections</h2>
         </div>
+        <ul v-if="!loading && liveElections.length" class="live-list">
+          <li v-for="election in liveElections.slice(0, 4)" :key="election.uuid">
+            <div class="live-list__copy">
+              <p>{{ election.title }}</p>
+              <span>{{ election.status }} · {{ formatNumber(election.votes_cast) }} votes · {{ election.turnout }}%</span>
+            </div>
+            <router-link
+              v-if="election.status === 'open'"
+              :to="`/monitor/${election.uuid}`"
+              class="live-list__link"
+            >
+              Monitor
+            </router-link>
+            <router-link
+              v-else
+              :to="`/elections/${election.uuid}`"
+              class="live-list__link"
+            >
+              Open
+            </router-link>
+          </li>
+        </ul>
+        <p v-else-if="loading" class="empty-note">Loading…</p>
+        <p v-else class="empty-note">No open or scheduled elections.</p>
       </article>
     </section>
 
-    <!-- Row 3: actions & activity -->
+    <!-- Row 3: activity + shortcuts -->
     <section class="bottom-row">
-      <article class="soft-card cta-card">
-        <div class="cta-card__copy">
-          <h2 class="soft-card__title">Election workspace</h2>
-          <p class="cta-card__text">
-            {{ liveElectionCopy }}
-          </p>
-          <router-link to="/elections" class="soft-btn soft-btn--cta">
-            Manage elections
-            <span aria-hidden="true">+</span>
-          </router-link>
-        </div>
-        <div class="cta-card__art" aria-hidden="true">
-          <div class="ballot-stack ballot-stack--back"></div>
-          <div class="ballot-stack ballot-stack--mid"></div>
-          <div class="ballot-stack ballot-stack--front">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-        </div>
-      </article>
-
       <article class="soft-card transfers-card">
         <div class="transfers-card__head">
           <h2 class="soft-card__title">Recent activity</h2>
         </div>
         <ul v-if="!loading && recentActivities.length" class="transfer-list">
-          <li v-for="(item, idx) in recentActivities.slice(0, 4)" :key="`${item.time}-${idx}`" class="transfer-item">
+          <li v-for="(item, idx) in recentActivities.slice(0, 5)" :key="`${item.time}-${idx}`" class="transfer-item">
             <div class="transfer-item__avatar" :class="`tone-${item.type}`">
               <i :class="item.icon"></i>
             </div>
@@ -223,17 +208,24 @@
         <p v-else class="empty-note">No recent activity yet.</p>
       </article>
 
-      <article class="soft-card security-card">
-        <div class="security-card__icon" aria-hidden="true">
-          <i class="fas fa-fingerprint"></i>
+      <article class="soft-card shortcuts-card">
+        <div class="transfers-card__head">
+          <h2 class="soft-card__title">Quick actions</h2>
         </div>
-        <h2 class="soft-card__title">Keep ballots safe</h2>
-        <p class="security-card__text">
-          Review vault seals and strongroom integrity to protect election outcomes.
-        </p>
-        <router-link to="/strongroom" class="soft-btn">
-          Open strongroom
-        </router-link>
+        <div class="shortcut-grid">
+          <router-link
+            v-for="link in dashboardShortcuts"
+            :key="link.path"
+            :to="link.path"
+            class="shortcut-link"
+          >
+            <span class="shortcut-link__icon" :class="link.tone"><i :class="link.icon"></i></span>
+            <span>
+              <strong>{{ link.title }}</strong>
+              <small>{{ link.description }}</small>
+            </span>
+          </router-link>
+        </div>
       </article>
     </section>
     </div>
@@ -311,9 +303,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { dashboardApi } from '@/api/dashboard'
-import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
-import { displayUserName } from '@/utils/user'
 import AreaChart from '@/components/charts/AreaChart.vue'
 import GaugeChart from '@/components/charts/GaugeChart.vue'
 import StatCard from '@/components/admin/StatCard.vue'
@@ -321,7 +311,6 @@ import DataPanel from '@/components/admin/DataPanel.vue'
 
 const REFRESH_MS = 30000
 
-const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const isAtelier = computed(() => themeStore.isAtelierDashboard)
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
@@ -359,16 +348,6 @@ const liveElections = ref([])
 const chartData = ref({ labels: [], values: [] })
 const recentActivities = ref([])
 
-const userDisplayName = computed(() => {
-  if (context.value.display_name && context.value.display_name !== '…') {
-    return context.value.display_name
-  }
-  return displayUserName(authStore.user)
-})
-
-const userEmail = computed(() => authStore.user?.email || '')
-const userInitial = computed(() => userDisplayName.value.charAt(0).toUpperCase())
-
 const turnoutOnTrack = computed(() => Number(stats.value.turnout) >= 40)
 
 const voteTrend = computed(() => {
@@ -404,20 +383,6 @@ const sparkPoints = computed(() => {
       return `${x},${y}`
     })
     .join(' ')
-})
-
-const liveElectionCopy = computed(() => {
-  const open = liveElections.value.filter((e) => e.status === 'open')
-  if (open.length === 1) {
-    return `${open[0].title} is live with ${formatNumber(open[0].votes_cast)} votes cast so far.`
-  }
-  if (open.length > 1) {
-    return `${open.length} elections are currently open. Jump in to manage positions, candidates, and voters.`
-  }
-  if (stats.value.scheduled_elections > 0) {
-    return `${stats.value.scheduled_elections} election${stats.value.scheduled_elections === 1 ? '' : 's'} scheduled. Prepare ballots and eligibility lists.`
-  }
-  return 'Create and manage elections, positions, candidates, and voter lists from one place.'
 })
 
 const formatNumber = (value) => {
@@ -488,6 +453,8 @@ const opsQuickLinks = computed(() => {
   }
   return links
 })
+
+const dashboardShortcuts = computed(() => opsQuickLinks.value.slice(0, 4))
 
 const applyDashboardData = (data) => {
   if (data.context) {
@@ -673,15 +640,15 @@ onUnmounted(() => {
 }
 
 .kpi-row {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .kpi-card {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  min-height: 4.75rem;
-  padding: 0.95rem 1rem;
+  gap: 0.55rem;
+  min-height: 4.5rem;
+  padding: 0.85rem 0.8rem;
 }
 
 .kpi-card__copy {
@@ -698,7 +665,7 @@ onUnmounted(() => {
 
 .kpi-card__value {
   margin: 0.3rem 0 0;
-  font-size: 1.35rem;
+  font-size: 1.2rem;
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--vb-ink);
@@ -706,14 +673,14 @@ onUnmounted(() => {
 }
 
 .kpi-card__icon {
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 2.15rem;
+  height: 2.15rem;
   border-radius: 9999px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  font-size: 0.88rem;
+  font-size: 0.8rem;
 }
 
 .kpi-card__icon--sage {
@@ -742,12 +709,12 @@ onUnmounted(() => {
 .kpi-mini-bars {
   display: none;
   align-items: flex-end;
-  gap: 0.28rem;
-  height: 2.4rem;
+  gap: 0.22rem;
+  height: 2rem;
 }
 
 .kpi-mini-bars__bar {
-  width: 0.4rem;
+  width: 0.32rem;
   border-radius: 9999px;
   background: var(--vb-sage);
 }
@@ -759,8 +726,8 @@ onUnmounted(() => {
 .kpi-spark,
 .kpi-wave {
   display: none;
-  width: 3.75rem;
-  height: 1.9rem;
+  width: 3.1rem;
+  height: 1.6rem;
   flex-shrink: 0;
 }
 
@@ -814,15 +781,16 @@ onUnmounted(() => {
 
 .balance-metrics {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
   margin-bottom: 0.65rem;
 }
 
 .metric-chip {
   background: #f7f6f2;
-  border-radius: 1rem;
-  padding: 0.8rem 0.9rem;
+  border-radius: 0.9rem;
+  padding: 0.7rem 0.75rem;
+  min-width: 0;
 }
 
 .metric-chip__label {
@@ -840,7 +808,7 @@ onUnmounted(() => {
 }
 
 .metric-chip__value {
-  font-size: 1.2rem;
+  font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: -0.03em;
   color: var(--vb-ink);
@@ -1040,6 +1008,94 @@ onUnmounted(() => {
   margin-bottom: 0.75rem;
 }
 
+.live-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.live-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.live-list__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.live-list__copy p {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--vb-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.live-list__copy span {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--vb-muted);
+  text-transform: capitalize;
+}
+
+.live-list__link {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--vb-accent);
+  text-decoration: none;
+}
+
+.shortcut-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.shortcut-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 1rem;
+  background: #f7f6f2;
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+}
+
+.shortcut-link__icon {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+
+.shortcut-link strong {
+  display: block;
+  font-size: 0.84rem;
+  color: var(--vb-ink);
+}
+
+.shortcut-link small {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+  color: var(--vb-muted);
+}
+
 .transfer-list {
   list-style: none;
   margin: 0;
@@ -1148,13 +1204,7 @@ onUnmounted(() => {
 }
 
 @media (min-width: 480px) {
-  .kpi-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .kpi-mini-bars,
-  .kpi-spark,
-  .kpi-wave {
+  .kpi-mini-bars {
     display: flex;
   }
 
@@ -1163,8 +1213,29 @@ onUnmounted(() => {
     display: block;
   }
 
-  .balance-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .kpi-card {
+    gap: 0.7rem;
+    min-height: 5rem;
+    padding: 0.95rem 1rem;
+  }
+
+  .kpi-card__value {
+    font-size: 1.35rem;
+  }
+
+  .kpi-card__icon {
+    width: 2.4rem;
+    height: 2.4rem;
+    font-size: 0.88rem;
+  }
+
+  .metric-chip {
+    border-radius: 1rem;
+    padding: 0.8rem 0.9rem;
+  }
+
+  .metric-chip__value {
+    font-size: 1.2rem;
   }
 }
 
@@ -1266,7 +1337,7 @@ onUnmounted(() => {
   }
 
   .bottom-row {
-    grid-template-columns: 1.55fr 1fr 0.85fr;
+    grid-template-columns: 1.35fr 1fr;
     gap: 1rem;
   }
 
