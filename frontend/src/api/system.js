@@ -16,6 +16,12 @@ export const systemApi = {
   updateFeatureFlag(key, isEnabled) {
     return api.patch(`/system/feature-flags/${key}/`, { is_enabled: isEnabled })
   },
+  listSettings(category) {
+    return api.get('/system/settings/', { params: category ? { category } : undefined })
+  },
+  updateSetting(key, value) {
+    return api.patch(`/system/settings/${key}/`, { value: String(value) })
+  },
   getInstitution() {
     return api.get('/system/institution/')
   },

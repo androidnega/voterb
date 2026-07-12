@@ -15,6 +15,7 @@ from candidates.models import Candidate
 from elections.models import Election, Position, VoterEligibility
 from elections.services.scope_eligibility import student_can_access_election
 from security.models import SVTToken
+from system.settings_utils import get_setting_int
 from voting.models import Vote
 
 SVT_PATTERN = re.compile(r'^v-[a-z]{3}-\d{4}$')
@@ -50,6 +51,38 @@ def candidate_photo_url(candidate, request=None):
         return None
     # Relative /media path so Vite LAN proxy can serve photos on all devices
     return candidate.photo.url
+
+
+def _active_issued_svt(user, election):
+    now = timezone.now()
+    return (
+        SVTToken.objects.filter(
+            user=user,
+            election=election,
+            status='issued',
+            expires_at__gt=now,
+        )
+        .order_by('-issued_at')
+        .first()
+    )
+
+
+def _revoke_open_svts(user, election):
+    """Expire any issued/validated tokens so older codes cannot be reused."""
+    SVTToken.objects.filter(
+        user=user,
+        election=election,
+        status__in=['issued', 'validated'],
+    ).update(status='expired')
+
+
+def _svt_request_count_last_hour(user, election):
+    cutoff = timezone.now() - timedelta(hours=1)
+    return SVTToken.objects.filter(
+        user=user,
+        election=election,
+        issued_at__gte=cutoff,
+    ).count()
 
 
 class EligibleElectionsView(APIView):
@@ -88,6 +121,7 @@ class SVTRequestView(APIView):
     def post(self, request, uuid):
         election = get_object_or_404(Election, uuid=uuid)
         user = request.user
+        force_resend = bool(request.data.get('resend') or request.data.get('force'))
 
         if election.status != 'open':
             return Response({'error': 'Election is not open'}, status=status.HTTP_400_BAD_REQUEST)
@@ -98,34 +132,72 @@ class SVTRequestView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        existing = SVTToken.objects.filter(
-            user=user,
-            election=election,
-            status__in=['issued', 'validated'],
-        ).first()
-        if existing:
-            existing.status = 'expired'
-            existing.save(update_fields=['status'])
+        max_per_hour = max(1, get_setting_int('svt_max_requests_per_hour', 5))
+        if _svt_request_count_last_hour(user, election) >= max_per_hour:
+            return Response(
+                {'error': 'Too many SVT requests. Please wait and try again later.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        active = _active_issued_svt(user, election)
+
+        # First request / normal request: keep the unexpired token, do not mint another.
+        if active and not force_resend:
+            return Response({
+                'message': 'An SVT was already issued and is still valid. Enter that token to continue.',
+                'svt_id': active.svt_id,
+                'already_issued': True,
+                'expires_at': active.expires_at,
+            })
+
+        # Explicit resend: revoke previous tokens so the first code is no longer accepted.
+        if force_resend:
+            cooldown = max(0, get_setting_int('svt_resend_cooldown_seconds', 60))
+            latest = (
+                SVTToken.objects.filter(user=user, election=election)
+                .order_by('-issued_at')
+                .first()
+            )
+            if latest and latest.last_resent_at:
+                elapsed = (timezone.now() - latest.last_resent_at).total_seconds()
+                if elapsed < cooldown:
+                    wait = int(cooldown - elapsed)
+                    return Response(
+                        {'error': f'Please wait {wait}s before requesting another SVT.'},
+                        status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    )
+            elif latest and cooldown:
+                elapsed = (timezone.now() - latest.issued_at).total_seconds()
+                if elapsed < cooldown:
+                    wait = int(cooldown - elapsed)
+                    return Response(
+                        {'error': f'Please wait {wait}s before requesting another SVT.'},
+                        status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    )
+
+            _revoke_open_svts(user, election)
 
         code = generate_svt()
         hashed = hash_svt(code)
-        expires_at = timezone.now() + timedelta(minutes=10)
+        expiry_minutes = max(1, get_setting_int('svt_expiry_minutes', 10))
+        expires_at = timezone.now() + timedelta(minutes=expiry_minutes)
         svt = SVTToken.objects.create(
             user=user,
             election=election,
             token_hash=hashed,
             status='issued',
             expires_at=expires_at,
+            last_resent_at=timezone.now() if force_resend else None,
         )
 
         print(f'🔑 SVT for {user.email} (election: {election.title}): {code}')
 
-        payload = {
-            'message': 'SVT sent to your phone',
+        return Response({
+            'message': 'SVT sent to your phone' if not force_resend else 'A new SVT was issued. Previous tokens are no longer valid.',
             'svt_id': svt.svt_id,
-        }
-
-        return Response(payload)
+            'already_issued': False,
+            'resent': force_resend,
+        })
 
 
 class SVTValidateView(APIView):
@@ -165,9 +237,27 @@ class SVTValidateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        max_attempts = max(1, get_setting_int('svt_max_validation_attempts', 5))
+        if svt.validation_attempts >= max_attempts:
+            svt.status = 'revoked'
+            svt.save(update_fields=['status'])
+            return Response(
+                {'error': 'Too many invalid attempts. Request a new SVT.'},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         if hash_svt(svt_code) != svt.token_hash:
             svt.validation_attempts += 1
-            svt.save(update_fields=['validation_attempts'])
+            updates = ['validation_attempts']
+            if svt.validation_attempts >= max_attempts:
+                svt.status = 'revoked'
+                updates.append('status')
+            svt.save(update_fields=updates)
+            if svt.status == 'revoked':
+                return Response(
+                    {'error': 'Too many invalid attempts. Request a new SVT.'},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
             return Response({'error': 'Invalid SVT code'}, status=status.HTTP_400_BAD_REQUEST)
 
         svt.status = 'validated'

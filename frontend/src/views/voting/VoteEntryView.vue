@@ -44,7 +44,7 @@
             <i class="fas fa-key" aria-hidden="true"></i>
             Secure Voting Token
           </span>
-          <div class="svt-field__shell" :class="{ 'is-focus': fieldFocused, 'is-error': !!errorMessage }">
+          <div class="svt-field__shell" :class="{ 'is-focus': fieldFocused }">
             <span class="svt-field__prefix" aria-hidden="true">SVT</span>
             <input
               ref="svtInput"
@@ -54,7 +54,7 @@
               autocomplete="one-time-code"
               spellcheck="false"
               maxlength="10"
-              placeholder="Enter your token"
+              placeholder="v-xxx-0000"
               aria-label="Secure Voting Token"
               @focus="fieldFocused = true"
               @blur="fieldFocused = false"
@@ -195,8 +195,11 @@ const requestSVT = async () => {
   requesting.value = true
   errorMessage.value = ''
   try {
-    await votingApi.requestSVT(electionUuid)
+    const { data } = await votingApi.requestSVT(electionUuid)
     step.value = 'validate'
+    if (data?.already_issued) {
+      errorMessage.value = ''
+    }
     await nextTick()
     svtInput.value?.focus()
   } catch (error) {
@@ -230,9 +233,11 @@ const resendSVT = async () => {
   requesting.value = true
   errorMessage.value = ''
   try {
-    await votingApi.requestSVT(electionUuid)
+    await votingApi.requestSVT(electionUuid, { resend: true })
     svtDisplay.value = ''
     svtNormalized.value = ''
+    await nextTick()
+    svtInput.value?.focus()
   } catch (error) {
     errorMessage.value = error.response?.data?.error || 'Failed to resend. Please try again.'
   } finally {
@@ -387,13 +392,8 @@ const resendSVT = async () => {
 
 .svt-field__shell.is-focus {
   background: #fff;
-  border-color: #0f766e;
-  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
-}
-
-.svt-field__shell.is-error {
-  border-color: #f87171;
-  box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.12);
+  border-color: #d6d3d1;
+  box-shadow: 0 0 0 3px rgba(28, 25, 23, 0.04);
 }
 
 .svt-field__prefix {
@@ -417,11 +417,11 @@ const resendSVT = async () => {
 }
 
 .svt-field__input::placeholder {
-  color: #d6d3d1;
-  letter-spacing: 0.04em;
+  color: rgba(168, 162, 158, 0.45);
+  letter-spacing: 0.14em;
   font-weight: 600;
-  font-family: inherit;
-  font-size: 0.92rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1.05rem;
 }
 
 .svt-field__seal {

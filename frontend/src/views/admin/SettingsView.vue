@@ -89,6 +89,29 @@
         </div>
       </DataPanel>
 
+      <DataPanel title="Security & auth" subtitle="OTP, SVT, and session controls used across the platform">
+        <div v-if="securityLoading" class="settings-loading"><i class="fas fa-spinner fa-spin"></i> Loading security settings…</div>
+        <div v-else-if="securitySettings.length === 0" class="settings-empty">
+          No security settings found. Run <code>seed_system_defaults</code> on the backend.
+        </div>
+        <div v-else class="security-settings">
+          <label v-for="setting in securitySettings" :key="setting.key" class="security-row">
+            <div>
+              <p class="toggle-title">{{ securityLabel(setting.key) }}</p>
+              <p class="toggle-desc">{{ setting.description || setting.key }}</p>
+            </div>
+            <input
+              v-model="setting.value"
+              class="security-input"
+              type="number"
+              min="1"
+              :disabled="securitySavingKey === setting.key"
+              @change="saveSecuritySetting(setting)"
+            />
+          </label>
+        </div>
+      </DataPanel>
+
       <DataPanel title="Maintenance mode" subtitle="Temporarily block non-admin access">
         <div class="toggle-list">
           <label class="toggle-row">
@@ -147,6 +170,9 @@ const selectedDashboard = ref(themeStore.dashboard)
 const featureFlags = ref([])
 const flagsLoading = ref(false)
 const flagSavingKey = ref('')
+const securitySettings = ref([])
+const securityLoading = ref(false)
+const securitySavingKey = ref('')
 const institution = ref({})
 const maintenance = ref({ is_active: false, message: '' })
 const maintenanceSaving = ref(false)
@@ -170,6 +196,19 @@ const FLAG_LABELS = {
   audit_logging: 'Audit logging',
   maintenance_mode: 'Maintenance mode flag',
 }
+
+const SECURITY_LABELS = {
+  otp_length: 'OTP length',
+  otp_expiry_minutes: 'OTP expiry (minutes)',
+  svt_expiry_minutes: 'SVT expiry (minutes)',
+  svt_max_requests_per_hour: 'SVT max requests / hour',
+  svt_resend_cooldown_seconds: 'SVT resend cooldown (seconds)',
+  svt_max_validation_attempts: 'SVT max failed attempts',
+  session_timeout_minutes: 'Session timeout (minutes)',
+  max_login_attempts: 'Max login attempts',
+}
+
+const SECURITY_KEYS = Object.keys(SECURITY_LABELS)
 
 const roleName = computed(() => authStore.roleName)
 const isSuperAdmin = computed(() => authStore.isSuperAdmin)
@@ -198,6 +237,7 @@ const dashboardOptions = computed(() => (
 ))
 
 const flagLabel = (flag) => FLAG_LABELS[flag.key] || flag.key.replaceAll('_', ' ')
+const securityLabel = (key) => SECURITY_LABELS[key] || key.replaceAll('_', ' ')
 
 const flash = (message) => {
   saveMessage.value = message
@@ -309,11 +349,50 @@ const saveMaintenanceMessage = async () => {
   }
 }
 
+const loadSecuritySettings = async () => {
+  securityLoading.value = true
+  try {
+    const { data } = await systemApi.listSettings('security')
+    const rows = Array.isArray(data) ? data : []
+    securitySettings.value = rows
+      .filter((row) => SECURITY_KEYS.includes(row.key))
+      .sort((a, b) => SECURITY_KEYS.indexOf(a.key) - SECURITY_KEYS.indexOf(b.key))
+      .map((row) => ({ ...row, value: String(row.value ?? '') }))
+  } catch (error) {
+    console.error(error)
+    securitySettings.value = []
+  } finally {
+    securityLoading.value = false
+  }
+}
+
+const saveSecuritySetting = async (setting) => {
+  const value = String(setting.value ?? '').trim()
+  if (!value || Number(value) < 1) {
+    flash('Enter a positive number.')
+    await loadSecuritySettings()
+    return
+  }
+  securitySavingKey.value = setting.key
+  try {
+    const { data } = await systemApi.updateSetting(setting.key, value)
+    const idx = securitySettings.value.findIndex((s) => s.key === setting.key)
+    if (idx >= 0) securitySettings.value[idx] = { ...securitySettings.value[idx], ...data, value: String(data.value) }
+    flash(`${securityLabel(setting.key)} saved.`)
+  } catch (error) {
+    console.error(error)
+    flash('Failed to save security setting.')
+    await loadSecuritySettings()
+  } finally {
+    securitySavingKey.value = ''
+  }
+}
+
 onMounted(async () => {
   selectedTheme.value = themeStore.theme
   selectedDashboard.value = themeStore.dashboard
   if (!isSuperAdmin.value) return
-  await Promise.all([loadFlags(), loadInstitution(), loadMaintenance()])
+  await Promise.all([loadFlags(), loadSecuritySettings(), loadInstitution(), loadMaintenance()])
 })
 </script>
 
@@ -378,6 +457,43 @@ onMounted(async () => {
   color: var(--vb-muted, #8a8a8a);
   font-size: 0.85rem;
   padding: 0.5rem 0;
+}
+
+.settings-empty code {
+  font-size: 0.78rem;
+}
+
+.security-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.security-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--vb-line, #ebeae4);
+}
+
+.security-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.security-input {
+  width: 5.5rem;
+  flex-shrink: 0;
+  border: 1px solid var(--vb-line, #ebeae4);
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+  font-weight: 700;
+  color: var(--vb-ink, #1c1c1c);
+  text-align: center;
+  background: #fafaf9;
 }
 
 .maint-message {

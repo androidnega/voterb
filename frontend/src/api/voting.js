@@ -4,8 +4,8 @@ export const votingApi = {
   getEligibleElections() {
     return api.get('/voting/eligible/')
   },
-  requestSVT(electionUuid) {
-    return api.post(`/voting/elections/${electionUuid}/svt/request/`)
+  requestSVT(electionUuid, options = {}) {
+    return api.post(`/voting/elections/${electionUuid}/svt/request/`, options)
   },
   validateSVT(electionUuid, svtCode) {
     return api.post(`/voting/elections/${electionUuid}/svt/validate/`, { svt_code: svtCode })
