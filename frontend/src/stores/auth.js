@@ -40,7 +40,9 @@ export const useAuthStore = defineStore('auth', {
     roleName: (state) => resolveRoleName(state.user),
     needsOnboarding: (state) => {
       if (!isStudentRole(resolveRoleName(state.user), state.user)) return false
-      return state.requiresOnboarding || !state.user?.onboarding_completed
+      // Only the server flag matters — never re-onboard completed students
+      if (state.user?.onboarding_completed === true) return false
+      return state.user?.onboarding_completed === false
     },
     isSuperAdmin: (state) => {
       const role = resolveRoleName(state.user)
@@ -53,7 +55,7 @@ export const useAuthStore = defineStore('auth', {
     homeRoute: (state) => {
       const role = resolveRoleName(state.user)
       if (isStudentRole(role, state.user)) {
-        if (state.requiresOnboarding || !state.user?.onboarding_completed) return '/onboarding'
+        if (state.user?.onboarding_completed === false) return '/onboarding'
         return '/student'
       }
       if (isAdminRole(role, state.user)) return '/dashboard'
@@ -62,6 +64,14 @@ export const useAuthStore = defineStore('auth', {
   },
 
   actions: {
+    syncOnboardingFlag(user = this.user) {
+      const needs = isStudentRole(resolveRoleName(user), user) && user?.onboarding_completed === false
+      this.requiresOnboarding = needs
+      if (needs) localStorage.setItem('requires_onboarding', 'true')
+      else localStorage.removeItem('requires_onboarding')
+      return needs
+    },
+
     async login(identifier, password = null) {
       const requestData = { identifier }
       if (password) requestData.password = password
@@ -75,11 +85,12 @@ export const useAuthStore = defineStore('auth', {
       if (response.data.requires_otp) {
         this.pendingOtp = response.data.otp_session_id
         this.isNewUser = response.data.is_new_user || false
-        this.requiresOnboarding = response.data.requires_onboarding || false
+        this.requiresOnboarding = !!response.data.requires_onboarding
+        if (!this.requiresOnboarding) localStorage.removeItem('requires_onboarding')
         return {
           requires_otp: true,
           is_staff: response.data.is_staff,
-          requires_onboarding: response.data.requires_onboarding || false,
+          requires_onboarding: this.requiresOnboarding,
         }
       }
 
@@ -94,12 +105,13 @@ export const useAuthStore = defineStore('auth', {
         code,
       })
       this.isNewUser = response.data.is_new_user || false
-      this.requiresOnboarding = response.data.requires_onboarding || false
+      this.requiresOnboarding = !!response.data.requires_onboarding
       await this.applyAuthResponse(response.data)
+      this.syncOnboardingFlag(this.user)
       return {
         success: true,
         homeRoute: this.homeRoute,
-        requires_onboarding: this.requiresOnboarding,
+        requires_onboarding: this.needsOnboarding,
       }
     },
 
@@ -111,10 +123,17 @@ export const useAuthStore = defineStore('auth', {
         // Keep session from OTP/login payload if /me is temporarily unavailable
         console.warn('Profile fetch failed after auth; using token payload.', error)
         this.hydrateUserFromTokenPayload(data)
+        this.syncOnboardingFlag(this.user)
       }
     },
 
     hydrateUserFromTokenPayload(data) {
+      const completed =
+        data.onboarding_completed === true
+          ? true
+          : data.onboarding_completed === false
+            ? false
+            : data.requires_onboarding !== true
       this.user = {
         uuid: data.user_uuid,
         role_name: data.role_name || data.role || localStorage.getItem('user_role'),
@@ -122,9 +141,10 @@ export const useAuthStore = defineStore('auth', {
         is_staff: data.is_staff,
         is_superuser: data.is_superuser,
         index_number: data.index_number || null,
-        onboarding_completed: data.onboarding_completed ?? false,
+        onboarding_completed: completed,
       }
       this.isAuthenticated = true
+      this.syncOnboardingFlag(this.user)
     },
 
     setTokens(data) {
@@ -139,9 +159,16 @@ export const useAuthStore = defineStore('auth', {
       if (this.isNewUser) {
         localStorage.setItem('is_new_user', 'true')
       }
-      if (this.requiresOnboarding) {
+
+      // Prefer explicit server onboarding flag over sticky localStorage
+      if (data.onboarding_completed === true) {
+        this.requiresOnboarding = false
+        localStorage.removeItem('requires_onboarding')
+      } else if (data.requires_onboarding === true) {
+        this.requiresOnboarding = true
         localStorage.setItem('requires_onboarding', 'true')
-      } else {
+      } else if (data.requires_onboarding === false) {
+        this.requiresOnboarding = false
         localStorage.removeItem('requires_onboarding')
       }
 
@@ -154,10 +181,7 @@ export const useAuthStore = defineStore('auth', {
       const response = await api.get('/accounts/auth/me/')
       this.user = response.data
       this.isAuthenticated = true
-      this.requiresOnboarding = !response.data.onboarding_completed && isStudentRole(
-        resolveRoleName(this.user),
-        this.user
-      )
+      this.syncOnboardingFlag(this.user)
       const role = resolveRoleName(this.user)
       if (role) localStorage.setItem('user_role', role)
       return this.user
@@ -220,7 +244,10 @@ export const useAuthStore = defineStore('auth', {
               role: role ? { name: role } : null,
               is_staff: ['admin', 'super_admin', 'auditor'].includes(role),
               is_superuser: role === 'super_admin',
+              // Unknown until /me succeeds — do not force onboarding from stale cache
+              onboarding_completed: localStorage.getItem('requires_onboarding') === 'true' ? false : true,
             }
+            this.syncOnboardingFlag(this.user)
           } else {
             this.clearLocalStorage()
           }

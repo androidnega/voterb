@@ -21,7 +21,7 @@ class Command(BaseCommand):
             {'key': 'site_tagline', 'value': 'Secure Campus Elections', 'category': 'general', 'description': 'Tagline shown on the login page'},
             {'key': 'session_timeout_minutes', 'value': '30', 'category': 'security', 'description': 'Session timeout in minutes'},
             {'key': 'max_login_attempts', 'value': '5', 'category': 'security', 'description': 'Maximum failed login attempts before lockout'},
-            {'key': 'otp_length', 'value': '6', 'category': 'security', 'description': 'Length of OTP code'},
+            {'key': 'otp_length', 'value': '6', 'category': 'security', 'description': 'Digit count after the rte- prefix (e.g. rte-123456)'},
             {'key': 'otp_expiry_minutes', 'value': '5', 'category': 'security', 'description': 'OTP expiry time in minutes'},
             {'key': 'svt_expiry_minutes', 'value': '10', 'category': 'security', 'description': 'SVT expiry time in minutes'},
             {'key': 'svt_max_requests_per_hour', 'value': '5', 'category': 'security', 'description': 'Max SVT request/resend actions per voter per election per hour'},

@@ -198,7 +198,7 @@ const FLAG_LABELS = {
 }
 
 const SECURITY_LABELS = {
-  otp_length: 'OTP length',
+  otp_length: 'OTP digits (after rte-)',
   otp_expiry_minutes: 'OTP expiry (minutes)',
   svt_expiry_minutes: 'SVT expiry (minutes)',
   svt_max_requests_per_hour: 'SVT max requests / hour',

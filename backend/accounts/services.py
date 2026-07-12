@@ -1,5 +1,6 @@
 import hashlib
 import random
+import re
 from datetime import timedelta
 
 from django.utils import timezone
@@ -8,17 +9,34 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from accounts.models import OTPRequest, Session
 from system.settings_utils import get_setting_int
 
+OTP_PREFIX = 'rte-'
+
+
+def normalize_otp(code):
+    """Normalize to rte-<digits> regardless of how the user typed it."""
+    raw = str(code or '').strip().lower().replace(' ', '')
+    if raw.startswith(OTP_PREFIX):
+        raw = raw[len(OTP_PREFIX):]
+    digits = re.sub(r'\D', '', raw)
+    if not digits:
+        return ''
+    return f'{OTP_PREFIX}{digits}'
+
+
+def hash_otp(code):
+    return hashlib.sha256(normalize_otp(code).encode()).hexdigest()
+
 
 class OTPService:
     @staticmethod
     def create_otp(user, purpose='login', channel='sms'):
-        """Generate OTP, hash it, store in DB, and return the OTP request object."""
+        """Generate OTP as rte-<digits>, hash it, store, and return the request."""
         length = max(4, min(8, get_setting_int('otp_length', 6)))
-        # Keep numeric OTP within configured length
         upper = 10 ** length
         lower = 10 ** (length - 1)
-        code = f'{random.randint(lower, upper - 1)}'
-        hashed = hashlib.sha256(code.encode()).hexdigest()
+        digits = f'{random.randint(lower, upper - 1)}'
+        code = f'{OTP_PREFIX}{digits}'
+        hashed = hash_otp(code)
         expiry_minutes = max(1, get_setting_int('otp_expiry_minutes', 5))
         expires_at = timezone.now() + timedelta(minutes=expiry_minutes)
         otp = OTPRequest.objects.create(
@@ -28,7 +46,6 @@ class OTPService:
             otp_hash=hashed,
             expires_at=expires_at,
         )
-        # In development, print the OTP to console (since SMS is not integrated yet)
         print(f'🔑 OTP for {user.email or user.index_number}: {code}')
         return otp
 
@@ -41,8 +58,10 @@ class OTPService:
             return None
         if timezone.now() > otp.expires_at:
             return None
-        hashed = hashlib.sha256(str(code).strip().encode()).hexdigest()
-        if hashed == otp.otp_hash:
+        normalized = normalize_otp(code)
+        if not normalized:
+            return None
+        if hash_otp(normalized) == otp.otp_hash:
             otp.is_verified = True
             otp.verified_at = timezone.now()
             otp.save(update_fields=['is_verified', 'verified_at'])
@@ -56,7 +75,6 @@ class SessionService:
         """Create a JWT refresh token, store session, return access+refresh tokens."""
         refresh = RefreshToken.for_user(user)
         timeout_minutes = max(5, get_setting_int('session_timeout_minutes', 30))
-        # Access sessions still use refresh lifetime; timeout setting guides idle policy later
         expires_at = timezone.now() + timedelta(days=7)
         session = Session.objects.create(
             user=user,

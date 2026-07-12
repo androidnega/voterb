@@ -58,12 +58,10 @@ const routes = [
   studentLayoutRoute('/student', [
     { path: '', component: () => import('../views/student/StudentDashboardView.vue'), meta: { roles: studentRoles } },
     { path: 'results/:uuid', component: () => import('../views/student/StudentResultDetailView.vue'), meta: { roles: studentRoles } },
-  ], { roles: studentRoles }),
-
-  studentLayoutRoute('/vote/:uuid', [
-    { path: '', component: () => import('../views/voting/VoteEntryView.vue'), meta: { roles: studentRoles } },
-    { path: 'ballot', component: () => import('../views/voting/BallotWizardView.vue'), meta: { roles: studentRoles } },
-    { path: 'confirmation', component: () => import('../views/voting/ConfirmationView.vue'), meta: { roles: studentRoles } },
+    // Absolute child paths keep StudentLayout mounted for sleek page transitions
+    { path: '/vote/:uuid', component: () => import('../views/voting/VoteEntryView.vue'), meta: { roles: studentRoles } },
+    { path: '/vote/:uuid/ballot', component: () => import('../views/voting/BallotWizardView.vue'), meta: { roles: studentRoles } },
+    { path: '/vote/:uuid/confirmation', component: () => import('../views/voting/ConfirmationView.vue'), meta: { roles: studentRoles } },
   ], { roles: studentRoles }),
 
   layoutRoute('/dashboard', [

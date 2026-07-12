@@ -25,17 +25,17 @@
           </div>
         </div>
         <h2 class="mt-3 text-2xl font-bold text-gray-900 tracking-tight">Verify OTP</h2>
-        <p class="mt-1 text-sm text-gray-500">Enter the 6-digit code sent to your phone</p>
+        <p class="mt-1 text-sm text-gray-500">Enter the secure code sent to your phone</p>
       </div>
 
       <!-- OTP Card - compact -->
       <div class="bg-white/80 backdrop-blur-xl rounded-2xl border border-white/60 shadow-2xl p-6">
         <form @submit.prevent="handleVerify" class="space-y-5">
-          <!-- 6-Digit OTP Input -->
-          <div>
+          <div class="otp-entry">
+            <span class="otp-prefix" aria-hidden="true">rte-</span>
             <div class="flex justify-center gap-2">
               <input
-                v-for="(digit, index) in 6"
+                v-for="(digit, index) in digitCount"
                 :key="index"
                 ref="otpInputs"
                 v-model="otpDigits[index]"
@@ -48,7 +48,7 @@
                 @keydown="handleKeydown(index, $event)"
                 @paste="handlePaste"
                 :disabled="loading"
-                autofocus
+                :autofocus="index === 0"
               />
             </div>
           </div>
@@ -62,10 +62,6 @@
               {{ errorMessage }}
             </div>
           </transition>
-
-          <div v-if="otpDigits.some(d => d)" class="text-center text-xs text-gray-400">
-            Code: <span class="font-mono font-medium text-gray-600">{{ getOTPString() || '••••••' }}</span>
-          </div>
 
           <!-- Verify Button -->
           <button
@@ -110,7 +106,8 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
-const otpDigits = ref(['', '', '', '', '', ''])
+const digitCount = 6
+const otpDigits = ref(Array.from({ length: digitCount }, () => ''))
 const otpInputs = ref([])
 const loading = ref(false)
 const errorMessage = ref('')
@@ -123,7 +120,7 @@ const isOTPComplete = computed(() => {
 })
 
 const getOTPString = () => {
-  return otpDigits.value.join('')
+  return `rte-${otpDigits.value.join('')}`
 }
 
 onMounted(() => {
@@ -146,7 +143,7 @@ const handleInput = (index, event) => {
     return
   }
   
-  if (value && value.length === 1 && index < 5) {
+  if (value && value.length === 1 && index < digitCount - 1) {
     otpInputs.value[index + 1].focus()
   }
   
@@ -164,22 +161,23 @@ const handleKeydown = (index, event) => {
   if (event.key === 'ArrowLeft' && index > 0) {
     otpInputs.value[index - 1].focus()
   }
-  if (event.key === 'ArrowRight' && index < 5) {
+  if (event.key === 'ArrowRight' && index < digitCount - 1) {
     otpInputs.value[index + 1].focus()
   }
 }
 
 const handlePaste = (event) => {
   event.preventDefault()
-  const pasteData = event.clipboardData.getData('text').replace(/\D/g, '')
-  const digits = pasteData.slice(0, 6).split('')
+  let pasteData = event.clipboardData.getData('text').trim().toLowerCase()
+  if (pasteData.startsWith('rte-')) pasteData = pasteData.slice(4)
+  const digits = pasteData.replace(/\D/g, '').slice(0, digitCount).split('')
   
-  for (let i = 0; i < digits.length && i < 6; i++) {
+  for (let i = 0; i < digits.length && i < digitCount; i++) {
     otpDigits.value[i] = digits[i]
   }
   
-  const nextIndex = Math.min(digits.length, 5)
-  if (nextIndex < 6) {
+  const nextIndex = Math.min(digits.length, digitCount - 1)
+  if (otpInputs.value[nextIndex]) {
     otpInputs.value[nextIndex].focus()
   }
   
@@ -203,7 +201,7 @@ const handleVerify = async () => {
   } catch (error) {
     console.error('OTP verification error:', error)
     errorMessage.value = error.response?.data?.error || 'Invalid OTP. Please try again.'
-    otpDigits.value = ['', '', '', '', '', '']
+    otpDigits.value = Array.from({ length: digitCount }, () => '')
     nextTick(() => {
       if (otpInputs.value && otpInputs.value[0]) {
         otpInputs.value[0].focus()
@@ -290,5 +288,24 @@ input:hover:not(:disabled) {
 
 .shake {
   animation: shake 0.3s ease-in-out;
+}
+
+.otp-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.otp-prefix {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #059669;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
 }
 </style>

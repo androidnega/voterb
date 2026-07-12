@@ -47,11 +47,14 @@
             <button
               type="button"
               class="ballot-action"
-              :disabled="!canVote(election)"
+              :class="{ 'is-launching': launchingId === election.uuid }"
+              :disabled="!canVote(election) || !!launchingId"
               @click="startVoting(election.uuid)"
             >
-              <span>Cast vote</span>
-              <i class="fas fa-arrow-right" aria-hidden="true"></i>
+              <span class="ballot-action-label">Vote</span>
+              <span class="ballot-action-arrow" aria-hidden="true">
+                <i class="fas fa-arrow-right"></i>
+              </span>
             </button>
           </div>
         </article>
@@ -75,6 +78,7 @@ const authStore = useAuthStore()
 const elections = ref([])
 const loading = ref(true)
 const error = ref('')
+const launchingId = ref('')
 
 const firstName = computed(() => {
   const name = displayUserName(authStore.user, 'Student').trim()
@@ -113,8 +117,24 @@ async function fetchElections() {
   }
 }
 
-function startVoting(electionUuid) {
-  router.push(`/vote/${electionUuid}`)
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function startVoting(electionUuid) {
+  if (launchingId.value) return
+  launchingId.value = electionUuid
+
+  const reduced = typeof window !== 'undefined'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  try {
+    await wait(reduced ? 30 : 180)
+    await router.push(`/vote/${electionUuid}`)
+  } catch (err) {
+    launchingId.value = ''
+    console.error('Failed to open ballot:', err)
+  }
 }
 
 onMounted(fetchElections)
@@ -283,49 +303,123 @@ onMounted(fetchElections)
 }
 
 .ballot-footer {
-  padding: 0.75rem 0.85rem 0.85rem;
+  padding: 0.65rem 0.85rem 0.85rem;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .ballot-action {
-  width: 100%;
   border: none;
   background: var(--vb-accent, #0f766e);
   color: #fff;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  padding: 0.78rem 1rem;
-  border-radius: 0.65rem;
+  letter-spacing: -0.01em;
+  padding: 0.55rem 0.55rem 0.55rem 1rem;
+  border-radius: 999px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  box-shadow: 0 4px 14px rgba(15, 118, 110, 0.18);
+  gap: 0.55rem;
+  box-shadow: 0 4px 14px rgba(15, 118, 110, 0.2);
   transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
 }
 
-.ballot-action i {
-  font-size: 0.72rem;
-  transition: transform 0.2s ease;
+.ballot-action::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.18) 48%,
+    transparent 65%
+  );
+  transform: translateX(-120%);
+  animation: vote-sheen 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.ballot-action-label {
+  position: relative;
+  z-index: 1;
+}
+
+.ballot-action-arrow {
+  position: relative;
+  z-index: 1;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ballot-action-arrow i {
+  font-size: 0.65rem;
+  animation: vote-nudge 1.4s ease-in-out infinite;
+}
+
+@keyframes vote-nudge {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(3px); }
+}
+
+@keyframes vote-sheen {
+  0%, 55% { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
 }
 
 .ballot-action:hover:not(:disabled) {
   background: var(--vb-accent-hover, #0d6b64);
-  box-shadow: 0 6px 18px rgba(15, 118, 110, 0.22);
+  box-shadow: 0 6px 18px rgba(15, 118, 110, 0.28);
+  transform: translateY(-1px);
 }
 
-.ballot-action:hover:not(:disabled) i {
-  transform: translateX(2px);
+.ballot-action:hover:not(:disabled) .ballot-action-arrow i {
+  animation-duration: 0.7s;
 }
 
 .ballot-action:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: translateY(0);
 }
 
 .ballot-action:disabled {
-  opacity: 0.45;
+  opacity: 0.42;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.ballot-action:disabled::before,
+.ballot-action:disabled .ballot-action-arrow i {
+  animation: none;
+}
+
+.ballot-action.is-launching {
+  opacity: 1;
+  transform: scale(0.96);
+  box-shadow: 0 2px 10px rgba(15, 118, 110, 0.18);
+}
+
+.ballot-action.is-launching .ballot-action-arrow i {
+  animation: vote-launch 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes vote-launch {
+  0% { transform: translateX(0); opacity: 1; }
+  55% { transform: translateX(5px); opacity: 1; }
+  100% { transform: translateX(10px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ballot-action.is-launching .ballot-action-arrow i {
+    animation: none;
+  }
 }
 
 /* Mobile: edge-tight, no clutter */
@@ -352,9 +446,8 @@ onMounted(fetchElections)
   }
 
   .ballot-action {
-    padding: 0.85rem 1rem;
-    font-size: 0.82rem;
-    border-radius: 0.7rem;
+    font-size: 0.76rem;
+    padding: 0.5rem 0.5rem 0.5rem 0.95rem;
   }
 
   .ballot-head h2 {
@@ -414,11 +507,6 @@ onMounted(fetchElections)
 
   .ballot-desc {
     font-size: 0.78rem;
-  }
-
-  .ballot-action {
-    padding: 0.82rem 1.1rem;
-    font-size: 0.8rem;
   }
 }
 

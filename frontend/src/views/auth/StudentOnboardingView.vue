@@ -275,8 +275,9 @@ const submitOnboarding = async () => {
     }
     const { data } = await onboardingApi.complete(payload)
     if (data.user) authStore.user = data.user
-    authStore.requiresOnboarding = false
+    else if (authStore.user) authStore.user.onboarding_completed = true
     authStore.isNewUser = false
+    authStore.syncOnboardingFlag(authStore.user)
     localStorage.removeItem('is_new_user')
     localStorage.removeItem('requires_onboarding')
     await router.replace('/student')
@@ -302,7 +303,13 @@ const handlePrimaryAction = () => {
   else nextStep()
 }
 
-onMounted(fetchOnboardingOptions)
+onMounted(async () => {
+  if (!authStore.needsOnboarding) {
+    await router.replace('/student')
+    return
+  }
+  await fetchOnboardingOptions()
+})
 </script>
 
 <style scoped>

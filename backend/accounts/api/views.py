@@ -35,11 +35,27 @@ def resolve_role_name(user):
 
 
 def student_auth_flags(user):
+    """
+    Single source of truth for student onboarding gates.
+    Heals legacy profiles that already have faculty+department+level.
+    Completed students never require onboarding again.
+    """
     role_name = resolve_role_name(user)
     is_student = role_name == 'student'
-    requires_onboarding = is_student and not user.onboarding_completed
-    return is_student, requires_onboarding
+    if not is_student:
+        return False, False
+    if user.onboarding_completed:
+        return True, False
+    if user.faculty_id and user.department_id and user.level_id:
+        user.onboarding_completed = True
+        user.save(update_fields=['onboarding_completed'])
+        return True, False
+    return True, True
 
+
+def ensure_onboarding_state(user):
+    """Return fresh onboarding flags after healing, for auth responses."""
+    return student_auth_flags(user)
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -56,7 +72,6 @@ class LoginView(APIView):
             identifier = normalize_index_input(identifier)
 
         user = User.objects.filter(email=identifier).first() or User.objects.filter(index_number=identifier).first()
-        is_new_user = False
 
         if not user and '@' not in identifier:
             from elections.models import VoterEligibility
@@ -69,7 +84,6 @@ class LoginView(APIView):
                     is_verified=True,
                     is_staff=False,
                 )
-                is_new_user = True
             else:
                 return Response({'error': 'Index number not eligible for any election'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -89,14 +103,12 @@ class LoginView(APIView):
         MFALog.objects.create(user=user, event_type='login_otp_sent', ip_address=request.META.get('REMOTE_ADDR'))
 
         _, requires_onboarding = student_auth_flags(user)
-        if not is_new_user and requires_onboarding:
-            is_new_user = True
 
         return Response({
             'requires_otp': True,
             'otp_session_id': str(otp.uuid),
             'is_staff': is_staff_user,
-            'is_new_user': is_new_user,
+            'is_new_user': bool(requires_onboarding),
             'requires_onboarding': requires_onboarding,
         })
 
@@ -156,6 +168,8 @@ class MeView(APIView):
         user = User.objects.select_related(
             'role', 'faculty', 'department', 'level'
         ).get(pk=request.user.pk)
+        student_auth_flags(user)
+        user.refresh_from_db(fields=['onboarding_completed'])
         serializer = UserSerializer(user)
         return Response(serializer.data)
 
@@ -200,7 +214,11 @@ class StudentOnboardingView(APIView):
             return Response({'error': 'Only students can complete onboarding'}, status=status.HTTP_403_FORBIDDEN)
 
         if user.onboarding_completed:
-            return Response({'error': 'Onboarding already completed'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                'message': 'Onboarding already completed',
+                'already_completed': True,
+                'user': UserSerializer(user).data,
+            })
 
         serializer = StudentOnboardingSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
