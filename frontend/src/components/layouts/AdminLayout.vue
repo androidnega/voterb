@@ -6,11 +6,14 @@
     />
 
     <div
-      class="app-main soft-main min-h-screen flex flex-col transition-all duration-300"
+      class="app-main soft-main min-h-screen flex flex-col"
       :class="isCollapsed ? 'is-rail' : 'is-wide'"
     >
       <div class="soft-main__inner">
-        <Header @toggle-mobile="isMobileMenuOpen = !isMobileMenuOpen" />
+        <Header
+          :sidebar-collapsed="isCollapsed"
+          @toggle-sidebar="toggleSidebar"
+        />
         <main class="soft-main__content">
           <router-view />
         </main>
@@ -20,14 +23,39 @@
 </template>
 
 <script setup>
-import { ref, provide } from 'vue'
+import { ref, provide, onMounted, onUnmounted } from 'vue'
 import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
 
 const isMobileMenuOpen = ref(false)
-const isCollapsed = ref(true)
+const isCollapsed = ref(false)
+const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true)
 
 provide('sidebarCollapsed', isCollapsed)
+
+const syncViewport = () => {
+  isDesktop.value = window.innerWidth >= 1024
+  if (isDesktop.value) {
+    isMobileMenuOpen.value = false
+  }
+}
+
+const toggleSidebar = () => {
+  if (window.innerWidth < 1024) {
+    isMobileMenuOpen.value = !isMobileMenuOpen.value
+    return
+  }
+  isCollapsed.value = !isCollapsed.value
+}
+
+onMounted(() => {
+  syncViewport()
+  window.addEventListener('resize', syncViewport)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', syncViewport)
+})
 </script>
 
 <style scoped>
@@ -37,46 +65,48 @@ provide('sidebarCollapsed', isCollapsed)
 
 .soft-main {
   min-width: 0;
+  transition: margin-left 0.3s ease;
 }
 
-.soft-main.is-rail {
-  margin-left: 0;
-}
-
+.soft-main.is-rail,
 .soft-main.is-wide {
   margin-left: 0;
 }
 
 @media (min-width: 1024px) {
+  /* collapsed rail: 5.25rem sidebar + 0.85rem left offset + gap */
   .soft-main.is-rail {
-    margin-left: 6.75rem;
+    margin-left: 6.95rem;
   }
 
+  /* expanded: 15rem sidebar + 0.85rem left offset + gap */
   .soft-main.is-wide {
-    margin-left: 17rem;
+    margin-left: 16.7rem;
   }
 }
 
 .soft-main__inner {
   width: 100%;
-  max-width: 84rem;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   padding: 1rem 1rem 2rem;
+  transition: padding 0.3s ease;
 }
 
 @media (min-width: 640px) {
   .soft-main__inner {
-    padding: 1.25rem 1.5rem 2.5rem;
+    padding: 1.15rem 1.35rem 2.25rem;
   }
 }
 
 @media (min-width: 1024px) {
   .soft-main__inner {
-    padding: 1.35rem 1.75rem 2.75rem;
+    padding: 1.25rem 1.5rem 2.5rem;
   }
 }
 
 .soft-main__content {
   min-width: 0;
+  width: 100%;
 }
 </style>

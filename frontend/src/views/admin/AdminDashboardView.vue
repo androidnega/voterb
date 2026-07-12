@@ -1,10 +1,12 @@
 <template>
-  <div class="admin-page soft-dash">
+  <div class="admin-page">
     <div v-if="errorMessage" class="soft-alert">
       <span>{{ errorMessage }}</span>
-      <button type="button" class="soft-btn" @click="fetchDashboard">Retry</button>
+      <button type="button" class="soft-btn soft-btn--inline" @click="fetchDashboard">Retry</button>
     </div>
 
+    <!-- Atelier Soft template -->
+    <div v-if="isAtelier" class="soft-dash">
     <!-- Row 1: KPI cards -->
     <section class="kpi-row">
       <article class="soft-card kpi-card">
@@ -234,6 +236,75 @@
         </router-link>
       </article>
     </section>
+    </div>
+
+    <!-- Operations template -->
+    <div v-else class="ops-dash">
+      <div class="stat-grid page-section">
+        <StatCard
+          v-for="card in opsStatCards"
+          :key="card.label"
+          :label="card.label"
+          :value="loading ? '—' : card.value"
+          :hint="loading ? 'Loading…' : card.hint"
+          :icon="card.icon"
+          :tone="card.tone"
+        />
+      </div>
+
+      <div class="ops-charts page-section">
+        <DataPanel title="Voting activity" subtitle="Ballots cast over the last 7 days">
+          <AreaChart
+            v-if="!loading"
+            :labels="chartData.labels"
+            :data="chartData.values"
+            label="Votes"
+            color="#a3b18a"
+            height="14rem"
+            aria-label="Voting activity over the last seven days"
+          />
+          <div v-else class="chart-loading"><i class="fas fa-spinner fa-spin"></i></div>
+        </DataPanel>
+
+        <DataPanel title="Recent activity" subtitle="Latest authenticated events">
+          <ul v-if="!loading && recentActivities.length" class="ops-activity">
+            <li v-for="(item, idx) in recentActivities.slice(0, 6)" :key="`${item.time}-${idx}`">
+              <i :class="item.icon"></i>
+              <div>
+                <p>{{ item.message }}</p>
+                <span>{{ item.time }}</span>
+              </div>
+            </li>
+          </ul>
+          <p v-else-if="loading" class="empty-note">Loading…</p>
+          <p v-else class="empty-note">No recent activity yet.</p>
+        </DataPanel>
+      </div>
+
+      <section class="page-section">
+        <div class="section-head">
+          <h2 class="section-title">Quick access</h2>
+          <p class="section-subtitle">Jump to common election tasks</p>
+        </div>
+        <div class="quick-link-grid">
+          <router-link
+            v-for="link in opsQuickLinks"
+            :key="link.path"
+            :to="link.path"
+            class="quick-link-card"
+          >
+            <div class="quick-link-icon" :class="link.tone">
+              <i :class="link.icon"></i>
+            </div>
+            <div class="quick-link-body">
+              <h3 class="quick-link-title">{{ link.title }}</h3>
+              <p class="quick-link-desc">{{ link.description }}</p>
+            </div>
+            <i class="fas fa-arrow-right quick-link-arrow"></i>
+          </router-link>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -241,13 +312,18 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { dashboardApi } from '@/api/dashboard'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 import { displayUserName } from '@/utils/user'
 import AreaChart from '@/components/charts/AreaChart.vue'
 import GaugeChart from '@/components/charts/GaugeChart.vue'
+import StatCard from '@/components/admin/StatCard.vue'
+import DataPanel from '@/components/admin/DataPanel.vue'
 
 const REFRESH_MS = 30000
 
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
+const isAtelier = computed(() => themeStore.isAtelierDashboard)
 const loading = ref(true)
 const errorMessage = ref('')
 
@@ -355,6 +431,57 @@ const activityLabel = (type) => {
   return 'Event'
 }
 
+const opsStatCards = computed(() => [
+  {
+    label: 'Votes Cast',
+    value: formatNumber(stats.value.total_votes),
+    hint: `${formatNumber(stats.value.unique_voters)} unique voters`,
+    icon: 'fas fa-check-double',
+    tone: 'tone-teal',
+  },
+  {
+    label: 'Turnout',
+    value: `${stats.value.turnout}%`,
+    hint: `${formatNumber(stats.value.eligible_voters)} eligible`,
+    icon: 'fas fa-chart-line',
+    tone: 'tone-amber',
+  },
+  {
+    label: 'Eligible Voters',
+    value: formatNumber(stats.value.eligible_voters),
+    hint: `${formatNumber(stats.value.total_voters)} students`,
+    icon: 'fas fa-users',
+    tone: 'tone-blue',
+  },
+  {
+    label: 'Active Elections',
+    value: formatNumber(stats.value.active_elections),
+    hint: `${formatNumber(stats.value.total_elections)} total`,
+    icon: 'fas fa-calendar-check',
+    tone: 'tone-slate',
+  },
+])
+
+const opsQuickLinks = computed(() => {
+  const links = [
+    { path: '/elections', title: 'Manage Elections', description: 'Positions, candidates, and voters', icon: 'fas fa-calendar-check', tone: 'tone-teal' },
+    { path: '/results', title: 'Results & Certification', description: 'Generate and publish results', icon: 'fas fa-chart-bar', tone: 'tone-blue' },
+    { path: '/strongroom', title: 'Strongroom', description: 'Seals and vault integrity', icon: 'fas fa-shield-alt', tone: 'tone-amber' },
+    { path: '/fraud', title: 'Fraud Monitor', description: 'Suspicious voting alerts', icon: 'fas fa-user-shield', tone: 'tone-rose' },
+  ]
+  const openElection = liveElections.value.find((e) => e.status === 'open')
+  if (openElection) {
+    links.unshift({
+      path: `/monitor/${openElection.uuid}`,
+      title: 'Live Monitor Room',
+      description: 'Real-time turnout & votes',
+      icon: 'fas fa-tv',
+      tone: 'tone-emerald',
+    })
+  }
+  return links
+})
+
 const applyDashboardData = (data) => {
   if (data.context) {
     context.value = { ...context.value, ...data.context }
@@ -411,6 +538,67 @@ onUnmounted(() => {
 <style scoped>
 .soft-dash {
   max-width: none;
+}
+
+.ops-dash {
+  max-width: none;
+}
+
+.ops-charts {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 900px) {
+  .ops-charts {
+    grid-template-columns: 1.4fr 1fr;
+  }
+}
+
+.ops-activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.ops-activity li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.ops-activity i {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  background: var(--vb-accent-soft);
+  color: var(--vb-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.ops-activity p {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--vb-ink);
+}
+
+.ops-activity span {
+  font-size: 0.72rem;
+  color: var(--vb-muted);
+}
+
+.soft-btn--inline {
+  margin-top: 0;
 }
 
 .soft-alert {

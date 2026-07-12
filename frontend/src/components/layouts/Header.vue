@@ -1,7 +1,13 @@
 <template>
   <header class="soft-header">
     <div class="soft-header__left">
-      <button type="button" class="soft-icon-btn lg:hidden" @click="toggleMobileMenu" aria-label="Open menu">
+      <button
+        type="button"
+        class="soft-icon-btn soft-icon-btn--menu"
+        :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+        :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+        @click="toggleSidebar"
+      >
         <i class="fas fa-bars"></i>
       </button>
 
@@ -93,7 +99,15 @@ import { displayUserName } from '@/utils/user'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const emit = defineEmits(['toggle-mobile'])
+
+defineProps({
+  sidebarCollapsed: {
+    type: Boolean,
+    default: false,
+  },
+})
+
+const emit = defineEmits(['toggle-sidebar'])
 
 const showNotifications = ref(false)
 const showMessages = ref(false)
@@ -219,8 +233,8 @@ const toggleMessages = () => {
   }
 }
 
-const toggleMobileMenu = () => {
-  emit('toggle-mobile')
+const toggleSidebar = () => {
+  emit('toggle-sidebar')
 }
 
 const handleClickOutside = (event) => {
@@ -258,6 +272,10 @@ onUnmounted(() => {
   align-items: flex-start;
   gap: 0.75rem;
   min-width: 0;
+}
+
+.soft-icon-btn--menu {
+  margin-top: 0.15rem;
 }
 
 .soft-header__greeting {

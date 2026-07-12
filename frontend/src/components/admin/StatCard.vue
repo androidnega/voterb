@@ -36,7 +36,7 @@ defineProps({
 }
 
 .stat-card:hover {
-  box-shadow: 0 12px 32px rgba(28, 28, 28, 0.08);
+  box-shadow: 0 2px 8px rgba(28, 28, 28, 0.06);
   transform: translateY(-1px);
 }
 
