@@ -486,9 +486,9 @@ onUnmounted(clearActionSlow)
   position: relative;
   background: #fff;
   border: 1px solid #ebe8e2;
-  border-radius: 1.5rem;
+  border-radius: 1.25rem;
   padding: 1.5rem 1.35rem 1.45rem;
-  box-shadow: 0 10px 30px rgba(28, 25, 23, 0.04);
+  box-shadow: 0 4px 14px rgba(28, 25, 23, 0.04);
   overflow: hidden;
 }
 
@@ -580,48 +580,56 @@ onUnmounted(clearActionSlow)
 
 .svt-otp {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  padding: 0.25rem 0;
+  gap: 0.35rem;
+  padding: 0.15rem 0;
+  width: 100%;
+  overflow: hidden;
 }
 
 .svt-otp__prefix {
+  flex-shrink: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.92rem;
+  font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #059669;
   background: rgba(16, 185, 129, 0.1);
   border: 1px solid rgba(16, 185, 129, 0.25);
   border-radius: 999px;
-  padding: 0.28rem 0.65rem;
+  padding: 0.22rem 0.5rem;
 }
 
 .svt-otp__dash {
+  flex-shrink: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 700;
   color: #a8a29e;
-  padding: 0 0.1rem;
+  padding: 0;
+  line-height: 1;
 }
 
 .svt-otp__group {
   display: flex;
-  gap: 0.35rem;
+  flex-wrap: nowrap;
+  gap: 0.28rem;
+  flex-shrink: 0;
 }
 
 .svt-otp__box {
-  width: 2.35rem;
-  height: 2.75rem;
+  width: 2.2rem;
+  height: 2.55rem;
+  flex: 0 0 auto;
   text-align: center;
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 700;
   text-transform: lowercase;
   color: #1c1917;
   background: #fafaf8;
-  border: 2px solid #e7e5e4;
-  border-radius: 0.75rem;
+  border: 1.5px solid #e7e5e4;
+  border-radius: 0.65rem;
   outline: none;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
@@ -629,12 +637,12 @@ onUnmounted(clearActionSlow)
 .svt-otp__box.is-filled {
   border-color: #34d399;
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
 }
 
 .svt-otp__box:focus {
   border-color: #10b981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.16);
   background: #fff;
 }
 
@@ -766,11 +774,117 @@ onUnmounted(clearActionSlow)
   to { transform: rotate(360deg); }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 640px) {
+  .svt-page {
+    padding: 0.25rem 0 1.25rem;
+  }
+
+  .svt-back {
+    margin-bottom: 0.65rem;
+  }
+
+  .svt-card {
+    padding: 1rem 0.9rem 1rem;
+    border-radius: 1.05rem;
+    box-shadow: 0 2px 8px rgba(28, 25, 23, 0.035);
+  }
+
+  .svt-card__shield {
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: 0.9rem;
+    margin-bottom: 0.55rem;
+  }
+
+  .svt-card__title {
+    font-size: 1.12rem;
+  }
+
+  .svt-card__sub {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    line-height: 1.35;
+  }
+
+  .svt-panel {
+    margin-top: 0.85rem;
+    gap: 0.65rem;
+  }
+
+  .svt-note {
+    padding: 0.6rem 0.7rem;
+    gap: 0.5rem;
+    border-radius: 0.75rem;
+  }
+
+  .svt-note strong {
+    font-size: 0.78rem;
+    margin-bottom: 0.05rem;
+  }
+
+  .svt-note p {
+    font-size: 0.72rem;
+    line-height: 1.35;
+  }
+
+  .svt-otp {
+    gap: 0.22rem;
+    padding: 0;
+  }
+
+  .svt-otp__prefix {
+    font-size: 0.7rem;
+    padding: 0.16rem 0.38rem;
+  }
+
+  .svt-otp__group {
+    gap: 0.18rem;
+  }
+
   .svt-otp__box {
-    width: 2.1rem;
-    height: 2.5rem;
-    font-size: 0.95rem;
+    width: 1.85rem;
+    height: 2.15rem;
+    font-size: 0.88rem;
+    border-radius: 0.5rem;
+    border-width: 1.5px;
+  }
+
+  .svt-otp__box.is-filled,
+  .svt-otp__box:focus {
+    box-shadow: 0 0 0 1.5px rgba(16, 185, 129, 0.14);
+  }
+
+  .svt-actions {
+    gap: 0.4rem;
+  }
+
+  .svt-btn {
+    min-height: 2.55rem;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.84rem;
+    border-radius: 0.75rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .svt-otp__box {
+    width: 1.65rem;
+    height: 2rem;
+    font-size: 0.8rem;
+    border-radius: 0.45rem;
+  }
+
+  .svt-otp {
+    gap: 0.16rem;
+  }
+
+  .svt-otp__group {
+    gap: 0.14rem;
+  }
+
+  .svt-otp__prefix {
+    font-size: 0.65rem;
+    padding: 0.12rem 0.3rem;
   }
 }
 </style>

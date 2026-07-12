@@ -108,12 +108,38 @@ def _revoke_open_svts(user, election):
 
 
 def _svt_request_count_last_hour(user, election):
+    """
+    Count live SVT mint outcomes in the last hour.
+    Expired/revoked rows from resends are excluded so legitimate resends
+    are gated by cooldown, not by leftover revoked rows.
+    """
     cutoff = timezone.now() - timedelta(hours=1)
     return SVTToken.objects.filter(
         user=user,
         election=election,
         issued_at__gte=cutoff,
+        status__in=['issued', 'validated', 'used'],
     ).count()
+
+
+def _svt_resend_wait_seconds(user, election, cooldown):
+    """Seconds remaining before another resend is allowed (0 = ok)."""
+    if cooldown <= 0:
+        return 0
+    latest = (
+        SVTToken.objects.filter(user=user, election=election)
+        .order_by('-issued_at')
+        .first()
+    )
+    if not latest:
+        return 0
+    anchor = latest.last_resent_at or latest.issued_at
+    if not anchor:
+        return 0
+    elapsed = (timezone.now() - anchor).total_seconds()
+    if elapsed >= cooldown:
+        return 0
+    return max(1, int(cooldown - elapsed))
 
 
 class EligibleElectionsView(APIView):
@@ -163,10 +189,26 @@ class SVTRequestView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        # Resend cooldown first — avoid false 429s from old revoked rows
+        if force_resend:
+            cooldown = max(0, get_setting_int('svt_resend_cooldown_seconds', 60))
+            wait = _svt_resend_wait_seconds(user, election, cooldown)
+            if wait:
+                return Response(
+                    {
+                        'error': f'Please wait {wait}s before requesting another token.',
+                        'retry_after': wait,
+                    },
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
+
         max_per_hour = max(1, get_setting_int('svt_max_requests_per_hour', 5))
         if _svt_request_count_last_hour(user, election) >= max_per_hour:
             return Response(
-                {'error': 'Too many SVT requests. Please wait and try again later.'},
+                {
+                    'error': 'You’ve requested too many tokens for now. Please try again later.',
+                    'retry_after': 3600,
+                },
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
@@ -183,29 +225,6 @@ class SVTRequestView(APIView):
 
         # Explicit resend: revoke previous tokens so the first code is no longer accepted.
         if force_resend:
-            cooldown = max(0, get_setting_int('svt_resend_cooldown_seconds', 60))
-            latest = (
-                SVTToken.objects.filter(user=user, election=election)
-                .order_by('-issued_at')
-                .first()
-            )
-            if latest and latest.last_resent_at:
-                elapsed = (timezone.now() - latest.last_resent_at).total_seconds()
-                if elapsed < cooldown:
-                    wait = int(cooldown - elapsed)
-                    return Response(
-                        {'error': f'Please wait {wait}s before requesting another SVT.'},
-                        status=status.HTTP_429_TOO_MANY_REQUESTS,
-                    )
-            elif latest and cooldown:
-                elapsed = (timezone.now() - latest.issued_at).total_seconds()
-                if elapsed < cooldown:
-                    wait = int(cooldown - elapsed)
-                    return Response(
-                        {'error': f'Please wait {wait}s before requesting another SVT.'},
-                        status=status.HTTP_429_TOO_MANY_REQUESTS,
-                    )
-
             _revoke_open_svts(user, election)
 
         code = generate_svt()
@@ -228,6 +247,7 @@ class SVTRequestView(APIView):
             'svt_id': svt.svt_id,
             'already_issued': False,
             'resent': force_resend,
+            'expires_at': expires_at,
         })
 
 

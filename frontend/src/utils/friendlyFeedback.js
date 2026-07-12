@@ -61,7 +61,13 @@ export function friendlyActionError(error, fallback = 'Something went wrong. Ple
   const status = error.response.status
   if (status === 401) return 'Your session expired. Please sign in again.'
   if (status === 403) return 'You don’t have permission to do that.'
-  if (status === 429) return 'Please wait a moment, then try again.'
+  if (status === 429) {
+    const raw429 = error.response?.data?.error || error.response?.data?.detail
+    if (typeof raw429 === 'string' && /wait|moment|later|try again/i.test(raw429) && !isLikelyTechnical(raw429)) {
+      return raw429
+    }
+    return 'Please wait a moment, then try again.'
+  }
   if (status >= 500) return 'Something went wrong on our side. Please try again in a moment.'
 
   const raw = error.response?.data?.error || error.response?.data?.detail

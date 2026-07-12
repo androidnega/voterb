@@ -1,217 +1,477 @@
 <template>
-  <div class="min-h-screen h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-emerald-50/30">
-    <!-- Animated background particles -->
-    <div class="absolute inset-0 overflow-hidden pointer-events-none">
-      <div v-for="i in 6" :key="i" class="absolute rounded-full bg-emerald-200/20 animate-float"
-        :class="[
-          'w-' + (Math.random() * 32 + 16).toFixed(0) + ' h-' + (Math.random() * 32 + 16).toFixed(0),
-          'top-' + (Math.random() * 80 + 10).toFixed(0) + ' left-' + (Math.random() * 80 + 10).toFixed(0)
-        ]"
-        :style="{
-          animationDuration: (Math.random() * 10 + 15) + 's',
-          animationDelay: (Math.random() * 5) + 's'
-        }"
-      ></div>
+  <div class="home">
+    <div class="home-mesh" aria-hidden="true">
+      <span class="home-mesh__blob home-mesh__blob--a" />
+      <span class="home-mesh__blob home-mesh__blob--b" />
+      <span class="home-mesh__blob home-mesh__blob--c" />
+      <span class="home-mesh__grid" />
     </div>
 
-    <!-- Main content - full viewport height -->
-    <div class="relative h-full flex flex-col">
-      <!-- Navigation -->
-      <nav class="flex-shrink-0 px-4 sm:px-6 lg:px-8 py-4">
-        <div class="max-w-7xl mx-auto flex justify-between items-center">
-          <div class="flex items-center space-x-2.5">
-            <div class="w-9 h-9 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/25">
-              <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-              </svg>
-            </div>
-            <span class="text-xl font-bold text-gray-900 tracking-tight">Voter<span class="text-emerald-600">B</span></span>
-          </div>
-          <div class="flex items-center space-x-3 sm:space-x-4">
-            <router-link to="/verify" class="hidden sm:block text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors">
-              Verify Vote
-            </router-link>
-            <router-link to="/login" class="px-5 py-2.5 bg-white text-gray-700 text-sm font-medium rounded-xl border border-gray-200 hover:border-emerald-300 hover:shadow-md transition-all duration-300 shadow-sm">
-              Sign In
-            </router-link>
-            <router-link to="/login" class="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-sm font-medium rounded-xl hover:shadow-lg hover:shadow-emerald-500/30 transition-all duration-300 shadow-sm">
-              Get Started
-            </router-link>
-          </div>
-        </div>
-      </nav>
+    <div class="home-shell">
+      <header class="home-brand">
+        <span class="home-brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+        </span>
+        <span class="home-brand__name">Vote<span>Bridge</span></span>
+      </header>
 
-      <!-- Hero - centered vertically -->
-      <div class="flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-8 py-8">
-        <div class="max-w-6xl w-full grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-          <!-- Left Content -->
-          <div class="space-y-6">
-            <div class="inline-flex items-center gap-2.5 bg-white/80 backdrop-blur-sm border border-gray-200/80 rounded-full px-4 py-1.5 shadow-sm">
-              <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
-              <span class="text-sm font-medium text-gray-700">Trusted • Secure • Transparent</span>
-            </div>
-            
-            <h1 class="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold text-gray-900 leading-[1.1] tracking-tight">
-              Your Voice,
-              <br />
-              <span class="bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent">Your Vote</span>
-            </h1>
-            
-            <p class="text-lg sm:text-xl text-gray-500 max-w-lg leading-relaxed">
-              Secure, transparent campus elections. Cast your vote with confidence 
-              using our trusted multi-channel platform.
-            </p>
-            
-            <div class="flex flex-wrap gap-4 pt-2">
-              <router-link to="/login" class="group px-8 py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-medium rounded-xl hover:shadow-xl hover:shadow-emerald-500/30 transition-all duration-300 flex items-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-                </svg>
-                Vote Now
-                <svg class="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
-                </svg>
+      <main class="home-main">
+        <section class="home-copy">
+          <p class="home-kicker">Campus elections</p>
+          <h1 class="home-title">
+            <span class="home-title__brand">VoteBridge</span>
+            <em>Your vote. Your future.</em>
+          </h1>
+          <p class="home-lede">
+            Secure, transparent student elections — cast your ballot with confidence.
+          </p>
+
+          <div class="home-actions">
+            <router-link
+              v-if="authStore.isAuthenticated"
+              :to="authStore.homeRoute"
+              class="home-btn home-btn--primary"
+            >
+              Go to dashboard
+              <i class="fas fa-arrow-right" aria-hidden="true"></i>
+            </router-link>
+            <template v-else>
+              <router-link to="/login" class="home-btn home-btn--primary">
+                Get started
+                <i class="fas fa-arrow-right" aria-hidden="true"></i>
               </router-link>
-              <router-link to="/verify" class="px-8 py-3.5 bg-white/80 backdrop-blur-sm border border-gray-200 text-gray-700 font-medium rounded-xl hover:border-emerald-300 hover:shadow-lg transition-all duration-300 flex items-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
-                </svg>
-                Verify Vote
+              <router-link to="/verify" class="home-btn home-btn--ghost">
+                Verify vote
               </router-link>
-            </div>
-            
-            <div class="flex flex-wrap items-center gap-6 text-sm text-gray-400 pt-2">
-              <div class="flex items-center gap-2">
-                <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                </svg>
-                <span>OTP Protected</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                </svg>
-                <span>Blockchain-ready</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-                </svg>
-                <span>Instant Results</span>
-              </div>
-            </div>
+            </template>
           </div>
+        </section>
 
-          <!-- Right - Ballot Visual -->
-          <div class="flex justify-center lg:justify-end">
-            <div class="relative w-full max-w-sm lg:max-w-md">
-              <!-- Glass card -->
-              <div class="bg-white/60 backdrop-blur-xl rounded-3xl border border-white/80 shadow-2xl p-6 sm:p-8">
-                <!-- Header -->
-                <div class="flex items-center justify-between mb-5">
-                  <div class="flex items-center gap-2.5">
-                    <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                    <span class="text-xs font-medium text-gray-400 tracking-wider uppercase">Live Ballot</span>
-                  </div>
-                  <span class="text-xs bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full font-medium">✓ VERIFIED</span>
-                </div>
-
-                <!-- Ballot items -->
-                <div class="space-y-3">
-                  <div class="flex items-center gap-3.5 p-3.5 bg-white/80 rounded-xl border border-emerald-100/80 shadow-sm">
-                    <div class="flex-shrink-0 w-5 h-5 border-2 border-emerald-500 rounded-full flex items-center justify-center">
-                      <div class="w-2.5 h-2.5 bg-emerald-500 rounded-full"></div>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <p class="text-sm font-semibold text-gray-800">SRC Elections 2026</p>
-                      <p class="text-xs text-gray-400">President • 3 candidates</p>
-                    </div>
-                    <span class="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">✓ VOTED</span>
-                  </div>
-
-                  <div class="flex items-center gap-3.5 p-3.5 bg-white/60 rounded-xl border border-gray-100/80">
-                    <div class="flex-shrink-0 w-5 h-5 border-2 border-gray-300 rounded-full"></div>
-                    <div class="flex-1 min-w-0">
-                      <p class="text-sm font-semibold text-gray-800">Faculty Elections</p>
-                      <p class="text-xs text-gray-400">Dean • 2 candidates</p>
-                    </div>
-                    <span class="text-xs text-gray-400">PENDING</span>
-                  </div>
-
-                  <div class="flex items-center gap-3.5 p-3.5 bg-white/60 rounded-xl border border-gray-100/80">
-                    <div class="flex-shrink-0 w-5 h-5 border-2 border-gray-300 rounded-full"></div>
-                    <div class="flex-1 min-w-0">
-                      <p class="text-sm font-semibold text-gray-800">Departmental Elections</p>
-                      <p class="text-xs text-gray-400">HoD • 4 candidates</p>
-                    </div>
-                    <span class="text-xs text-gray-400">PENDING</span>
-                  </div>
-                </div>
-
-                <!-- Status bar -->
-                <div class="mt-5 pt-4 border-t border-gray-100/60 flex items-center justify-between">
-                  <div class="flex items-center gap-2 text-xs text-gray-400">
-                    <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                    </svg>
-                    <span>End-to-end encrypted</span>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
-                    <span class="text-xs text-gray-400 font-mono">● Live</span>
-                  </div>
-                </div>
-              </div>
+        <section class="home-visual" aria-label="Election day">
+          <div class="home-visual__stage">
+            <span class="home-visual__aura" aria-hidden="true" />
+            <div class="home-visual__frame">
+              <picture>
+                <source
+                  type="image/webp"
+                  srcset="/images/election-day-sm.webp 640w, /images/election-day.webp 900w"
+                  sizes="(max-width: 900px) 90vw, 44vw"
+                />
+                <img
+                  class="home-visual__img"
+                  src="/images/election-day.jpg"
+                  width="900"
+                  height="599"
+                  alt="Student holding a sealed Electoral Commission ballot box on election day"
+                  decoding="async"
+                  fetchpriority="high"
+                />
+              </picture>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div class="flex-shrink-0 px-4 sm:px-6 lg:px-8 py-4 border-t border-gray-100/60">
-        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2 text-xs text-gray-400">
-          <span>© 2026 VoterB — Campus Election Platform</span>
-          <div class="flex items-center gap-4">
-            <router-link to="/verify" class="hover:text-gray-600 transition-colors">Verify Vote</router-link>
-            <router-link to="/login" class="hover:text-gray-600 transition-colors">Sign In</router-link>
-          </div>
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
   </div>
 </template>
 
 <script setup>
-// No logic needed – pure landing page
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
 </script>
 
 <style scoped>
-@keyframes float {
-  0%, 100% { transform: translateY(0px) scale(1); opacity: 0.3; }
-  50% { transform: translateY(-30px) scale(1.1); opacity: 0.6; }
+.home {
+  --home-ink: #102a43;
+  --home-muted: #627d98;
+  --home-accent: #0f766e;
+  --home-accent-soft: #14b8a6;
+
+  position: relative;
+  isolation: isolate;
+  min-height: 100vh;
+  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  color: var(--home-ink);
+  font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
 }
 
-.animate-float {
-  animation: float ease-in-out infinite;
+.home-mesh {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(120% 80% at 10% 15%, rgba(20, 184, 166, 0.22), transparent 55%),
+    radial-gradient(90% 70% at 90% 20%, rgba(59, 130, 246, 0.16), transparent 50%),
+    radial-gradient(80% 60% at 70% 90%, rgba(15, 118, 110, 0.18), transparent 55%),
+    linear-gradient(160deg, #f7fbfa 0%, #eef6f4 42%, #e8f1f8 100%);
 }
 
-/* Responsive adjustments */
-@media (max-height: 700px) {
-  .h-screen {
-    min-height: 100vh;
-    height: auto;
+.home-mesh__blob {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(48px);
+  opacity: 0.55;
+  animation: mesh-drift 18s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
+}
+
+.home-mesh__blob--a {
+  width: 28rem;
+  height: 28rem;
+  left: -8%;
+  top: -12%;
+  background: rgba(45, 212, 191, 0.45);
+}
+
+.home-mesh__blob--b {
+  width: 22rem;
+  height: 22rem;
+  right: -6%;
+  top: 18%;
+  background: rgba(96, 165, 250, 0.35);
+  animation-duration: 22s;
+  animation-delay: -4s;
+}
+
+.home-mesh__blob--c {
+  width: 26rem;
+  height: 18rem;
+  left: 28%;
+  bottom: -14%;
+  background: rgba(15, 118, 110, 0.28);
+  animation-duration: 26s;
+  animation-delay: -8s;
+}
+
+.home-mesh__grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.28;
+  background-image:
+    linear-gradient(rgba(16, 42, 67, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 42, 67, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 35%, transparent 80%);
+}
+
+.home-shell {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 1.5rem;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 0.75rem;
+}
+
+.home-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: fit-content;
+}
+
+.home-brand__mark {
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.7rem;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(145deg, var(--home-accent-soft), var(--home-accent));
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.22);
+}
+
+.home-brand__mark svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.home-brand__name {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--home-ink);
+}
+
+.home-brand__name span {
+  color: var(--home-accent);
+}
+
+.home-main {
+  display: grid;
+  align-items: center;
+  gap: 1.5rem;
+  min-height: 0;
+}
+
+.home-copy {
+  display: grid;
+  gap: 0.85rem;
+  max-width: 34rem;
+  animation: copy-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.home-kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--home-accent);
+}
+
+.home-title {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+  font-size: clamp(2.35rem, 7vw, 4.25rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  color: var(--home-ink);
+}
+
+.home-title__brand {
+  font-size: clamp(2.7rem, 8vw, 4.75rem);
+  letter-spacing: -0.05em;
+  background: linear-gradient(120deg, #0f766e 0%, #0ea5a4 45%, #1d4ed8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.home-title em {
+  display: block;
+  font-style: normal;
+  font-size: 0.52em;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: var(--home-muted);
+  max-width: 14ch;
+}
+
+.home-lede {
+  margin: 0;
+  max-width: 28rem;
+  font-size: clamp(0.95rem, 2.2vw, 1.12rem);
+  line-height: 1.55;
+  color: var(--home-muted);
+}
+
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  padding-top: 0.35rem;
+}
+
+.home-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.85rem;
+  padding: 0.7rem 1.2rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition:
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.25s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.home-btn--primary {
+  background: var(--home-ink);
+  color: #fff;
+  box-shadow: 0 12px 28px rgba(16, 42, 67, 0.18);
+}
+
+.home-btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 32px rgba(16, 42, 67, 0.22);
+}
+
+.home-btn--primary i {
+  font-size: 0.72rem;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.home-btn--primary:hover i {
+  transform: translateX(3px);
+}
+
+.home-btn--ghost {
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--home-ink);
+  border: 1px solid rgba(16, 42, 67, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.home-btn--ghost:hover {
+  transform: translateY(-2px);
+  border-color: rgba(15, 118, 110, 0.35);
+}
+
+.home-visual {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 0;
+}
+
+.home-visual__stage {
+  position: relative;
+  width: min(100%, 34rem);
+}
+
+.home-visual__aura {
+  position: absolute;
+  inset: 12% -8% -10%;
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side, rgba(20, 184, 166, 0.22), transparent 72%),
+    radial-gradient(closest-side at 70% 40%, rgba(125, 211, 252, 0.18), transparent 70%);
+  filter: blur(36px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.home-visual__frame {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 900 / 599;
+  border-radius: 1.5rem;
+  overflow: hidden;
+  background: #e8f2ef;
+  box-shadow:
+    0 2px 4px rgba(16, 42, 67, 0.04),
+    0 18px 40px rgba(16, 42, 67, 0.1);
+}
+
+.home-visual__frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.home-visual__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 70% center;
+  display: block;
+  transform: scale(1.05);
+  transform-origin: 70% 42%;
+  will-change: transform;
+  animation: hero-zoom 16s cubic-bezier(0.22, 1, 0.36, 1) infinite alternate;
+}
+
+@keyframes hero-zoom {
+  0% { transform: scale(1.03); }
+  100% { transform: scale(1.1); }
+}
+
+@keyframes mesh-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(3%, -4%, 0) scale(1.08); }
+}
+
+@keyframes copy-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1.1rem, 0);
   }
-  .flex-1 {
-    padding-top: 1rem;
-    padding-bottom: 1rem;
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 
-@media (max-width: 640px) {
-  .h-screen {
-    min-height: 100vh;
+@media (min-width: 960px) {
+  .home-shell {
+    padding: 1.5rem 2rem 1.75rem;
+  }
+
+  .home-main {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 2.75rem;
+  }
+
+  .home-visual {
+    justify-content: flex-end;
+  }
+
+  .home-visual__stage {
+    width: min(100%, 37rem);
+    animation: frame-rise 1s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
+  }
+}
+
+@keyframes frame-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(1rem, 0.4rem, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (max-width: 959px) {
+  .home {
     height: auto;
-    overflow-y: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: auto;
+  }
+
+  .home-shell {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .home-main {
+    padding-bottom: 1.25rem;
+  }
+
+  .home-visual__stage {
+    width: min(100%, 28rem);
+  }
+
+  .home-visual__frame {
+    border-radius: 1.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-mesh__blob,
+  .home-visual__img,
+  .home-copy,
+  .home-visual__stage {
+    animation: none !important;
+  }
+
+  .home-visual__img {
+    transform: scale(1.04);
   }
 }
 </style>
