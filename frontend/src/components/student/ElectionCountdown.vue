@@ -1,16 +1,24 @@
 <template>
   <div class="countdown" :class="`countdown--${timing.phase}`">
-    <div v-if="!timing.expired" class="countdown-row" role="timer" :aria-label="ariaLabel">
-      <span class="countdown-prefix">{{ timing.label }}</span>
-      <span class="countdown-clock">
-        <span class="countdown-segment">{{ pad(timing.days) }}<small>d</small></span>
-        <span class="countdown-dot" aria-hidden="true">·</span>
-        <span class="countdown-segment">{{ pad(timing.hours) }}<small>h</small></span>
-        <span class="countdown-dot" aria-hidden="true">·</span>
-        <span class="countdown-segment">{{ pad(timing.minutes) }}<small>m</small></span>
-        <span class="countdown-dot" aria-hidden="true">·</span>
-        <span class="countdown-segment countdown-segment--sec">{{ pad(timing.seconds) }}<small>s</small></span>
-      </span>
+    <p class="countdown-label">{{ timing.label }}</p>
+
+    <div v-if="!timing.expired" class="countdown-track" role="timer" :aria-label="ariaLabel">
+      <div class="countdown-unit">
+        <span class="countdown-value">{{ pad(timing.days) }}</span>
+        <span class="countdown-name">days</span>
+      </div>
+      <div class="countdown-unit">
+        <span class="countdown-value">{{ pad(timing.hours) }}</span>
+        <span class="countdown-name">hrs</span>
+      </div>
+      <div class="countdown-unit">
+        <span class="countdown-value">{{ pad(timing.minutes) }}</span>
+        <span class="countdown-name">min</span>
+      </div>
+      <div class="countdown-unit countdown-unit--sec">
+        <span class="countdown-value">{{ pad(timing.seconds) }}</span>
+        <span class="countdown-name">sec</span>
+      </div>
     </div>
 
     <p v-else class="countdown-ended">{{ timing.label }}</p>
@@ -48,63 +56,72 @@ const ariaLabel = computed(() => {
 
 <style scoped>
 .countdown {
+  margin-top: 0.15rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 0.7rem;
+  background: #f8f7f4;
+  border: 1px solid #f0eeea;
   display: grid;
-  gap: 0.3rem;
+  gap: 0.45rem;
 }
 
-.countdown-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.45rem 0.55rem;
+.countdown--open {
+  background: linear-gradient(180deg, #f7fdfb 0%, #f0fdf9 100%);
+  border-color: #d7f3ec;
 }
 
-.countdown-prefix {
-  font-size: 0.68rem;
-  font-weight: 500;
+.countdown-label {
+  margin: 0;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   color: #a8a29e;
-  letter-spacing: 0.01em;
 }
 
-.countdown--open .countdown-prefix {
+.countdown--open .countdown-label {
   color: var(--vb-accent, #0f766e);
 }
 
-.countdown-clock {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.2rem;
-  font-variant-numeric: tabular-nums;
+.countdown-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
 }
 
-.countdown-segment {
-  font-size: 0.92rem;
+.countdown-unit {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  padding: 0.45rem 0.2rem;
+  border-radius: 0.55rem;
+  background: #fff;
+  border: 1px solid #ece9e2;
+}
+
+.countdown--open .countdown-unit {
+  border-color: #ccefe8;
+}
+
+.countdown-value {
+  font-size: 1rem;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   color: #1c1917;
   line-height: 1;
 }
 
-.countdown--open .countdown-segment {
+.countdown--open .countdown-value {
   color: var(--vb-accent, #0f766e);
 }
 
-.countdown-segment small {
-  margin-left: 0.05rem;
-  font-size: 0.62rem;
+.countdown-name {
+  font-size: 0.52rem;
   font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: #a8a29e;
-}
-
-.countdown-segment--sec {
-  min-width: 2.1rem;
-}
-
-.countdown-dot {
-  color: #d6d3d1;
-  font-weight: 700;
-  font-size: 0.75rem;
-  line-height: 1;
 }
 
 .countdown-ended {
@@ -116,21 +133,42 @@ const ariaLabel = computed(() => {
 
 .countdown-absolute {
   margin: 0;
-  font-size: 0.65rem;
+  font-size: 0.62rem;
   color: #a8a29e;
+  text-align: center;
+}
+
+@media (max-width: 639px) {
+  .countdown {
+    padding: 0.65rem 0.6rem;
+    gap: 0.4rem;
+  }
+
+  .countdown-track {
+    gap: 0.28rem;
+  }
+
+  .countdown-unit {
+    padding: 0.5rem 0.15rem;
+    border-radius: 0.5rem;
+  }
+
+  .countdown-value {
+    font-size: 0.95rem;
+  }
+
+  .countdown-name {
+    font-size: 0.48rem;
+  }
 }
 
 @media (min-width: 768px) {
-  .countdown-prefix {
-    font-size: 0.72rem;
+  .countdown {
+    padding: 0.75rem 0.85rem;
   }
 
-  .countdown-segment {
-    font-size: 1.05rem;
-  }
-
-  .countdown-segment small {
-    font-size: 0.68rem;
+  .countdown-value {
+    font-size: 1.1rem;
   }
 }
 </style>

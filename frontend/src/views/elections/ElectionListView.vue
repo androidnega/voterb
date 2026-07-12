@@ -1,269 +1,328 @@
 <template>
-  <div class="p-4 sm:p-6 max-w-7xl mx-auto">
-    <!-- Header -->
-    <div class="flex flex-wrap items-end justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Elections</h1>
-        <p class="text-gray-500 text-sm mt-1">Manage and monitor all elections across your institution.</p>
-      </div>
-      <Button label="New Election" icon="pi pi-plus" @click="showCreateDialog = true" class="shadow-sm" />
-    </div>
-
-    <!-- Stats Cards (compact) -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      <div class="bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Total</p>
-            <p class="text-2xl font-bold text-gray-800 mt-1">{{ stats.total }}</p>
-          </div>
-          <div class="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
-            <i class="pi pi-calendar text-indigo-500 text-lg"></i>
-          </div>
-        </div>
-        <div class="mt-3 h-1 w-full bg-indigo-100 rounded-full overflow-hidden">
-          <div class="h-full bg-indigo-500 rounded-full" style="width: 100%"></div>
-        </div>
-      </div>
-      <div class="bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Active</p>
-            <p class="text-2xl font-bold text-emerald-600 mt-1">{{ stats.active }}</p>
-          </div>
-          <div class="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
-            <i class="pi pi-check-circle text-emerald-500 text-lg"></i>
-          </div>
-        </div>
-        <div class="mt-3 h-1 w-full bg-emerald-100 rounded-full overflow-hidden">
-          <div class="h-full bg-emerald-500 rounded-full" :style="{ width: stats.total ? (stats.active/stats.total*100)+'%' : '0%' }"></div>
-        </div>
-      </div>
-      <div class="bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Scheduled</p>
-            <p class="text-2xl font-bold text-amber-600 mt-1">{{ stats.scheduled }}</p>
-          </div>
-          <div class="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center">
-            <i class="pi pi-clock text-amber-500 text-lg"></i>
-          </div>
-        </div>
-        <div class="mt-3 h-1 w-full bg-amber-100 rounded-full overflow-hidden">
-          <div class="h-full bg-amber-500 rounded-full" :style="{ width: stats.total ? (stats.scheduled/stats.total*100)+'%' : '0%' }"></div>
-        </div>
-      </div>
-      <div class="bg-white rounded-xl border border-gray-100 p-4 shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider">Closed</p>
-            <p class="text-2xl font-bold text-slate-600 mt-1">{{ stats.closed }}</p>
-          </div>
-          <div class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center">
-            <i class="pi pi-archive text-slate-500 text-lg"></i>
-          </div>
-        </div>
-        <div class="mt-3 h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-          <div class="h-full bg-slate-500 rounded-full" :style="{ width: stats.total ? (stats.closed/stats.total*100)+'%' : '0%' }"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Search & Actions -->
-    <div class="flex flex-wrap items-center gap-3 mb-6">
-      <div class="relative flex-1 min-w-[200px]">
-        <i class="pi pi-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-        <input 
-          v-model="searchQuery" 
-          type="text"
-          placeholder="Search by title or description..." 
-          class="w-full pl-9 pr-10 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-gray-50 hover:bg-white transition-colors duration-200 text-sm"
-          @input="filterElections"
-        />
-        <i 
-          v-if="searchQuery" 
-          class="pi pi-times absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 cursor-pointer hover:text-gray-600 transition-colors"
-          @click="clearSearch"
-        ></i>
-      </div>
-      <Button 
-        label="Refresh" 
-        icon="pi pi-refresh" 
-        severity="secondary" 
-        size="small" 
-        @click="fetchElections" 
-        class="text-sm border-gray-200"
-      />
-    </div>
-
-    <!-- Results Count -->
-    <div class="flex items-center justify-between text-sm text-gray-500 mb-3">
-      <span>{{ filteredElections.length }} election{{ filteredElections.length !== 1 ? 's' : '' }} found</span>
-      <span v-if="searchQuery" class="text-xs text-gray-400">Filtered by "{{ searchQuery }}"</span>
-    </div>
-
-    <!-- Premium Table -->
-    <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hidden sm:block">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="bg-gray-50 border-b border-gray-100">
-            <th class="text-left py-4 px-6 font-semibold text-gray-600 text-xs uppercase tracking-wider">Title</th>
-            <th class="text-left py-4 px-6 font-semibold text-gray-600 text-xs uppercase tracking-wider">Type</th>
-            <th class="text-left py-4 px-6 font-semibold text-gray-600 text-xs uppercase tracking-wider">Status</th>
-            <th class="text-left py-4 px-6 font-semibold text-gray-600 text-xs uppercase tracking-wider">Start Date</th>
-            <th class="text-left py-4 px-6 font-semibold text-gray-600 text-xs uppercase tracking-wider">End Date</th>
-            <th class="text-center py-4 px-6 font-semibold text-gray-600 text-xs uppercase tracking-wider">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr 
-            v-for="election in filteredElections" 
-            :key="election.uuid"
-            class="border-b border-gray-50 hover:bg-emerald-50/30 transition-colors duration-150"
+  <Transition name="page-fade" appear>
+    <div class="admin-page">
+      <PageHeader
+        title="Elections"
+        :subtitle="canManageElections
+          ? 'Create, schedule, and monitor institutional elections.'
+          : 'Read-only view of all institutional elections.'"
+        icon="fas fa-calendar-check"
+        icon-tone="tone-teal"
+        :loading="loading"
+        @refresh="fetchElections"
+      >
+        <template #actions>
+          <button
+            v-if="canManageElections"
+            type="button"
+            class="btn btn-primary"
+            @click="showCreateDialog = true"
           >
-            <td class="py-4 px-6">
-              <div class="font-medium text-gray-800">{{ election.title }}</div>
-              <div class="text-xs text-gray-400 truncate max-w-xs">{{ election.description || '—' }}</div>
-            </td>
-            <td class="py-4 px-6">
-              <Badge :value="election.election_type" severity="info" class="capitalize" />
-            </td>
-            <td class="py-4 px-6">
-              <Badge :value="election.status" :severity="getStatusSeverity(election.status)" class="capitalize" />
-            </td>
-            <td class="py-4 px-6 text-gray-600">{{ formatDate(election.start_date) }}</td>
-            <td class="py-4 px-6 text-gray-600">{{ formatDate(election.end_date) }}</td>
-            <td class="py-4 px-6 text-center">
-              <div class="flex items-center justify-center gap-1">
-                <Button 
-                  icon="pi pi-eye" 
-                  size="small" 
-                  severity="secondary" 
-                  text 
-                  rounded
-                  @click="viewElection(election.uuid)" 
-                  tooltip="View Details"
-                />
-                <Button 
-                  icon="pi pi-pencil" 
-                  size="small" 
-                  severity="secondary" 
-                  text 
-                  rounded
-                  @click="editElection(election.uuid)" 
-                  tooltip="Edit"
-                />
-                <Button 
-                  icon="pi pi-trash" 
-                  size="small" 
-                  severity="danger" 
-                  text 
-                  rounded
-                  @click="confirmDelete(election)" 
-                  tooltip="Delete"
-                />
-              </div>
-            </td>
-          </tr>
-          <tr v-if="filteredElections.length === 0 && !loading">
-            <td colspan="6" class="py-16 text-center text-gray-400">
-              <i class="pi pi-inbox text-4xl block mb-3 text-gray-200"></i>
-              No elections found. Click "New Election" to get started.
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <!-- Pagination (simple) -->
-      <div class="flex items-center justify-between px-6 py-3 border-t border-gray-100 bg-gray-50/50 text-sm">
-        <span class="text-gray-500">{{ filteredElections.length }} items</span>
-        <div class="flex items-center gap-2">
-          <button class="px-3 py-1 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50" disabled>
-            <i class="pi pi-chevron-left text-xs"></i>
+            <i class="fas fa-plus"></i>
+            New Election
           </button>
-          <span class="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg font-medium">1</span>
-          <button class="px-3 py-1 border border-gray-200 rounded-lg hover:bg-gray-100 disabled:opacity-50" disabled>
-            <i class="pi pi-chevron-right text-xs"></i>
-          </button>
-        </div>
-      </div>
-    </div>
+        </template>
+      </PageHeader>
 
-    <!-- Mobile Cards -->
-    <div class="sm:hidden">
-      <div v-if="filteredElections.length === 0 && !loading" class="text-center py-12">
-        <i class="pi pi-inbox text-4xl text-gray-300 block mb-3"></i>
-        <p class="text-gray-500 text-sm">No elections found.</p>
+      <div v-if="!canManageElections" class="access-notice page-section">
+        <i class="fas fa-eye"></i>
+        <span>View-only — you can monitor elections but cannot create or modify them.</span>
       </div>
-      <div v-for="election in filteredElections" :key="election.uuid" class="bg-white rounded-xl border border-gray-100 p-4 mb-3 shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div class="flex items-start justify-between">
-          <div class="flex-1 min-w-0">
-            <div class="font-semibold text-gray-800 truncate">{{ election.title }}</div>
-            <div class="text-xs text-gray-400 truncate">{{ election.description || '—' }}</div>
+
+      <TransitionGroup name="stat-fade" tag="div" class="stat-grid page-section" appear>
+        <StatCard
+          v-for="card in statCards"
+          :key="card.label"
+          :label="card.label"
+          :value="loading ? '—' : card.value"
+          :hint="card.hint"
+          :icon="card.icon"
+          :tone="card.tone"
+          :value-tone="card.valueTone"
+        />
+      </TransitionGroup>
+
+      <div class="filter-bar page-section">
+        <div class="filter-input-wrap">
+          <i class="fas fa-search"></i>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Search by title or description…"
+          />
+        </div>
+        <select v-model="statusFilter" class="filter-select">
+          <option value="">All statuses</option>
+          <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+        <button type="button" class="btn btn-ghost" @click="clearFilters">Clear</button>
+      </div>
+
+      <DataPanel
+        title="All elections"
+        :subtitle="panelSubtitle"
+        no-padding
+      >
+        <template #header>
+          <span v-if="hasActiveFilters" class="filter-tag">
+            <i class="fas fa-filter"></i>
+            Filtered
+          </span>
+        </template>
+
+        <Transition name="content-fade" mode="out-in">
+          <div v-if="loading" key="load" class="loading-state">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading elections…</p>
           </div>
-          <Badge :value="election.status" :severity="getStatusSeverity(election.status)" class="capitalize ml-2 flex-shrink-0" />
-        </div>
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-gray-500">
-          <span><span class="font-medium">Type:</span> {{ election.election_type }}</span>
-          <span><span class="font-medium">Start:</span> {{ formatDate(election.start_date) }}</span>
-          <span><span class="font-medium">End:</span> {{ formatDate(election.end_date) }}</span>
-        </div>
-        <div class="flex items-center gap-2 mt-3">
-          <Button icon="pi pi-eye" size="small" severity="secondary" text @click="viewElection(election.uuid)" />
-          <Button icon="pi pi-pencil" size="small" severity="secondary" text @click="editElection(election.uuid)" />
-          <Button icon="pi pi-trash" size="small" severity="danger" text @click="confirmDelete(election)" />
-        </div>
-      </div>
-    </div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="flex justify-center py-12">
-      <i class="pi pi-spin pi-spinner text-2xl text-emerald-600"></i>
-    </div>
+          <div v-else key="content" class="admin-table-wrap elections-table-wrap">
+            <table class="admin-table elections-table">
+              <thead>
+                <tr>
+                  <th class="col-election">Election</th>
+                  <th class="col-type">Type</th>
+                  <th class="col-status">Status</th>
+                  <th class="col-period">Period</th>
+                  <th class="col-actions text-center">Actions</th>
+                </tr>
+              </thead>
+              <TransitionGroup v-if="sortedElections.length" tag="tbody" name="row-fade" appear>
+                <tr
+                  v-for="election in sortedElections"
+                  :key="election.uuid"
+                  class="election-row"
+                  :class="{ 'is-live': election.status === 'open' }"
+                >
+                  <td class="col-election">
+                    <button type="button" class="election-cell" @click="viewElection(election.uuid)">
+                      <div class="election-avatar" :class="statusTone(election.status)">
+                        <i class="fas fa-landmark"></i>
+                      </div>
+                      <div class="election-info">
+                        <span class="cell-title">{{ election.title }}</span>
+                        <span class="cell-sub">{{ election.description || 'No description' }}</span>
+                      </div>
+                    </button>
+                  </td>
+                  <td class="col-type">
+                    <span class="type-tag">{{ formatType(election.election_type) }}</span>
+                  </td>
+                  <td class="col-status">
+                    <span class="admin-badge" :class="statusBadge(election.status)">
+                      <span v-if="election.status === 'open'" class="live-indicator"></span>
+                      {{ election.status }}
+                    </span>
+                  </td>
+                  <td class="col-period">
+                    <div class="period-stack">
+                      <div class="period-line">
+                        <span class="period-key">Start</span>
+                        <span class="period-val">{{ formatDate(election.start_date) }}</span>
+                      </div>
+                      <div class="period-line">
+                        <span class="period-key">End</span>
+                        <span class="period-val">{{ formatDate(election.end_date) }}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="col-actions">
+                    <div class="action-group">
+                      <router-link
+                        v-if="['open', 'paused', 'closed'].includes(election.status)"
+                        :to="`/monitor/${election.uuid}`"
+                        class="admin-icon-btn"
+                        :class="{ 'is-accent': election.status === 'open' }"
+                        title="Monitor room"
+                      >
+                        <i class="fas fa-tv"></i>
+                      </router-link>
+                      <button
+                        type="button"
+                        class="admin-icon-btn"
+                        title="View details"
+                        @click="viewElection(election.uuid)"
+                      >
+                        <i class="fas fa-eye"></i>
+                      </button>
+                      <button
+                        v-if="canManageElections"
+                        type="button"
+                        class="admin-icon-btn"
+                        title="Edit"
+                        @click="editElection(election.uuid)"
+                      >
+                        <i class="fas fa-pen"></i>
+                      </button>
+                      <button
+                        v-if="canManageElections"
+                        type="button"
+                        class="admin-icon-btn danger"
+                        title="Delete"
+                        @click="confirmDelete(election)"
+                      >
+                        <i class="fas fa-trash"></i>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </TransitionGroup>
+              <tbody v-else>
+                <tr>
+                  <td colspan="5">
+                    <EmptyState
+                      icon="fas fa-calendar-xmark"
+                      title="No elections found"
+                      :message="emptyMessage"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Transition>
 
-    <!-- Create Dialog -->
-    <Dialog v-model:visible="showCreateDialog" header="Create New Election" :modal="true" class="w-full max-w-lg">
-      <CreateElectionForm @success="onElectionCreated" @cancel="showCreateDialog = false" />
-    </Dialog>
-  </div>
+        <template v-if="!loading && sortedElections.length" #footer>
+          <div class="table-foot">
+            <span>{{ sortedElections.length }} election{{ sortedElections.length === 1 ? '' : 's' }}</span>
+            <span v-if="stats.active" class="table-foot-live">
+              <span class="live-indicator"></span>
+              {{ stats.active }} live
+            </span>
+          </div>
+        </template>
+      </DataPanel>
+
+      <Dialog
+        v-model:visible="showCreateDialog"
+        header="Create New Election"
+        :modal="true"
+        class="w-full max-w-lg"
+      >
+        <CreateElectionForm @success="onElectionCreated" @cancel="showCreateDialog = false" />
+      </Dialog>
+    </div>
+  </Transition>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { electionApi } from '@/api/elections'
-import Button from 'primevue/button'
-import Badge from 'primevue/badge'
 import Dialog from 'primevue/dialog'
+import PageHeader from '@/components/admin/PageHeader.vue'
+import StatCard from '@/components/admin/StatCard.vue'
+import DataPanel from '@/components/admin/DataPanel.vue'
+import EmptyState from '@/components/admin/EmptyState.vue'
 import CreateElectionForm from '@/components/elections/CreateElectionForm.vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
+const canManageElections = computed(() => authStore.isElectionManager)
+
 const elections = ref([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
 const searchQuery = ref('')
+const statusFilter = ref('')
 
-const stats = computed(() => {
-  const total = elections.value.length
-  const active = elections.value.filter(e => e.status === 'open').length
-  const scheduled = elections.value.filter(e => e.status === 'scheduled').length
-  const closed = elections.value.filter(e => e.status === 'closed' || e.status === 'archived').length
-  return { total, active, scheduled, closed }
-})
+const statusOptions = [
+  { value: 'open', label: 'Open' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'paused', label: 'Paused' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'archived', label: 'Archived' },
+]
+
+const stats = computed(() => ({
+  total: elections.value.length,
+  active: elections.value.filter((e) => e.status === 'open').length,
+  scheduled: elections.value.filter((e) => e.status === 'scheduled').length,
+  closed: elections.value.filter((e) => e.status === 'closed' || e.status === 'archived').length,
+}))
+
+const statCards = computed(() => [
+  {
+    label: 'Total',
+    value: stats.value.total,
+    hint: 'All elections',
+    icon: 'fas fa-layer-group',
+    tone: 'tone-slate',
+    valueTone: 'text-slate-900',
+  },
+  {
+    label: 'Open',
+    value: stats.value.active,
+    hint: 'Currently voting',
+    icon: 'fas fa-signal',
+    tone: 'tone-teal',
+    valueTone: 'text-teal-700',
+  },
+  {
+    label: 'Scheduled',
+    value: stats.value.scheduled,
+    hint: 'Upcoming',
+    icon: 'fas fa-clock',
+    tone: 'tone-amber',
+    valueTone: 'text-amber-700',
+  },
+  {
+    label: 'Closed',
+    value: stats.value.closed,
+    hint: 'Completed',
+    icon: 'fas fa-archive',
+    tone: 'tone-indigo',
+    valueTone: 'text-indigo-700',
+  },
+])
 
 const filteredElections = computed(() => {
-  if (!searchQuery.value) return elections.value
-  const q = searchQuery.value.toLowerCase()
-  return elections.value.filter(e => 
-    e.title.toLowerCase().includes(q) || 
-    e.description?.toLowerCase().includes(q)
-  )
+  let list = elections.value
+  if (statusFilter.value) {
+    list = list.filter((e) => e.status === statusFilter.value)
+  }
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    list = list.filter(
+      (e) => e.title.toLowerCase().includes(q) || e.description?.toLowerCase().includes(q)
+    )
+  }
+  return list
+})
+
+const STATUS_ORDER = { open: 0, paused: 1, scheduled: 2, draft: 3, closed: 4, archived: 5 }
+
+const sortedElections = computed(() =>
+  [...filteredElections.value].sort((a, b) => {
+    const orderDiff = (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9)
+    if (orderDiff !== 0) return orderDiff
+    return new Date(b.start_date || 0) - new Date(a.start_date || 0)
+  })
+)
+
+const hasActiveFilters = computed(() => !!searchQuery.value || !!statusFilter.value)
+
+const panelSubtitle = computed(() => {
+  if (loading.value) return 'Loading…'
+  const n = sortedElections.value.length
+  return `${n} election${n === 1 ? '' : 's'} · open first`
+})
+
+const emptyMessage = computed(() => {
+  if (hasActiveFilters.value) return 'Try adjusting your search or status filter.'
+  if (canManageElections.value) return 'Create your first election to get started.'
+  return 'No elections available.'
 })
 
 const fetchElections = async () => {
   loading.value = true
   try {
-    const response = await electionApi.list()
-    elections.value = response.data
+    const { data } = await electionApi.list()
+    elections.value = data
   } catch (error) {
     console.error('Failed to fetch elections:', error)
   } finally {
@@ -273,43 +332,45 @@ const fetchElections = async () => {
 
 const formatDate = (date) => {
   if (!date) return 'TBA'
-  return new Date(date).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
+  return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-const getStatusSeverity = (status) => {
+const formatType = (type) => (type || '—').replace(/_/g, ' ')
+
+const statusBadge = (status) => {
   const map = {
-    draft: 'secondary',
+    draft: 'neutral',
     scheduled: 'info',
     open: 'success',
     paused: 'warning',
     closed: 'danger',
-    archived: 'danger'
+    archived: 'neutral',
   }
-  return map[status] || 'secondary'
+  return map[status] || 'neutral'
 }
 
-const filterElections = () => {}
+const statusTone = (status) => {
+  const map = {
+    open: 'tone-teal',
+    scheduled: 'tone-blue',
+    draft: 'tone-slate',
+    paused: 'tone-amber',
+    closed: 'tone-indigo',
+    archived: 'tone-slate',
+  }
+  return map[status] || 'tone-slate'
+}
 
-const clearSearch = () => {
+const clearFilters = () => {
   searchQuery.value = ''
+  statusFilter.value = ''
 }
 
-const viewElection = (uuid) => {
-  router.push(`/elections/${uuid}`)
-}
-
-const editElection = (uuid) => {
-  router.push(`/elections/${uuid}`)
-}
+const viewElection = (uuid) => router.push(`/elections/${uuid}`)
+const editElection = (uuid) => router.push(`/elections/${uuid}`)
 
 const confirmDelete = (election) => {
-  if (confirm(`Delete "${election.title}"?`)) {
-    deleteElection(election.uuid)
-  }
+  if (confirm(`Delete "${election.title}"?`)) deleteElection(election.uuid)
 }
 
 const deleteElection = async (uuid) => {
@@ -327,50 +388,321 @@ const onElectionCreated = () => {
   fetchElections()
 }
 
-onMounted(() => {
-  fetchElections()
-})
+onMounted(fetchElections)
 </script>
 
 <style scoped>
-/* Clean table design */
-table {
-  border-collapse: separate;
-  border-spacing: 0;
-  width: 100%;
-}
-thead th {
-  background: #f8fafc;
-  color: #475569;
-  font-weight: 600;
-  font-size: 0.65rem;
+.filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 9999px;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-bottom: 1px solid #e9edf2;
 }
-tbody tr {
-  transition: background 0.15s;
+
+.elections-table-wrap {
+  /* scroll + max-height from .admin-table-wrap */
 }
-tbody tr:hover {
-  background: #f0fdf4;
+
+.elections-table {
+  table-layout: fixed;
 }
-tbody td {
-  vertical-align: middle;
+
+.elections-table thead th {
+  padding: 0.75rem 1.25rem;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  /* sticky + scroll from global .admin-table-wrap / .admin-table */
 }
-/* Badge styling */
-:deep(.p-badge) {
-  font-weight: 500;
+
+.elections-table tbody td {
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.elections-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.col-election { width: 38%; }
+.col-type { width: 14%; }
+.col-status { width: 12%; }
+.col-period { width: 20%; }
+.col-actions { width: 16%; }
+
+.election-row {
+  transition: background 0.15s ease;
+}
+
+.election-row.is-live {
+  background: #fafefd;
+}
+
+.election-row.is-live td:first-child {
+  box-shadow: inset 3px 0 0 #14b8a6;
+}
+
+.election-row:hover {
+  background: #f8fafc;
+}
+
+.election-row.is-live:hover {
+  background: #f0fdfa;
+}
+
+.election-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.election-avatar {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.election-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.election-cell:hover .cell-title {
+  color: #0f766e;
+}
+
+.election-info .cell-sub {
+  display: block;
+  margin-top: 0.15rem;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.type-tag {
+  display: inline-block;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.45rem;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.period-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.period-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.period-key {
+  width: 2.25rem;
   font-size: 0.65rem;
-  padding: 0.2rem 0.6rem;
-  border-radius: 20px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
 }
-/* Custom pagination */
-.pagination button:hover {
-  background: #f1f5f9;
+
+.period-val {
+  color: #334155;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
-.pagination .active {
-  background: #e6f7ee;
-  color: #0f7d3e;
-  border-color: #0f7d3e;
+
+.elections-table .admin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.live-indicator {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.2rem;
+  background: #fafbfc;
+  border: 1px solid #f1f5f9;
+  border-radius: 0.65rem;
+}
+
+.col-actions .row-actions,
+.col-actions {
+  text-align: center;
+}
+
+.action-group .admin-icon-btn {
+  width: 1.85rem;
+  height: 1.85rem;
+  font-size: 0.75rem;
+}
+
+.action-group .admin-icon-btn.is-accent {
+  color: #0f766e;
+  background: #ecfdf5;
+  border-color: #d1fae5;
+}
+
+.action-group .admin-icon-btn.is-accent:hover {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.table-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.table-foot-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #0f766e;
+  font-weight: 600;
+}
+
+.table-foot-live .live-indicator {
+  background: #34d399;
+}
+
+@media (max-width: 900px) {
+  .elections-table {
+    table-layout: auto;
+  }
+
+  .col-election,
+  .col-type,
+  .col-status,
+  .col-period,
+  .col-actions {
+    width: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .elections-table thead {
+    display: none;
+  }
+
+  .elections-table tbody tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .elections-table tbody td {
+    border: none;
+    padding: 0;
+  }
+
+  .elections-table tbody td.col-election {
+    grid-column: 1 / -1;
+  }
+
+  .elections-table tbody td.col-period {
+    grid-column: 1;
+  }
+
+  .elections-table tbody td.col-actions {
+    grid-column: 1 / -1;
+    padding-top: 0.35rem;
+  }
+
+  .action-group {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .election-row.is-live td:first-child {
+    box-shadow: none;
+  }
+
+  .election-row.is-live {
+    border-left: 3px solid #14b8a6;
+    padding-left: calc(1.25rem - 3px);
+  }
+}
+
+/* Animations */
+.page-fade-enter-active {
+  transition: opacity 0.3s ease;
+}
+
+.page-fade-enter-from {
+  opacity: 0;
+}
+
+.stat-fade-enter-active {
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.stat-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.content-fade-enter-active,
+.content-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.content-fade-enter-from,
+.content-fade-leave-to {
+  opacity: 0;
+}
+
+.row-fade-enter-active {
+  transition: opacity 0.25s ease;
+}
+
+.row-fade-enter-from {
+  opacity: 0;
+}
+
+.row-fade-move {
+  transition: transform 0.25s ease;
 }
 </style>

@@ -28,14 +28,15 @@ class ElectionSeal(models.Model):
 
 class CustodyRecord(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='custody_records')
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='custody_records', null=True, blank=True)
     action = models.CharField(max_length=50)
     actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     metadata = models.JSONField(default=dict)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.action} - {self.election.title}"
+        title = self.election.title if self.election else 'System'
+        return f"{self.action} - {title}"
 
 class IntegrityVerification(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -135,3 +136,19 @@ class VaultEvidence(models.Model):
 
     def __str__(self):
         return f"Evidence {self.seal_hash[:16]}... viewed by {self.viewed_by.email}"
+
+
+class StrongroomAccessSession(models.Model):
+    """Step-up authenticated vault gate session for strongroom access."""
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='strongroom_sessions')
+    token_hash = models.CharField(max_length=128, unique=True)
+    expires_at = models.DateTimeField()
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Strongroom session for {self.user.email}"

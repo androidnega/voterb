@@ -1,0 +1,119 @@
+/* Shared admin table styles — import in main.js */
+
+/* Scrollable list/table body — scrollbar hidden until hover */
+.admin-scroll,
+.admin-table-wrap {
+  overflow: auto;
+  max-height: min(32rem, calc(100vh - 14rem));
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.admin-scroll:hover,
+.admin-scroll:focus-within,
+.admin-table-wrap:hover,
+.admin-table-wrap:focus-within {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.admin-scroll::-webkit-scrollbar,
+.admin-table-wrap::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.admin-scroll::-webkit-scrollbar-track,
+.admin-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-scroll::-webkit-scrollbar-thumb,
+.admin-table-wrap::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 9999px;
+}
+
+.admin-scroll:hover::-webkit-scrollbar-thumb,
+.admin-scroll:focus-within::-webkit-scrollbar-thumb,
+.admin-table-wrap:hover::-webkit-scrollbar-thumb,
+.admin-table-wrap:focus-within::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.9rem 1.25rem;
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #64748b;
+  background: #fafbfc;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.admin-table tbody td {
+  padding: 0.95rem 1.25rem;
+  color: #334155;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+  font-size: 0.8125rem;
+}
+
+.admin-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-icon-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-icon-btn:hover {
+  background: #f1f5f9;
+  color: #0f766e;
+  border-color: #e2e8f0;
+}
+
+.admin-icon-btn.danger:hover {
+  color: #be123c;
+  background: #fff1f2;
+}
+
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.admin-badge.success { background: #ecfdf5; color: #047857; }
+.admin-badge.warning { background: #fffbeb; color: #b45309; }
+.admin-badge.danger { background: #fff1f2; color: #be123c; }
+.admin-badge.info { background: #eff6ff; color: #1d4ed8; }
+.admin-badge.neutral { background: #f1f5f9; color: #475569; }

@@ -7,8 +7,8 @@
       </div>
       <div class="flex flex-wrap gap-2">
         <Button label="Back" icon="pi pi-arrow-left" severity="secondary" size="small" @click="$router.push('/results')" />
-        <Button v-if="result.status === 'generated' && isSuperAdmin" label="Certify" icon="pi pi-check" severity="success" size="small" @click="certify" />
-        <Button v-if="result.status === 'certified' && isSuperAdmin" label="Publish" icon="pi pi-globe" severity="info" size="small" @click="publish" />
+        <Button v-if="result.status === 'generated' && canManageResults" label="Certify" icon="pi pi-check" severity="success" size="small" @click="certify" />
+        <Button v-if="result.status === 'certified' && canManageResults" label="Publish" icon="pi pi-globe" severity="info" size="small" @click="publish" />
       </div>
     </div>
 
@@ -22,6 +22,51 @@
         <span v-if="result.published_at" class="text-sm text-gray-500">| Published: {{ formatDate(result.published_at) }}</span>
       </div>
     </div>
+
+    <section v-if="featuredPosition" class="mb-6">
+      <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-900">Results analytics</h2>
+            <p class="text-sm text-gray-500">{{ featuredPosition.title }} — vote breakdown and turnout</p>
+          </div>
+          <select
+            v-if="standings.length > 1"
+            v-model="selectedPositionUuid"
+            class="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700"
+          >
+            <option v-for="pos in standings" :key="pos.uuid" :value="pos.uuid">{{ pos.title }}</option>
+          </select>
+        </div>
+        <div class="results-charts">
+          <div class="results-chart-card">
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Candidate comparison</h3>
+            <HorizontalBarChart
+              :labels="chartLabels"
+              :data="chartVotes"
+              aria-label="Candidate comparison horizontal bar chart"
+            />
+          </div>
+          <div class="results-chart-card">
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Vote share</h3>
+            <DonutChart
+              :labels="chartLabels"
+              :data="chartVotes"
+              aria-label="Vote share donut chart"
+            />
+          </div>
+          <div class="results-chart-card results-chart-card--wide">
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Turnout trend</h3>
+            <AreaChart
+              :labels="turnoutTrend.labels"
+              :data="turnoutTrend.turnout"
+              label="Turnout %"
+              aria-label="Turnout trend area chart"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- Positions Results -->
     <div class="space-y-6">
@@ -93,30 +138,62 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { resultsApi } from '@/api/results'
+import { electionApi } from '@/api/elections'
 import Button from 'primevue/button'
 import Badge from 'primevue/badge'
+import HorizontalBarChart from '@/components/charts/HorizontalBarChart.vue'
+import DonutChart from '@/components/charts/DonutChart.vue'
+import AreaChart from '@/components/charts/AreaChart.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const result = ref(null)
 const loading = ref(true)
-const isSuperAdmin = computed(() => authStore.roleName === 'super_admin' || !!authStore.user?.is_superuser)
+const monitorData = ref(null)
+const selectedPositionUuid = ref(null)
+const canManageResults = computed(() => authStore.isElectionManager)
 
 const standings = computed(() => {
   if (!result.value?.standings) return []
   return result.value.standings.positions || []
 })
 
+const featuredPosition = computed(() => {
+  if (!standings.value.length) return null
+  if (selectedPositionUuid.value) {
+    return standings.value.find((p) => p.uuid === selectedPositionUuid.value) || standings.value[0]
+  }
+  return standings.value.find((p) => /president/i.test(p.title)) || standings.value[0]
+})
+
+const chartLabels = computed(() => (featuredPosition.value?.candidates || []).map((c) => c.full_name))
+const chartVotes = computed(() => (featuredPosition.value?.candidates || []).map((c) => c.votes))
+const turnoutTrend = computed(() => monitorData.value?.cumulative_turnout || { labels: [], turnout: [] })
+
 const integrity = computed(() => {
   return result.value?.integrity_report || {}
 })
+
+const fetchMonitorTrend = async (electionUuid) => {
+  if (!electionUuid) return
+  try {
+    const { data } = await electionApi.getMonitor(electionUuid)
+    monitorData.value = data
+  } catch (error) {
+    console.error('Failed to fetch turnout trend:', error)
+  }
+}
 
 const fetchResult = async () => {
   loading.value = true
   try {
     const response = await resultsApi.preview(route.params.uuid)
     result.value = response.data
+    const positions = response.data?.standings?.positions || []
+    const defaultPos = positions.find((p) => /president/i.test(p.title)) || positions[0]
+    selectedPositionUuid.value = defaultPos?.uuid || null
+    await fetchMonitorTrend(response.data?.election?.uuid)
   } catch (error) {
     console.error('Failed to fetch result:', error)
     router.push('/results')
@@ -175,3 +252,25 @@ onMounted(() => {
   fetchResult()
 })
 </script>
+
+<style scoped>
+.results-charts {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 900px) {
+  .results-charts {
+    grid-template-columns: 1.2fr 1fr;
+  }
+
+  .results-chart-card--wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.results-chart-card {
+  min-height: 14rem;
+}
+</style>

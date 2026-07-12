@@ -8,11 +8,13 @@ from .views import (
     CertificationQueueView,
     PublishedResultsListView,
     PublishedResultDetailView,
+    LiveResultsView,
 )
 
 urlpatterns = [
     path('elections/', ResultsListView.as_view(), name='results-list'),
     path('certification-queue/', CertificationQueueView.as_view(), name='certification-queue'),
+    path('elections/<uuid:uuid>/live/', LiveResultsView.as_view(), name='results-live'),
     path('elections/<uuid:uuid>/generate/', GenerateResultsView.as_view(), name='results-generate'),
     path('elections/<uuid:uuid>/preview/', PreviewResultsView.as_view(), name='results-preview'),
     path('elections/<uuid:uuid>/certify/', CertifyResultsView.as_view(), name='results-certify'),

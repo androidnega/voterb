@@ -15,11 +15,14 @@ class Role(models.Model):
 
 class UserManager(BaseUserManager):
     def create_user(self, email=None, password=None, **extra_fields):
-        if not email:
-            raise ValueError('Email is required for staff users; students may use index_number')
-        email = self.normalize_email(email)
+        # For students, email is optional
+        if not email and not extra_fields.get('index_number'):
+            raise ValueError('Either email or index_number is required')
+        if email:
+            email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
-        user.set_password(password)
+        if password:
+            user.set_password(password)
         user.save(using=self._db)
         return user
 
@@ -31,14 +34,20 @@ class UserManager(BaseUserManager):
 class User(AbstractBaseUser, PermissionsMixin):
     id = models.BigAutoField(primary_key=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    email = models.EmailField(unique=True, null=True, blank=True)
+    email = models.EmailField(unique=True, null=True, blank=True)  # Now optional
     username = models.CharField(max_length=150, unique=True, null=True, blank=True)
     index_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
     student_id = models.CharField(max_length=50, unique=True, null=True, blank=True)
-    phone_number = models.CharField(max_length=20, blank=True)
-    first_name = models.CharField(max_length=150, blank=True)
-    last_name = models.CharField(max_length=150, blank=True)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)  # Now optional
+    first_name = models.CharField(max_length=150, blank=True, null=True)
+    last_name = models.CharField(max_length=150, blank=True, null=True)
     role = models.ForeignKey(Role, on_delete=models.PROTECT, null=True)
+    faculty = models.ForeignKey('elections.Faculty', on_delete=models.SET_NULL, null=True, blank=True)
+    department = models.ForeignKey('elections.Department', on_delete=models.SET_NULL, null=True, blank=True)
+    level = models.ForeignKey('elections.Level', on_delete=models.SET_NULL, null=True, blank=True)
+    programme = models.CharField(max_length=100, blank=True, null=True)
+    year_of_study = models.IntegerField(null=True, blank=True)
+    onboarding_completed = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)

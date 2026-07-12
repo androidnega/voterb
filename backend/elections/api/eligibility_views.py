@@ -6,13 +6,19 @@ from django.db import transaction
 from accounts.models import User
 from elections.models import Election, VoterEligibility
 from elections.serializers import VoterEligibilitySerializer
-from accounts.permissions import IsAdminOrSuperAdmin
+from elections.services.eligibility import resolve_or_create_voter
+from django.utils import timezone
+from accounts.permissions import IsAdmin, IsElectionViewer
 import csv
 import io
 
 class EligibilityListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
     serializer_class = VoterEligibilitySerializer
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsElectionViewer()]
+        return [IsAdmin()]
 
     def get_queryset(self):
         election_uuid = self.kwargs['election_uuid']
@@ -25,7 +31,7 @@ class EligibilityListCreateView(generics.ListCreateAPIView):
         serializer.save(election=election, verified_by=self.request.user)
 
 class EligibilityDeleteView(generics.DestroyAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
     lookup_field = 'uuid'
 
     def get_queryset(self):
@@ -34,7 +40,7 @@ class EligibilityDeleteView(generics.DestroyAPIView):
         return VoterEligibility.objects.filter(election=election)
 
 class EligibilityBulkImportView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
 
     def post(self, request, election_uuid):
         election = get_object_or_404(Election, uuid=election_uuid)
@@ -51,15 +57,29 @@ class EligibilityBulkImportView(APIView):
             errors = []
 
             for row in reader:
-                identifier = row.get('identifier') or row.get('email') or row.get('index_number')
-                if not identifier:
-                    errors.append(f"Missing identifier in row: {row}")
+                index_number = (row.get('index_number') or row.get('identifier') or '').strip()
+                if not index_number:
+                    errors.append(f"Missing index_number in row: {row}")
                     continue
 
-                user = User.objects.filter(email=identifier).first() or User.objects.filter(index_number=identifier).first()
-                if not user:
-                    errors.append(f"User not found for identifier: {identifier}")
+                if '@' in index_number:
+                    errors.append(f"{index_number}: students use index numbers only, not email")
                     continue
+
+                user, error_message = resolve_or_create_voter(index_number)
+
+                if error_message or not user:
+                    errors.append(f"{index_number}: {error_message or 'Student not found'}")
+                    continue
+
+                first_name = row.get('first_name', '').strip()
+                last_name = row.get('last_name', '').strip()
+                if first_name:
+                    user.first_name = first_name
+                if last_name:
+                    user.last_name = last_name
+                if first_name or last_name:
+                    user.save()
 
                 # Check if already exists
                 if VoterEligibility.objects.filter(election=election, user=user).exists():

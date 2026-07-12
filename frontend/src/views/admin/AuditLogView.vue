@@ -18,9 +18,8 @@
     </div>
 
     <!-- Logs Table -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+    <div class="admin-table-wrap">
+      <table class="admin-table">
           <thead>
             <tr class="bg-gray-50 border-b border-gray-100">
               <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Timestamp</th>
@@ -51,7 +50,6 @@
             </tr>
           </tbody>
         </table>
-      </div>
     </div>
   </div>
 </template>

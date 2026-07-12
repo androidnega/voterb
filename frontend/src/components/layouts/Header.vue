@@ -1,87 +1,82 @@
 <template>
-  <header class="bg-white border-b border-gray-200 sticky top-0 z-30">
-    <div class="flex items-center justify-between px-4 h-16">
-      <!-- Left side -->
-      <div class="flex items-center gap-3">
-        <button 
-          @click="toggleMobileMenu" 
-          class="p-2 hover:bg-gray-100 rounded-lg transition-colors lg:hidden"
-        >
-          <i class="fas fa-bars text-gray-600 text-lg"></i>
+  <header class="soft-header">
+    <div class="soft-header__left">
+      <button type="button" class="soft-icon-btn lg:hidden" @click="toggleMobileMenu" aria-label="Open menu">
+        <i class="fas fa-bars"></i>
+      </button>
+
+      <div class="soft-header__greeting">
+        <h1 class="soft-header__title">Hello, {{ firstName }}!</h1>
+        <p class="soft-header__subtitle">{{ subtitle }}</p>
+      </div>
+    </div>
+
+    <div class="soft-header__right">
+      <form class="soft-search" @submit.prevent="goSearch">
+        <input
+          v-model="searchQuery"
+          type="search"
+          class="soft-search__input"
+          placeholder="Search..."
+          aria-label="Search"
+        />
+        <button type="submit" class="soft-search__btn" aria-label="Submit search">
+          <i class="fas fa-search"></i>
         </button>
-        <div class="hidden sm:flex items-center gap-2 text-sm">
-          <span class="text-gray-400">/</span>
-          <span class="text-gray-600 font-medium">{{ currentPage }}</span>
-        </div>
+      </form>
+
+      <div class="relative" ref="messagesRef">
+        <button
+          type="button"
+          class="soft-icon-btn"
+          :class="{ 'is-active': showMessages }"
+          aria-label="Messages"
+          @click.stop="toggleMessages"
+        >
+          <i class="far fa-comment-dots"></i>
+          <span v-if="unreadCount > 0" class="soft-icon-btn__dot"></span>
+        </button>
       </div>
 
-      <!-- Right side -->
-      <div class="flex items-center gap-3">
-        <!-- Notifications -->
-        <div class="relative">
-          <button 
-            @click="toggleDropdown"
-            class="p-2 hover:bg-gray-100 rounded-lg transition-colors relative"
-          >
-            <i class="fas fa-bell text-gray-500"></i>
-            <span v-if="unreadCount > 0" class="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-              {{ unreadCount > 99 ? '99+' : unreadCount }}
-            </span>
-          </button>
-          <!-- Dropdown -->
-          <div 
-            v-if="showDropdown"
-            class="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50"
-          >
-            <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-              <span class="text-sm font-semibold text-gray-900">Notifications</span>
-              <button 
-                v-if="unreadCount > 0"
-                @click="markAllRead"
-                class="text-xs text-emerald-600 hover:text-emerald-700"
-              >
-                Mark all read
-              </button>
-            </div>
-            <div class="max-h-80 overflow-y-auto">
-              <div v-if="loading" class="px-4 py-6 text-center text-gray-400 text-sm">
-                <i class="fas fa-spinner fa-spin"></i> Loading...
-              </div>
-              <div v-else-if="notifications.length === 0" class="px-4 py-8 text-center text-gray-400 text-sm">
-                <i class="fas fa-inbox text-2xl block mb-2 text-gray-300"></i>
-                No notifications
-              </div>
-              <div 
-                v-for="notif in notifications" 
-                :key="notif.uuid"
-                class="px-4 py-3 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
-                :class="{ 'bg-blue-50/50': !notif.is_read }"
-                @click="handleNotificationClick(notif)"
-              >
-                <div class="flex items-start gap-2">
-                  <i v-if="!notif.is_read" class="fas fa-circle text-emerald-500 text-xs mt-1"></i>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-800">{{ notif.title }}</p>
-                    <p class="text-xs text-gray-500 truncate">{{ notif.body }}</p>
-                    <span class="text-[10px] text-gray-400">{{ timeAgo(notif.created_at) }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="px-4 py-2 border-t border-gray-100 text-center">
-              <router-link to="/notifications" class="text-sm text-emerald-600 hover:text-emerald-700">
-                View all
-              </router-link>
-            </div>
-          </div>
-        </div>
+      <div class="relative" ref="notificationsRef">
+        <button
+          type="button"
+          class="soft-icon-btn"
+          :class="{ 'is-active': showNotifications }"
+          aria-label="Notifications"
+          @click.stop="toggleNotifications"
+        >
+          <i class="far fa-bell"></i>
+          <span v-if="unreadCount > 0" class="soft-icon-btn__dot"></span>
+        </button>
 
-        <!-- User -->
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center">
-            <span class="text-emerald-700 font-semibold text-sm">{{ userInitial }}</span>
+        <div v-if="showNotifications" class="soft-dropdown">
+          <div class="soft-dropdown__head">
+            <span>Notifications</span>
+            <button v-if="unreadCount > 0" type="button" class="soft-dropdown__action" @click="markAllRead">
+              Mark all read
+            </button>
           </div>
-          <span class="text-sm font-medium text-gray-700 hidden sm:block">{{ userName }}</span>
+          <div class="soft-dropdown__body">
+            <div v-if="loading" class="soft-dropdown__empty">
+              <i class="fas fa-spinner fa-spin"></i> Loading…
+            </div>
+            <div v-else-if="notifications.length === 0" class="soft-dropdown__empty">
+              No notifications
+            </div>
+            <button
+              v-for="notif in notifications"
+              :key="notif.uuid"
+              type="button"
+              class="soft-dropdown__item"
+              :class="{ 'is-unread': !notif.is_read }"
+              @click="handleNotificationClick(notif)"
+            >
+              <p class="soft-dropdown__item-title">{{ notif.title }}</p>
+              <p class="soft-dropdown__item-body">{{ notif.body }}</p>
+              <span class="soft-dropdown__item-time">{{ timeAgo(notif.created_at) }}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -90,44 +85,74 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { notificationApi } from '@/api/notifications'
+import { displayUserName } from '@/utils/user'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const emit = defineEmits(['toggle-mobile'])
 
-const showDropdown = ref(false)
+const showNotifications = ref(false)
+const showMessages = ref(false)
+const notificationsRef = ref(null)
+const messagesRef = ref(null)
 const notifications = ref([])
 const loading = ref(false)
+const searchQuery = ref('')
 let interval = null
 
-const currentPage = computed(() => {
-  const path = route.path
-  if (path === '/dashboard') return 'Dashboard'
-  if (path.startsWith('/elections')) return 'Elections'
-  if (path.startsWith('/results')) return 'Results'
-  if (path.startsWith('/strongroom')) return 'Strongroom'
-  if (path.startsWith('/student')) return 'Student View'
-  return 'Dashboard'
-})
-
-const userName = computed(() => {
+const firstName = computed(() => {
   const user = authStore.user
   if (user?.first_name) return user.first_name
-  if (user?.email) return user.email.split('@')[0]
-  return 'User'
+  return displayUserName(user).split(' ')[0]
 })
 
-const userInitial = computed(() => {
-  const name = userName.value
-  return name.charAt(0).toUpperCase()
+const subtitle = computed(() => {
+  const path = route.path
+  if (path === '/dashboard') {
+    return 'Explore elections, turnout, and activity across your platform'
+  }
+  if (path.startsWith('/elections')) return 'Create, schedule, and manage election cycles'
+  if (path.startsWith('/results')) return 'Review, certify, and publish election results'
+  if (path.startsWith('/strongroom')) return 'Monitor seals, vault integrity, and access'
+  if (path.startsWith('/fraud')) return 'Track suspicious activity and voting anomalies'
+  if (path.startsWith('/ussd')) return 'Watch mobile USSD session health in real time'
+  if (path.startsWith('/audit')) return 'Security events and administrative audit trails'
+  if (path.startsWith('/users')) return 'Manage platform users and role assignments'
+  if (path.startsWith('/settings')) return 'Configure platform preferences and themes'
+  if (path.startsWith('/operations')) return 'Operations center and system health'
+  if (path.startsWith('/academic')) return 'Faculties, departments, and academic structure'
+  return 'Manage your VoterB workspace'
 })
 
-const unreadCount = computed(() => {
-  return notifications.value.filter(n => !n.is_read).length
-})
+const unreadCount = computed(() => notifications.value.filter((n) => !n.is_read).length)
+
+const searchTargets = [
+  { match: ['election', 'elections'], path: '/elections' },
+  { match: ['result', 'results'], path: '/results' },
+  { match: ['strong', 'vault', 'seal'], path: '/strongroom' },
+  { match: ['fraud'], path: '/fraud' },
+  { match: ['ussd', 'mobile'], path: '/ussd' },
+  { match: ['audit', 'log'], path: '/audit' },
+  { match: ['user', 'users'], path: '/users' },
+  { match: ['setting', 'theme'], path: '/settings' },
+  { match: ['academic', 'faculty', 'department'], path: '/academic' },
+  { match: ['operation', 'ops'], path: '/operations' },
+  { match: ['dashboard', 'home'], path: '/dashboard' },
+]
+
+const goSearch = () => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return
+  const hit = searchTargets.find((t) => t.match.some((m) => q.includes(m) || m.includes(q)))
+  if (hit) {
+    router.push(hit.path)
+    searchQuery.value = ''
+  }
+}
 
 const fetchNotifications = async () => {
   loading.value = true
@@ -144,7 +169,7 @@ const fetchNotifications = async () => {
 const markAllRead = async () => {
   try {
     await notificationApi.markAllRead()
-    notifications.value = notifications.value.map(n => ({ ...n, is_read: true }))
+    notifications.value = notifications.value.map((n) => ({ ...n, is_read: true }))
   } catch (error) {
     console.error('Failed to mark all read:', error)
   }
@@ -160,7 +185,7 @@ const handleNotificationClick = async (notif) => {
     }
   }
   if (notif.link) {
-    showDropdown.value = false
+    showNotifications.value = false
     window.location.href = notif.link
   }
 }
@@ -168,15 +193,29 @@ const handleNotificationClick = async (notif) => {
 const timeAgo = (date) => {
   const diff = Math.floor((Date.now() - new Date(date).getTime()) / 1000)
   if (diff < 60) return 'Just now'
-  if (diff < 3600) return Math.floor(diff / 60) + 'm ago'
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago'
-  return Math.floor(diff / 86400) + 'd ago'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
 }
 
-const toggleDropdown = () => {
-  showDropdown.value = !showDropdown.value
-  if (showDropdown.value) {
+const closeMenus = () => {
+  showNotifications.value = false
+  showMessages.value = false
+}
+
+const toggleNotifications = () => {
+  showMessages.value = false
+  showNotifications.value = !showNotifications.value
+  if (showNotifications.value) fetchNotifications()
+}
+
+const toggleMessages = () => {
+  showNotifications.value = false
+  showMessages.value = !showMessages.value
+  if (showMessages.value) {
+    showNotifications.value = true
     fetchNotifications()
+    showMessages.value = false
   }
 }
 
@@ -184,16 +223,229 @@ const toggleMobileMenu = () => {
   emit('toggle-mobile')
 }
 
-// Poll every 30 seconds
+const handleClickOutside = (event) => {
+  const inNotifications = notificationsRef.value?.contains(event.target)
+  const inMessages = messagesRef.value?.contains(event.target)
+  if (!inNotifications && !inMessages) closeMenus()
+}
+
 onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  fetchNotifications()
   interval = setInterval(() => {
-    if (showDropdown.value) {
-      fetchNotifications()
-    }
+    if (showNotifications.value) fetchNotifications()
   }, 30000)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
   if (interval) clearInterval(interval)
 })
 </script>
+
+<style scoped>
+.soft-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 0.35rem 0 1.35rem;
+  flex-wrap: wrap;
+}
+
+.soft-header__left {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.soft-header__greeting {
+  min-width: 0;
+}
+
+.soft-header__title {
+  margin: 0;
+  font-size: clamp(1.55rem, 2.4vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--vb-ink);
+  line-height: 1.15;
+}
+
+.soft-header__subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: var(--vb-muted);
+  line-height: 1.45;
+  max-width: 28rem;
+}
+
+.soft-header__right {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-left: auto;
+}
+
+.soft-search {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 9999px;
+  padding: 0.35rem 0.35rem 0.35rem 1.1rem;
+  box-shadow: var(--vb-card-shadow);
+  min-width: min(100%, 16rem);
+  width: clamp(12rem, 28vw, 22rem);
+}
+
+.soft-search__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.9rem;
+  color: var(--vb-ink);
+  min-width: 0;
+}
+
+.soft-search__input::placeholder {
+  color: #b0b0b0;
+}
+
+.soft-search__btn {
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 9999px;
+  border: none;
+  background: #1c1c1c;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.soft-icon-btn {
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: 9999px;
+  border: none;
+  background: #fff;
+  color: #9a9a9a;
+  box-shadow: var(--vb-card-shadow);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.soft-icon-btn.is-active,
+.soft-icon-btn:hover {
+  color: var(--vb-ink);
+}
+
+.soft-icon-btn__dot {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.6rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 9999px;
+  background: #e11d48;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.soft-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.65rem);
+  width: 20rem;
+  background: #fff;
+  border-radius: 1.25rem;
+  box-shadow: 0 18px 40px rgba(28, 28, 28, 0.12);
+  overflow: hidden;
+  z-index: 50;
+}
+
+.soft-dropdown__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--vb-line);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.soft-dropdown__action {
+  border: none;
+  background: transparent;
+  color: var(--vb-accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.soft-dropdown__body {
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.soft-dropdown__empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--vb-muted);
+  font-size: 0.85rem;
+}
+
+.soft-dropdown__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #f5f4ef;
+  cursor: pointer;
+}
+
+.soft-dropdown__item.is-unread {
+  background: #fafaf7;
+}
+
+.soft-dropdown__item:hover {
+  background: #f5f4ef;
+}
+
+.soft-dropdown__item-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--vb-ink);
+}
+
+.soft-dropdown__item-body {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: var(--vb-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soft-dropdown__item-time {
+  font-size: 0.68rem;
+  color: #b0b0b0;
+}
+
+@media (max-width: 900px) {
+  .soft-search {
+    display: none;
+  }
+}
+</style>

@@ -1,98 +1,106 @@
 <template>
-  <div>
-    <!-- Header with animated count -->
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-      <div class="flex items-center gap-2">
-        <span class="text-sm font-medium text-gray-700">Eligible Voters</span>
-        <Badge 
-          :value="voters.length" 
-          severity="info" 
-          class="transition-all duration-300"
-          :class="{ 'scale-110': voters.length > 0 }"
+  <div class="voter-manager">
+    <div class="voter-toolbar">
+      <div class="voter-search">
+        <i class="fas fa-search" aria-hidden="true"></i>
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Search by index or name…"
+          autocomplete="off"
         />
+        <button
+          v-if="searchQuery"
+          type="button"
+          class="voter-search-clear"
+          title="Clear search"
+          @click="searchQuery = ''"
+        >
+          <i class="fas fa-times" aria-hidden="true"></i>
+        </button>
       </div>
-      <div class="flex flex-wrap gap-2">
-        <Button label="Add Voter" icon="pi pi-plus" size="small" @click="showAddDialog = true" />
-        <Button label="Import CSV" icon="pi pi-upload" size="small" severity="secondary" @click="showImportDialog = true" />
-      </div>
-    </div>
-
-    <!-- Table with horizontal scroll for mobile -->
-    <div class="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="bg-gray-50 border-b border-gray-100">
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Email</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Index</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">First Name</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Last Name</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Verified By</th>
-              <th class="text-center py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <transition-group tag="tbody" name="fade" appear>
-            <tr 
-              v-for="voter in voters" 
-              :key="voter.uuid"
-              class="border-b border-gray-50 hover:bg-emerald-50/30 transition-colors duration-150"
-            >
-              <td class="py-3 px-4 font-medium text-gray-800">{{ voter.user.email }}</td>
-              <td class="py-3 px-4 text-gray-600">{{ voter.user.index_number || '—' }}</td>
-              <td class="py-3 px-4 text-gray-600">{{ voter.user.first_name || '—' }}</td>
-              <td class="py-3 px-4 text-gray-600">{{ voter.user.last_name || '—' }}</td>
-              <td class="py-3 px-4 text-gray-600">{{ voter.verified_by?.email || '—' }}</td>
-              <td class="py-3 px-4 text-center">
-                <Button 
-                  icon="pi pi-trash" 
-                  size="small" 
-                  severity="danger" 
-                  text 
-                  rounded
-                  tooltip="Remove"
-                  @click="confirmRemove(voter)" 
-                />
-              </td>
-            </tr>
-          </transition-group>
-          <tbody v-if="voters.length === 0 && !loading">
-            <tr>
-              <td colspan="6" class="py-12 text-center text-gray-400">
-                <i class="pi pi-user-plus text-4xl block mb-3 text-gray-200"></i>
-                <p class="text-sm">No eligible voters yet.</p>
-                <p class="text-xs text-gray-400 mt-1">Add voters using the "Add Voter" button above.</p>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-if="!readonly" class="voter-actions">
+        <Button label="Add" icon="pi pi-plus" size="small" @click="showAddDialog = true" />
+        <Button label="Import" icon="pi pi-upload" size="small" severity="secondary" @click="showImportDialog = true" />
       </div>
     </div>
 
-    <!-- Add Voter Dialog -->
-    <Dialog v-model:visible="showAddDialog" header="Add Eligible Voter" :modal="true" class="w-full max-w-md">
-      <form @submit.prevent="addVoter" class="p-1">
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">User Identifier</label>
-            <InputText v-model="identifier" class="w-full" placeholder="Email or Index Number" required />
-            <p class="text-xs text-gray-400 mt-1">Enter the user's email or index number</p>
-          </div>
-          <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-            <Button label="Cancel" severity="secondary" @click="closeAddDialog" />
-            <Button label="Add" type="submit" :loading="submitting" />
-          </div>
+    <p v-if="searchQuery" class="voter-search-meta">
+      {{ filteredVoters.length }} of {{ voters.length }} voters
+    </p>
+
+    <div class="admin-table-wrap voter-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Index</th>
+            <th>First name</th>
+            <th>Last name</th>
+            <th>Verified by</th>
+            <th v-if="!readonly" class="text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="voter in filteredVoters" :key="voter.uuid">
+            <td><span class="cell-title mono">{{ formatIndexDisplay(voter.user.index_number) }}</span></td>
+            <td>{{ voter.user.first_name || '—' }}</td>
+            <td>{{ voter.user.last_name || '—' }}</td>
+            <td class="text-muted">{{ verifiedByLabel(voter) }}</td>
+            <td v-if="!readonly">
+              <div class="row-actions">
+                <button
+                  type="button"
+                  class="admin-icon-btn danger"
+                  title="Remove"
+                  @click="confirmRemove(voter)"
+                >
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr v-if="filteredVoters.length === 0 && !loading">
+            <td :colspan="readonly ? 4 : 5">
+              <EmptyState
+                :icon="searchQuery ? 'fas fa-search' : 'fas fa-user-plus'"
+                :title="searchQuery ? 'No matches' : 'No eligible voters'"
+                :message="searchQuery ? 'Try a different index or name.' : 'Add voters using the buttons above or import a CSV.'"
+              />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <Dialog v-model:visible="showAddDialog" header="Add voter" :modal="true" class="w-full max-w-md">
+      <form @submit.prevent="addVoter" class="dialog-form">
+        <div>
+          <label>Index number</label>
+          <InputText
+            v-model="identifier"
+            class="w-full"
+            placeholder="e.g. SC2021PL001"
+            required
+          />
+          <p class="field-hint">
+            Enter the student's index. Slashes are optional. New indexes are added automatically.
+          </p>
+        </div>
+        <p v-if="addError" class="form-error">{{ addError }}</p>
+        <div class="dialog-actions">
+          <Button label="Cancel" severity="secondary" @click="closeAddDialog" />
+          <Button label="Add" type="submit" :loading="submitting" />
         </div>
       </form>
     </Dialog>
 
-    <!-- Import Dialog -->
-    <Dialog v-model:visible="showImportDialog" header="Import Voters (CSV)" :modal="true" class="w-full max-w-md">
+    <Dialog v-model:visible="showImportDialog" header="Import voters (CSV)" :modal="true" class="w-full max-w-md">
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">CSV File</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1">CSV file</label>
           <FileUpload mode="basic" accept=".csv" :maxFileSize="1048576" @select="onFileSelect" />
-          <p class="text-xs text-gray-400 mt-1">CSV must have a column: <strong>identifier</strong> (email or index)</p>
-          <p class="text-xs text-gray-400 mt-1">Example: identifier<br>student@voterb.com</p>
+          <p class="text-xs text-gray-400 mt-1">CSV must have an <strong>index_number</strong> column</p>
+          <p class="text-xs text-gray-400 mt-1">Example: index_number,first_name,last_name<br>SC2021PL001,Abena,Mensah</p>
         </div>
         <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
           <Button label="Cancel" severity="secondary" @click="showImportDialog = false" />
@@ -104,26 +112,70 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { eligibilityApi } from '@/api/eligibility'
+import { parseApiError } from '@/utils/apiError'
+import { formatIndexDisplay, normalizeIndex } from '@/utils/index'
 import Button from 'primevue/button'
-import Badge from 'primevue/badge'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import FileUpload from 'primevue/fileupload'
+import EmptyState from '@/components/admin/EmptyState.vue'
 
 const props = defineProps({
-  electionUuid: { type: String, required: true }
+  electionUuid: { type: String, required: true },
+  readonly: { type: Boolean, default: false },
 })
 
 const voters = ref([])
 const loading = ref(false)
+const searchQuery = ref('')
 const showAddDialog = ref(false)
 const showImportDialog = ref(false)
 const identifier = ref('')
 const submitting = ref(false)
+const addError = ref('')
 const importing = ref(false)
 const selectedFile = ref(null)
+
+const filteredVoters = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return voters.value
+
+  const qIndex = normalizeIndex(q)
+  return voters.value.filter((voter) => {
+    const user = voter.user || {}
+    const index = normalizeIndex(user.index_number)
+    const first = (user.first_name || '').toLowerCase()
+    const last = (user.last_name || '').toLowerCase()
+    const full = `${first} ${last}`.trim()
+
+    return (
+      index.includes(qIndex)
+      || first.includes(q)
+      || last.includes(q)
+      || full.includes(q)
+    )
+  })
+})
+
+const verifiedByLabel = (voter) => {
+  const by = voter.verified_by
+  if (!by) return '—'
+  if (by.email) return by.email
+  return formatIndexDisplay(by.index_number)
+}
+
+const normalizeIdentifierInput = (value) => {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (trimmed.includes('/')) return trimmed
+  const match = trimmed.match(/^([A-Za-z]{2,})(\d{4})([A-Za-z]{2,})(\d+)$/i)
+  if (match) {
+    return `${match[1].toUpperCase()}/${match[2]}/${match[3].toUpperCase()}/${match[4]}`
+  }
+  return trimmed
+}
 
 const fetchVoters = async () => {
   loading.value = true
@@ -138,16 +190,20 @@ const fetchVoters = async () => {
 }
 
 const addVoter = async () => {
-  if (!identifier.value.trim()) return
+  const normalized = normalizeIdentifierInput(identifier.value)
+  if (!normalized) return
   submitting.value = true
+  addError.value = ''
   try {
-    await eligibilityApi.add(props.electionUuid, { user_identifier: identifier.value.trim() })
-    identifier.value = ''
-    showAddDialog.value = false
+    await eligibilityApi.add(props.electionUuid, { user_identifier: normalized })
+    closeAddDialog()
     await fetchVoters()
   } catch (error) {
     console.error('Failed to add voter:', error)
-    alert(error.response?.data?.error || 'Failed to add voter. Please check the identifier.')
+    addError.value = parseApiError(
+      error,
+      'Could not add this voter. Enter a valid index number.'
+    )
   } finally {
     submitting.value = false
   }
@@ -156,10 +212,12 @@ const addVoter = async () => {
 const closeAddDialog = () => {
   showAddDialog.value = false
   identifier.value = ''
+  addError.value = ''
 }
 
 const confirmRemove = (voter) => {
-  if (confirm(`Remove ${voter.user.email} from eligible voters?`)) {
+  const label = formatIndexDisplay(voter.user.index_number) || 'this voter'
+  if (confirm(`Remove ${label} from eligible voters?`)) {
     removeVoter(voter.uuid)
   }
 }
@@ -204,44 +262,105 @@ onMounted(() => {
 </script>
 
 <style scoped>
-table {
-  border-collapse: separate;
-  border-spacing: 0;
+.voter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fafbfc;
+}
+
+.voter-search {
+  position: relative;
+  flex: 1;
+  min-width: 11rem;
+}
+
+.voter-search i.fa-search {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  font-size: 0.72rem;
+  pointer-events: none;
+}
+
+.voter-search input {
   width: 100%;
+  height: 2rem;
+  padding: 0 1.85rem 0 1.85rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+  font-size: 0.78rem;
+  color: #334155;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-thead th {
-  background: #f8fafc;
-  color: #475569;
-  font-weight: 600;
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-bottom: 1px solid #e9edf2;
+
+.voter-search input:focus {
+  outline: none;
+  border-color: #5eead4;
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.12);
 }
-tbody tr {
-  transition: background 0.15s, transform 0.2s;
+
+.voter-search input::placeholder {
+  color: #94a3b8;
 }
-tbody tr:hover {
-  background: #f0fdf4;
+
+.voter-search-clear {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.35rem;
+  height: 1.35rem;
+  border: none;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.6rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-tbody td {
-  vertical-align: middle;
+
+.voter-search-clear:hover {
+  background: #e2e8f0;
+  color: #334155;
 }
-/* Fade animation for rows */
-.fade-enter-active,
-.fade-leave-active {
-  transition: all 0.3s ease;
+
+.voter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
-.fade-enter-from {
-  opacity: 0;
-  transform: translateY(-10px);
+
+.voter-search-meta {
+  margin: 0;
+  padding: 0.35rem 1rem 0;
+  font-size: 0.72rem;
+  color: #94a3b8;
 }
-.fade-leave-to {
-  opacity: 0;
-  transform: translateX(30px);
+
+.voter-table-wrap {
+  border-top: none;
 }
-/* Badge scale on count change */
-.badge-animate {
-  transition: transform 0.3s ease;
+
+.field-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+.form-error {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #dc2626;
+  line-height: 1.4;
 }
 </style>

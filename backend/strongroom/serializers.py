@@ -27,6 +27,18 @@ class ElectionSealSerializer(serializers.ModelSerializer):
         model = ElectionSeal
         fields = ['uuid', 'seal_hash', 'status', 'created_at']
 
+class CustodyRecordSerializer(serializers.ModelSerializer):
+    actor_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CustodyRecord
+        fields = ['uuid', 'action', 'metadata', 'timestamp', 'actor_email']
+
+    def get_actor_email(self, obj):
+        if obj.actor:
+            return obj.actor.email or obj.actor.index_number
+        return 'System'
+
 # ---------- Committee ----------
 class CommitteeMemberSerializer(serializers.ModelSerializer):
     user = UserBasicSerializer(read_only=True)
@@ -95,10 +107,9 @@ class StrongroomElectionDetailSerializer(serializers.ModelSerializer):
                   'committee', 'vault_requests', 'vault_sessions']
 
     def get_custody_records(self, obj):
-        from .serializers import CustodyRecordSerializer
         records = CustodyRecord.objects.filter(election=obj).order_by('-timestamp')[:20]
         return CustodyRecordSerializer(records, many=True).data
 
     def get_vault_sessions(self, obj):
-        sessions = VaultSession.objects.filter(access_request__election=obj).order_by('-created_at')[:5]
+        sessions = VaultSession.objects.filter(access_request__election=obj).order_by('-opened_at')[:5]
         return VaultSessionSerializer(sessions, many=True).data

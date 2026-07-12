@@ -1,113 +1,111 @@
 <template>
-  <div>
-      <div class="mb-6">
-        <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
-        <p class="text-gray-500 text-sm mt-1">Super admin configuration for the VoterB platform.</p>
-      </div>
+  <div class="admin-page">
+    <PageHeader
+      title="Settings"
+      subtitle="Configure platform security, voting channels, and appearance."
+      icon="fas fa-sliders-h"
+      icon-tone="tone-teal"
+      :show-refresh="false"
+    >
+      <template #actions>
+        <button v-if="isSuperAdmin" type="button" class="btn btn-ghost" @click="resetSettings">Reset</button>
+        <button v-if="isSuperAdmin" type="button" class="btn btn-primary" @click="saveSettings">
+          <i class="fas fa-save"></i> Save
+        </button>
+      </template>
+    </PageHeader>
 
-      <div v-if="!isSuperAdmin" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-        Only super admins can change system settings.
-      </div>
-
-      <div v-else class="space-y-6">
-        <section class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h2 class="text-sm font-semibold text-gray-900 mb-4">Platform</h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <p class="text-gray-500">Application</p>
-              <p class="font-medium text-gray-900 mt-1">VoterB Election Platform</p>
-            </div>
-            <div>
-              <p class="text-gray-500">Environment</p>
-              <p class="font-medium text-gray-900 mt-1">Development</p>
-            </div>
-            <div>
-              <p class="text-gray-500">Signed in as</p>
-              <p class="font-medium text-gray-900 mt-1">{{ userEmail }}</p>
-            </div>
-            <div>
-              <p class="text-gray-500">Role</p>
-              <p class="font-medium text-gray-900 mt-1 capitalize">{{ roleName }}</p>
-            </div>
-          </div>
-        </section>
-
-        <section class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h2 class="text-sm font-semibold text-gray-900 mb-4">Security</h2>
-          <div class="space-y-4">
-            <label class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-sm font-medium text-gray-900">Require OTP for login</p>
-                <p class="text-xs text-gray-500">All users must verify OTP before signing in.</p>
-              </div>
-              <input v-model="settings.requireOtp" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600" />
-            </label>
-            <label class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-sm font-medium text-gray-900">Enable web voting</p>
-                <p class="text-xs text-gray-500">Allow voters to cast ballots through the web app.</p>
-              </div>
-              <input v-model="settings.webVoting" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600" />
-            </label>
-            <label class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-sm font-medium text-gray-900">Enable USSD voting</p>
-                <p class="text-xs text-gray-500">Allow voting through USSD channels.</p>
-              </div>
-              <input v-model="settings.ussdVoting" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600" />
-            </label>
-          </div>
-        </section>
-
-        <section class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h2 class="text-sm font-semibold text-gray-900 mb-4">Notifications</h2>
-          <div class="space-y-4">
-            <label class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-sm font-medium text-gray-900">SMS notifications</p>
-                <p class="text-xs text-gray-500">Send OTP and election alerts via SMS.</p>
-              </div>
-              <input v-model="settings.smsNotifications" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600" />
-            </label>
-            <label class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-sm font-medium text-gray-900">Email notifications</p>
-                <p class="text-xs text-gray-500">Send admin alerts and result updates by email.</p>
-              </div>
-              <input v-model="settings.emailNotifications" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600" />
-            </label>
-          </div>
-        </section>
-
-        <div class="flex items-center justify-between gap-4">
-          <p v-if="saveMessage" class="text-sm text-emerald-700">{{ saveMessage }}</p>
-          <div class="ml-auto flex gap-3">
-            <button
-              type="button"
-              @click="resetSettings"
-              class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-            >
-              Reset
-            </button>
-            <button
-              type="button"
-              @click="saveSettings"
-              class="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
-            >
-              Save Settings
-            </button>
-          </div>
-        </div>
-      </div>
+    <div v-if="!isSuperAdmin" class="access-notice">
+      <i class="fas fa-lock"></i>
+      <span>Only super admins can change system settings.</span>
     </div>
+
+    <div v-else class="settings-grid">
+      <DataPanel title="Appearance" subtitle="Platform-wide color theme for all users">
+        <div class="theme-picker">
+          <button
+            v-for="option in themeOptions"
+            :key="option.id"
+            type="button"
+            class="theme-card"
+            :class="{ 'is-active': selectedTheme === option.id }"
+            @click="selectTheme(option.id)"
+          >
+            <div class="theme-card__swatches">
+              <span
+                v-for="swatch in option.swatches"
+                :key="swatch"
+                class="theme-card__swatch"
+                :style="{ background: swatch }"
+              ></span>
+            </div>
+            <div>
+              <p class="theme-card__title">{{ option.label }}</p>
+              <p class="theme-card__desc">{{ option.description }}</p>
+            </div>
+          </button>
+        </div>
+      </DataPanel>
+
+      <DataPanel title="Platform" subtitle="Environment and session context">
+        <div class="info-grid">
+          <div class="info-item"><span>Application</span><strong>VoterB Election Platform</strong></div>
+          <div class="info-item"><span>Environment</span><strong>Development</strong></div>
+          <div class="info-item"><span>Signed in as</span><strong>{{ userLabel }}</strong></div>
+          <div class="info-item"><span>Role</span><strong class="capitalize">{{ roleName.replace('_', ' ') }}</strong></div>
+        </div>
+      </DataPanel>
+
+      <DataPanel title="Security" subtitle="Authentication and voting access">
+        <div class="toggle-list">
+          <label v-for="item in securityToggles" :key="item.key" class="toggle-row">
+            <div>
+              <p class="toggle-title">{{ item.title }}</p>
+              <p class="toggle-desc">{{ item.description }}</p>
+            </div>
+            <button type="button" class="toggle" :class="{ on: settings[item.key] }" @click="settings[item.key] = !settings[item.key]">
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
+        </div>
+      </DataPanel>
+
+      <DataPanel title="Notifications" subtitle="Outbound alert channels">
+        <div class="toggle-list">
+          <label v-for="item in notificationToggles" :key="item.key" class="toggle-row">
+            <div>
+              <p class="toggle-title">{{ item.title }}</p>
+              <p class="toggle-desc">{{ item.description }}</p>
+            </div>
+            <button type="button" class="toggle" :class="{ on: settings[item.key] }" @click="settings[item.key] = !settings[item.key]">
+              <span class="toggle-knob"></span>
+            </button>
+          </label>
+        </div>
+      </DataPanel>
+    </div>
+
+    <p v-if="saveMessage" class="save-toast"><i class="fas fa-check-circle"></i> {{ saveMessage }}</p>
+  </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
+import { formatIndexDisplay } from '@/utils/index'
+import PageHeader from '@/components/admin/PageHeader.vue'
+import DataPanel from '@/components/admin/DataPanel.vue'
 
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
 const saveMessage = ref('')
+const selectedTheme = ref(themeStore.theme)
+
+const THEME_SWATCHES = {
+  classic: ['#0f766e', '#ecfdf5', '#0f172a', '#f8fafc'],
+  pulse: ['#ff3b5c', '#1a1a1a', '#f3f4f6', '#71717a'],
+}
 
 const defaultSettings = {
   requireOtp: true,
@@ -119,48 +117,79 @@ const defaultSettings = {
 
 const settings = ref({ ...defaultSettings })
 
-const roleName = computed(() => {
+const roleName = computed(() => authStore.roleName)
+const isSuperAdmin = computed(() => authStore.isSuperAdmin)
+const userLabel = computed(() => {
   const user = authStore.user
-  if (!user) return ''
-  if (typeof user.role_name === 'string' && user.role_name) return user.role_name
-  if (typeof user.role === 'object' && user.role?.name) return user.role.name
-  if (user.is_superuser) return 'super_admin'
-  if (user.is_staff) return 'admin'
-  return ''
+  if (!user) return 'Unknown'
+  if (user.index_number) return formatIndexDisplay(user.index_number)
+  return user.email || 'Unknown'
 })
 
-const isSuperAdmin = computed(() => roleName.value === 'super_admin' || !!authStore.user?.is_superuser)
-const userEmail = computed(() => authStore.user?.email || authStore.user?.index_number || 'Unknown')
+const themeOptions = computed(() => {
+  const apiOptions = themeStore.options?.length
+    ? themeStore.options
+    : [
+        { id: 'classic', label: 'Classic', description: 'Teal admin theme' },
+        { id: 'pulse', label: 'Pulse', description: 'Coral accent on light surfaces' },
+      ]
+
+  return apiOptions.map((option) => ({
+    ...option,
+    swatches: THEME_SWATCHES[option.id] || THEME_SWATCHES.classic,
+  }))
+})
+
+const securityToggles = [
+  { key: 'requireOtp', title: 'Require OTP for login', description: 'All users verify OTP before signing in.' },
+  { key: 'webVoting', title: 'Enable web voting', description: 'Allow ballots through the web application.' },
+  { key: 'ussdVoting', title: 'Enable USSD voting', description: 'Allow voting through USSD channels.' },
+]
+
+const notificationToggles = [
+  { key: 'smsNotifications', title: 'SMS notifications', description: 'Send OTP and election alerts via SMS.' },
+  { key: 'emailNotifications', title: 'Email notifications', description: 'Send admin alerts and updates by email.' },
+]
 
 const loadSettings = () => {
   try {
     const saved = localStorage.getItem('voterb_settings')
-    if (saved) {
-      settings.value = { ...defaultSettings, ...JSON.parse(saved) }
-    }
+    if (saved) settings.value = { ...defaultSettings, ...JSON.parse(saved) }
   } catch {
     settings.value = { ...defaultSettings }
   }
+  selectedTheme.value = themeStore.theme
 }
 
-const saveSettings = () => {
+const selectTheme = (themeId) => {
+  selectedTheme.value = themeId
+  themeStore.setTheme(themeId)
+}
+
+const saveSettings = async () => {
   localStorage.setItem('voterb_settings', JSON.stringify(settings.value))
-  saveMessage.value = 'Settings saved locally.'
-  setTimeout(() => {
-    saveMessage.value = ''
-  }, 3000)
+  try {
+    await themeStore.setTheme(selectedTheme.value, { persistRemote: true })
+    saveMessage.value = 'Settings saved. Theme applied for all users.'
+  } catch (error) {
+    console.error('Failed to save theme:', error)
+    saveMessage.value = 'Local settings saved, but theme could not be synced to the server.'
+  }
+  setTimeout(() => { saveMessage.value = '' }, 3000)
 }
 
-const resetSettings = () => {
+const resetSettings = async () => {
   settings.value = { ...defaultSettings }
   localStorage.removeItem('voterb_settings')
+  selectedTheme.value = 'classic'
+  try {
+    await themeStore.setTheme('classic', { persistRemote: true })
+  } catch (error) {
+    console.error('Failed to reset theme:', error)
+  }
   saveMessage.value = 'Settings reset to defaults.'
-  setTimeout(() => {
-    saveMessage.value = ''
-  }, 3000)
+  setTimeout(() => { saveMessage.value = '' }, 3000)
 }
 
-onMounted(() => {
-  loadSettings()
-})
+onMounted(loadSettings)
 </script>

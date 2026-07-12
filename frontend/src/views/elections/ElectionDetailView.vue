@@ -1,271 +1,388 @@
 <template>
-  <div class="p-4 sm:p-6 max-w-7xl mx-auto" v-if="election">
-    <!-- Header -->
-    <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
-      <div>
-        <div class="flex items-center gap-3 flex-wrap">
-          <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">{{ election.title }}</h1>
-          <Badge :value="election.status" :severity="getStatusSeverity(election.status)" class="capitalize" />
-          <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{{ election.status }}</span>
-        </div>
-        <p class="text-gray-500 text-sm mt-1">{{ election.description || 'No description provided.' }}</p>
-      </div>
+  <div v-if="election" class="admin-page election-detail">
+    <button type="button" class="btn-back page-section" @click="router.push('/elections')">
+      <i class="fas fa-arrow-left"></i>
+      Back to elections
+    </button>
 
-      <!-- Action Buttons -->
-      <div class="flex flex-wrap gap-2">
-        <!-- Back Button -->
-        <Button 
-          label="Back" 
-          icon="pi pi-arrow-left" 
-          severity="secondary" 
-          size="small"
-          class="!bg-gray-200 !text-gray-700 hover:!bg-gray-300 !border-gray-300"
-          @click="$router.push('/elections')" 
-        />
-
-        <!-- Schedule Button -->
-        <Button 
-          v-if="election.status === 'draft'" 
-          label="Schedule" 
-          icon="pi pi-calendar-plus" 
-          severity="info" 
-          size="small"
-          class="!bg-blue-600 !text-white hover:!bg-blue-700 !border-blue-600"
-          @click="updateStatus('scheduled')" 
-        />
-
-        <!-- Open Button -->
-        <Button 
-          v-if="election.status === 'scheduled'" 
-          label="Open" 
-          icon="pi pi-play" 
-          severity="success" 
-          size="small"
-          class="!bg-emerald-600 !text-white hover:!bg-emerald-700 !border-emerald-600"
-          @click="openElection" 
-        />
-
-        <!-- Close Button -->
-        <Button 
-          v-if="election.status === 'open' || election.status === 'paused'" 
-          label="Close Election" 
-          icon="pi pi-stop" 
-          severity="danger" 
-          size="small"
-          @click="closeElection" 
-          class="!bg-red-600 !text-white hover:!bg-red-700 !border-red-600 !shadow-sm"
-        />
-
-        <!-- Generate Results Button -->
-        <Button 
-          v-if="election.status === 'closed' && !resultExists" 
-          label="Generate Results" 
-          icon="pi pi-cog" 
-          severity="info" 
-          size="small"
-          @click="generateResults" 
-          :loading="isGenerating"
-          class="!bg-indigo-600 !text-white hover:!bg-indigo-700 !border-indigo-600 !shadow-sm"
-        />
-
-        <!-- View Results Button -->
-        <Button 
-          v-if="resultExists" 
-          label="View Results" 
-          icon="pi pi-chart-bar" 
-          severity="success" 
-          size="small"
-          @click="$router.push(`/results/${election.uuid}`)"
-          class="!bg-emerald-600 !text-white hover:!bg-emerald-700 !border-emerald-600 !shadow-sm"
-        />
-
-        <!-- Debug: Show status info -->
-        <span class="text-xs text-gray-400 self-center hidden lg:inline-block">
-          Status: {{ election.status }}
+    <PageHeader
+      :title="election.title"
+      :subtitle="election.description || 'No description provided.'"
+      icon="fas fa-landmark"
+      icon-tone="tone-teal"
+      :show-refresh="false"
+    >
+      <template #actions>
+        <span class="admin-badge detail-status" :class="statusBadge(election.status)">
+          <span v-if="election.status === 'open'" class="live-dot"></span>
+          {{ election.status }}
         </span>
-      </div>
-    </div>
-
-    <!-- Info Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <div class="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-3 shadow-sm hover:shadow transition-shadow duration-200">
-        <div class="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
-          <i class="pi pi-calendar text-blue-600 text-sm"></i>
-        </div>
-        <div>
-          <p class="text-xs text-gray-500">Created</p>
-          <p class="text-sm font-medium text-gray-900">{{ formatDate(election.created_at) }}</p>
-        </div>
-      </div>
-      <div class="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-3 shadow-sm hover:shadow transition-shadow duration-200">
-        <div class="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center">
-          <i class="pi pi-tag text-green-600 text-sm"></i>
-        </div>
-        <div>
-          <p class="text-xs text-gray-500">Type</p>
-          <p class="text-sm font-medium text-gray-900 capitalize">{{ election.election_type }}</p>
-        </div>
-      </div>
-      <div class="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-3 shadow-sm hover:shadow transition-shadow duration-200">
-        <div class="w-10 h-10 bg-purple-50 rounded-full flex items-center justify-center">
-          <i class="pi pi-users text-purple-600 text-sm"></i>
-        </div>
-        <div>
-          <p class="text-xs text-gray-500">Voters</p>
-          <p class="text-sm font-medium text-gray-900">{{ voterCount }}</p>
-        </div>
-      </div>
-      <div class="bg-white rounded-lg border border-gray-200 p-4 flex items-center gap-3 shadow-sm hover:shadow transition-shadow duration-200">
-        <div class="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center">
-          <i class="pi pi-clock text-orange-600 text-sm"></i>
-        </div>
-        <div>
-          <p class="text-xs text-gray-500">Dates</p>
-          <p class="text-sm font-medium text-gray-900">{{ formatDate(election.start_date) }} – {{ formatDate(election.end_date) }}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tabs -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-      <div class="border-b border-gray-200 px-4">
-        <div class="flex -mb-px">
+        <div class="action-toolbar">
           <button
-            v-for="tab in tabs"
-            :key="tab.key"
-            @click="activeTab = tab.key"
-            class="py-3 px-4 text-sm font-medium transition-colors duration-200 border-b-2"
-            :class="activeTab === tab.key 
-              ? 'border-emerald-600 text-emerald-700' 
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+            v-if="canOpenMonitor"
+            type="button"
+            class="btn btn-ghost"
+            @click="router.push(`/monitor/${election.uuid}`)"
           >
-            <i :class="tab.icon" class="mr-2"></i>
-            {{ tab.label }}
+            <i class="fas fa-tv"></i>
+            Monitor
+          </button>
+          <button
+            v-if="canManageElections && election.status === 'draft'"
+            type="button"
+            class="btn btn-ghost"
+            @click="updateStatus('scheduled')"
+          >
+            <i class="fas fa-calendar-plus"></i>
+            Schedule
+          </button>
+          <button
+            v-if="canManageElections && election.status === 'scheduled'"
+            type="button"
+            class="btn btn-primary"
+            @click="openElection"
+          >
+            <i class="fas fa-play"></i>
+            Open
+          </button>
+          <button
+            v-if="canManageElections && (election.status === 'open' || election.status === 'paused')"
+            type="button"
+            class="btn btn-danger"
+            @click="closeElection"
+          >
+            <i class="fas fa-stop"></i>
+            Close
+          </button>
+          <button
+            v-if="canManageElections && election.status === 'closed' && !resultExists"
+            type="button"
+            class="btn btn-primary"
+            :disabled="isGenerating"
+            @click="generateResults"
+          >
+            <i class="fas fa-cog" :class="{ 'fa-spin': isGenerating }"></i>
+            Generate results
+          </button>
+          <button
+            v-if="resultExists"
+            type="button"
+            class="btn btn-primary"
+            @click="router.push(`/results/${election.uuid}`)"
+          >
+            <i class="fas fa-chart-bar"></i>
+            View results
           </button>
         </div>
-      </div>
+      </template>
+    </PageHeader>
 
-      <div class="p-4 sm:p-6">
-        <!-- Positions -->
-        <div v-if="activeTab === 'positions'">
-          <div class="flex justify-end mb-4">
-            <Button 
-              label="Add Position" 
-              icon="pi pi-plus" 
-              size="small" 
-              @click="showPositionDialog = true" 
-              class="!bg-emerald-600 !text-white hover:!bg-emerald-700 !border-emerald-600 !shadow-sm"
-            />
-          </div>
-          <DataTable :value="positions" :loading="loadingPositions" stripedRows responsiveLayout="scroll" size="small">
-            <Column field="title" header="Title" sortable></Column>
-            <Column field="max_votes_allowed" header="Max Votes" style="width:100px"></Column>
-            <Column field="display_order" header="Order" style="width:80px"></Column>
-            <Column field="is_active" header="Active" style="width:80px">
-              <template #body="{ data }">
-                <i :class="data.is_active ? 'pi pi-check-circle text-emerald-500' : 'pi pi-times-circle text-red-500'"></i>
-              </template>
-            </Column>
-            <template #empty>
-              <div class="text-center py-8 text-gray-500">No positions added yet.</div>
-            </template>
-          </DataTable>
-        </div>
-
-        <!-- Candidates -->
-        <div v-if="activeTab === 'candidates'">
-          <CandidateManager :election-uuid="route.params.uuid" />
-        </div>
-
-        <!-- Voters -->
-        <div v-if="activeTab === 'voters'">
-          <VoterManager :election-uuid="route.params.uuid" />
-        </div>
-      </div>
+    <div v-if="!canManageElections" class="access-notice page-section">
+      <i class="fas fa-eye"></i>
+      <span>View-only — election management is handled by the Election Committee.</span>
     </div>
 
-    <!-- Add Position Dialog -->
-    <Dialog v-model:visible="showPositionDialog" header="Add Position" :modal="true" class="w-full max-w-md">
-      <form @submit.prevent="createPosition" class="p-1">
-        <div class="space-y-4">
+    <div class="stat-grid page-section">
+      <StatCard
+        label="Status"
+        :value="election.status"
+        :hint="formatType(election.election_type)"
+        icon="fas fa-flag"
+        tone="tone-slate"
+      />
+      <StatCard
+        label="Voters"
+        :value="voterCount"
+        hint="Registered"
+        icon="fas fa-users"
+        tone="tone-blue"
+        value-tone="text-blue-700"
+      />
+      <StatCard
+        label="Votes cast"
+        :value="election.votes_cast ?? 0"
+        :hint="`${election.unique_voters ?? 0} unique voters`"
+        icon="fas fa-check-double"
+        tone="tone-teal"
+        value-tone="text-teal-700"
+      />
+      <StatCard
+        label="Turnout"
+        :value="`${turnoutPct}%`"
+        :hint="scheduleHint"
+        icon="fas fa-chart-line"
+        tone="tone-amber"
+        value-tone="text-amber-700"
+      />
+    </div>
+
+    <section v-if="showElectionCharts" class="page-section">
+      <div class="section-head">
+        <h2 class="section-title">Live results snapshot</h2>
+        <p class="section-subtitle">Vote totals and turnout for {{ chartPosition?.title || 'this election' }}</p>
+      </div>
+      <div class="election-charts">
+        <DataPanel title="Candidate performance" subtitle="Votes per candidate">
+          <BarChart
+            :labels="candidateLabels"
+            :data="candidateVotes"
+            aria-label="Candidate performance bar chart"
+          />
+        </DataPanel>
+        <DataPanel title="Vote distribution" subtitle="Share of votes in this race">
+          <DonutChart
+            :labels="candidateLabels"
+            :data="candidateVotes"
+            aria-label="Vote distribution donut chart"
+          />
+        </DataPanel>
+        <DataPanel title="Turnout trend" subtitle="Participation over the voting window">
+          <AreaChart
+            :labels="turnoutTrend.labels"
+            :data="turnoutTrend.turnout"
+            label="Turnout %"
+            aria-label="Turnout trend area chart"
+          />
+        </DataPanel>
+      </div>
+    </section>
+
+    <TabNav v-model="activeTab" :tabs="tabItems" class="page-section" />
+
+    <DataPanel
+      :title="activePanel.title"
+      :subtitle="activePanel.subtitle"
+      :no-padding="activeTab !== 'positions'"
+    >
+      <template v-if="canManageElections && activeTab === 'positions'" #header>
+        <button type="button" class="btn btn-primary" @click="showPositionDialog = true">
+          <i class="fas fa-plus"></i>
+          Add position
+        </button>
+      </template>
+
+      <!-- Positions -->
+      <div v-if="activeTab === 'positions'">
+        <div v-if="loadingPositions" class="loading-state">
+          <i class="fas fa-spinner fa-spin"></i>
+          <p>Loading positions…</p>
+        </div>
+        <div v-else class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Max votes</th>
+                <th>Order</th>
+                <th>Active</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="position in positions" :key="position.uuid">
+                <td><span class="cell-title">{{ position.title }}</span></td>
+                <td class="mono">{{ position.max_votes_allowed }}</td>
+                <td class="mono">{{ position.display_order }}</td>
+                <td>
+                  <span class="admin-badge" :class="position.is_active ? 'success' : 'neutral'">
+                    {{ position.is_active ? 'Yes' : 'No' }}
+                  </span>
+                </td>
+              </tr>
+              <tr v-if="positions.length === 0">
+                <td colspan="4">
+                  <EmptyState
+                    icon="fas fa-list"
+                    title="No positions yet"
+                    message="Add positions before registering candidates."
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Candidates -->
+      <div v-else-if="activeTab === 'candidates'" class="tab-panel-body">
+        <CandidateManager
+          :election-uuid="route.params.uuid"
+          :readonly="!canManageElections"
+          @updated="candidateCount = $event"
+        />
+      </div>
+
+      <!-- Voters -->
+      <div v-else-if="activeTab === 'voters'">
+        <VoterManager :election-uuid="route.params.uuid" :readonly="!canManageElections" />
+      </div>
+    </DataPanel>
+
+    <Dialog v-model:visible="showPositionDialog" header="Add position" :modal="true" class="w-full max-w-md">
+      <form class="dialog-form" @submit.prevent="createPosition">
+        <div>
+          <label>Title</label>
+          <InputText v-model="newPosition.title" class="w-full" required />
+        </div>
+        <div class="form-grid">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
-            <InputText v-model="newPosition.title" class="w-full" required />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Max Votes Allowed</label>
+            <label>Max votes allowed</label>
             <InputNumber v-model="newPosition.max_votes_allowed" class="w-full" :min="1" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Display Order</label>
+            <label>Display order</label>
             <InputNumber v-model="newPosition.display_order" class="w-full" :min="0" />
           </div>
-          <div class="flex items-center gap-2">
-            <Checkbox v-model="newPosition.is_active" binary />
-            <label class="text-sm text-gray-700">Active</label>
+        </div>
+        <label class="toggle-row">
+          <div>
+            <span class="toggle-title">Active</span>
+            <span class="toggle-desc">Position is visible on the ballot</span>
           </div>
-          <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-            <Button label="Cancel" severity="secondary" @click="showPositionDialog = false" class="!border-gray-300" />
-            <Button label="Create" type="submit" :loading="loadingPosition" class="!bg-emerald-600 !text-white hover:!bg-emerald-700 !border-emerald-600" />
-          </div>
+          <Checkbox v-model="newPosition.is_active" binary />
+        </label>
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-ghost" @click="showPositionDialog = false">Cancel</button>
+          <button type="submit" class="btn btn-primary" :disabled="loadingPosition">
+            <i v-if="loadingPosition" class="fas fa-spinner fa-spin"></i>
+            Create
+          </button>
         </div>
       </form>
     </Dialog>
   </div>
-  <div v-else class="p-6 text-center text-gray-500">
-    <i class="pi pi-spin pi-spinner text-2xl"></i>
-    <p class="mt-2">Loading election...</p>
+
+  <div v-else class="admin-page">
+    <div class="loading-state">
+      <i class="fas fa-spinner fa-spin"></i>
+      <p>Loading election…</p>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { electionApi } from '@/api/elections'
 import { resultsApi } from '@/api/results'
-import Button from 'primevue/button'
-import Badge from 'primevue/badge'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
+import { candidateApi } from '@/api/candidates'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import InputNumber from 'primevue/inputnumber'
 import Checkbox from 'primevue/checkbox'
+import PageHeader from '@/components/admin/PageHeader.vue'
+import StatCard from '@/components/admin/StatCard.vue'
+import DataPanel from '@/components/admin/DataPanel.vue'
+import TabNav from '@/components/admin/TabNav.vue'
+import EmptyState from '@/components/admin/EmptyState.vue'
 import CandidateManager from '@/components/elections/CandidateManager.vue'
 import VoterManager from '@/components/elections/VoterManager.vue'
+import BarChart from '@/components/charts/BarChart.vue'
+import DonutChart from '@/components/charts/DonutChart.vue'
+import AreaChart from '@/components/charts/AreaChart.vue'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canManageElections = computed(() => authStore.isElectionManager)
+
+const canOpenMonitor = computed(() => {
+  const status = election.value?.status
+  const canView = authStore.isElectionManager || authStore.isAuditor || authStore.isSuperAdmin
+  return canView && ['open', 'paused', 'closed'].includes(status)
+})
 
 const election = ref(null)
 const positions = ref([])
+const candidateCount = ref(0)
 const loadingPositions = ref(false)
 const showPositionDialog = ref(false)
 const loadingPosition = ref(false)
 const activeTab = ref('positions')
 const resultExists = ref(false)
 const isGenerating = ref(false)
+const monitorData = ref(null)
+
+const chartPosition = computed(() => {
+  const positions = monitorData.value?.positions || []
+  return positions.find((p) => /president/i.test(p.title)) || positions[0] || null
+})
+
+const candidateLabels = computed(() => (chartPosition.value?.candidates || []).map((c) => c.full_name))
+const candidateVotes = computed(() => (chartPosition.value?.candidates || []).map((c) => c.votes))
+const turnoutTrend = computed(() => monitorData.value?.cumulative_turnout || { labels: [], turnout: [] })
+const showElectionCharts = computed(() => (election.value?.votes_cast ?? 0) > 0 && chartPosition.value)
 
 const newPosition = ref({
   title: '',
   max_votes_allowed: 1,
   display_order: 0,
-  is_active: true
+  is_active: true,
 })
 
-const tabs = [
-  { key: 'positions', label: 'Positions', icon: 'pi pi-list' },
-  { key: 'candidates', label: 'Candidates', icon: 'pi pi-users' },
-  { key: 'voters', label: 'Voters', icon: 'pi pi-user-plus' }
-]
+const voterCount = computed(() => election.value?.eligible_voter_count ?? 0)
 
-const voterCount = computed(() => 0) // placeholder
+const turnoutPct = computed(() => {
+  const eligible = election.value?.eligible_voter_count ?? 0
+  const unique = election.value?.unique_voters ?? 0
+  if (!eligible) return 0
+  return Math.round((unique / eligible) * 100)
+})
+
+const scheduleHint = computed(() => {
+  if (!election.value) return ''
+  return `${formatDate(election.value.start_date)} – ${formatDate(election.value.end_date)}`
+})
+
+const tabItems = computed(() => [
+  {
+    key: 'positions',
+    label: 'Positions',
+    icon: 'fas fa-list',
+    count: positions.value.length,
+    tone: 'indigo',
+  },
+  {
+    key: 'candidates',
+    label: 'Candidates',
+    icon: 'fas fa-user-tie',
+    count: candidateCount.value,
+    tone: 'amber',
+  },
+  {
+    key: 'voters',
+    label: 'Voters',
+    icon: 'fas fa-user-check',
+    count: voterCount.value,
+    tone: 'teal',
+  },
+])
+
+const activePanel = computed(() => {
+  const map = {
+    positions: { title: 'Positions', subtitle: 'Ballot positions and vote limits' },
+    candidates: { title: 'Candidates', subtitle: 'Approved and pending candidates' },
+    voters: { title: '', subtitle: '' },
+  }
+  return map[activeTab.value] || map.positions
+})
+
+const fetchMonitorCharts = async () => {
+  if (!election.value || !(election.value.votes_cast > 0)) return
+  try {
+    const { data } = await electionApi.getMonitor(route.params.uuid)
+    monitorData.value = data
+  } catch (error) {
+    console.error('Failed to fetch monitor charts:', error)
+  }
+}
 
 const fetchElection = async () => {
   try {
     const response = await electionApi.get(route.params.uuid)
     election.value = response.data
     await checkResultExists()
+    await fetchMonitorCharts()
   } catch (error) {
     console.error('Failed to fetch election:', error)
     router.push('/elections')
@@ -284,11 +401,21 @@ const fetchPositions = async () => {
   }
 }
 
+const fetchCandidateCount = async () => {
+  try {
+    const { data } = await candidateApi.list(route.params.uuid)
+    candidateCount.value = Array.isArray(data) ? data.length : 0
+  } catch (error) {
+    console.error('Failed to fetch candidate count:', error)
+    candidateCount.value = 0
+  }
+}
+
 const checkResultExists = async () => {
   try {
     await resultsApi.preview(route.params.uuid)
     resultExists.value = true
-  } catch (error) {
+  } catch {
     resultExists.value = false
   }
 }
@@ -298,20 +425,22 @@ const formatDate = (date) => {
   return new Date(date).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
-    day: 'numeric'
+    day: 'numeric',
   })
 }
 
-const getStatusSeverity = (status) => {
+const formatType = (type) => (type || 'general').replace(/_/g, ' ')
+
+const statusBadge = (status) => {
   const map = {
-    draft: 'secondary',
+    draft: 'neutral',
     scheduled: 'info',
     open: 'success',
     paused: 'warning',
     closed: 'danger',
-    archived: 'danger'
+    archived: 'neutral',
   }
-  return map[status] || 'secondary'
+  return map[status] || 'neutral'
 }
 
 const updateStatus = async (newStatus) => {
@@ -335,20 +464,18 @@ const openElection = async () => {
 }
 
 const closeElection = async () => {
-  if (confirm('Are you sure you want to close this election?')) {
-    try {
-      await electionApi.close(election.value.uuid)
-      await fetchElection()
-    } catch (error) {
-      console.error('Failed to close election:', error)
-      alert('Failed to close election. Please try again.')
-    }
+  if (!confirm('Are you sure you want to close this election?')) return
+  try {
+    await electionApi.close(election.value.uuid)
+    await fetchElection()
+  } catch (error) {
+    console.error('Failed to close election:', error)
+    alert('Failed to close election. Please try again.')
   }
 }
 
 const generateResults = async () => {
   if (!confirm('Generate results for this election?')) return
-  
   isGenerating.value = true
   try {
     await resultsApi.generate(route.params.uuid)
@@ -380,24 +507,82 @@ const createPosition = async () => {
 onMounted(() => {
   fetchElection()
   fetchPositions()
+  fetchCandidateCount()
 })
 </script>
 
 <style scoped>
-button {
-  background: transparent;
+.election-detail .btn-back {
+  margin-bottom: 0;
+}
+
+.action-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.detail-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: 0.25rem;
+}
+
+.live-dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  background: currentColor;
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.65rem 0.95rem;
+  border-radius: 0.65rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 0.875rem;
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #be123c;
+  transition: all 0.15s ease;
 }
-button:focus-visible {
-  outline: 2px solid #0f7d3e;
-  outline-offset: -2px;
-  border-radius: 0;
+
+.btn-danger:hover:not(:disabled) {
+  background: #fff1f2;
+  border-color: #fca5a5;
 }
-.pi {
-  font-size: 0.875rem;
+
+.tab-panel-body {
+  padding: 1.25rem;
 }
-.p-button {
-  color: inherit;
+
+:deep(.tab-nav) {
+  margin-bottom: 0;
+}
+
+:deep(.p-inputtext),
+:deep(.p-inputnumber-input) {
+  width: 100%;
+}
+
+.election-charts {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 900px) {
+  .election-charts {
+    grid-template-columns: 1.2fr 1fr;
+  }
+
+  .election-charts > :last-child {
+    grid-column: 1 / -1;
+  }
 }
 </style>

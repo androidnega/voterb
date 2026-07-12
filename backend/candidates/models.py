@@ -1,6 +1,6 @@
 import uuid
 from django.db import models
-from elections.models import Election, Position
+from elections.models import Election, Position, Faculty, Department
 from accounts.models import User
 
 class Candidate(models.Model):
@@ -16,6 +16,10 @@ class Candidate(models.Model):
     position = models.ForeignKey(Position, on_delete=models.CASCADE, related_name='candidates')
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     full_name = models.CharField(max_length=255)
+    faculty = models.ForeignKey(Faculty, on_delete=models.SET_NULL, null=True, blank=True, related_name='candidates')
+    academic_department = models.ForeignKey(
+        Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='candidates'
+    )
     department = models.CharField(max_length=150, blank=True)
     photo = models.ImageField(upload_to='candidate_photos/', blank=True, null=True)
     manifesto = models.TextField(blank=True)

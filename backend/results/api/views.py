@@ -7,26 +7,27 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.permissions import IsAdminOrSuperAdmin
+from accounts.permissions import IsAdmin, IsElectionViewer, IsElectionMonitorViewer
 from elections.models import Election, Position
 from voting.models import Vote
 from candidates.models import Candidate
 from results.models import ElectionResult
 from results.serializers import ElectionResultSerializer
+from elections.monitor_service import get_election_monitor_data
 
-# Helper to generate result hash
+
 def generate_result_hash(standings, election_uuid, turnout):
     data = json.dumps({
         'election': str(election_uuid),
         'standings': standings,
         'turnout': str(turnout),
-        'timestamp': timezone.now().isoformat()
+        'timestamp': timezone.now().isoformat(),
     }, sort_keys=True)
     return hashlib.sha256(data.encode()).hexdigest()
 
-# ----- POST /api/v1/results/elections/<uuid>/generate/ -----
+
 class GenerateResultsView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
 
     @transaction.atomic
     def post(self, request, uuid):
@@ -50,7 +51,7 @@ class GenerateResultsView(APIView):
                 'uuid': pos.uuid,
                 'title': pos.title,
                 'max_votes_allowed': pos.max_votes_allowed,
-                'candidates': []
+                'candidates': [],
             }
             total_position_votes = 0
 
@@ -62,7 +63,7 @@ class GenerateResultsView(APIView):
                     'full_name': candidate.full_name,
                     'department': candidate.department,
                     'votes': vote_count,
-                    'percentage': 0
+                    'percentage': 0,
                 })
 
             for cand in position_data['candidates']:
@@ -88,7 +89,7 @@ class GenerateResultsView(APIView):
             'duplicate_check': Vote.objects.filter(election=election).values('user', 'position', 'candidate').distinct().count() == Vote.objects.filter(election=election).count(),
             'eligible_voters': eligible_voters,
             'votes_cast': total_votes_cast,
-            'turnout_percentage': turnout_pct
+            'turnout_percentage': turnout_pct,
         }
 
         result_hash = generate_result_hash(standings_data, election.uuid, turnout_pct)
@@ -99,15 +100,15 @@ class GenerateResultsView(APIView):
             standings={'positions': standings_data},
             integrity_report=integrity_report,
             result_hash=result_hash,
-            turnout_percentage=turnout_pct
+            turnout_percentage=turnout_pct,
         )
 
         serializer = ElectionResultSerializer(result)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-# ----- GET /api/v1/results/elections/<uuid>/preview/ -----
+
 class PreviewResultsView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsElectionViewer]
 
     def get(self, request, uuid):
         election = get_object_or_404(Election, uuid=uuid)
@@ -115,16 +116,13 @@ class PreviewResultsView(APIView):
         serializer = ElectionResultSerializer(result)
         return Response(serializer.data)
 
-# ----- POST /api/v1/results/elections/<uuid>/certify/ -----
+
 class CertifyResultsView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
 
     def post(self, request, uuid):
         election = get_object_or_404(Election, uuid=uuid)
         result = get_object_or_404(ElectionResult, election=election)
-
-        if not request.user.is_superuser:
-            return Response({'error': 'Only super admins can certify results'}, status=status.HTTP_403_FORBIDDEN)
 
         if result.status not in ['generated', 'pending_certification']:
             return Response({'error': 'Results must be generated or pending certification'}, status=status.HTTP_400_BAD_REQUEST)
@@ -137,16 +135,13 @@ class CertifyResultsView(APIView):
         serializer = ElectionResultSerializer(result)
         return Response(serializer.data)
 
-# ----- POST /api/v1/results/elections/<uuid>/publish/ -----
+
 class PublishResultsView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
 
     def post(self, request, uuid):
         election = get_object_or_404(Election, uuid=uuid)
         result = get_object_or_404(ElectionResult, election=election)
-
-        if not request.user.is_superuser:
-            return Response({'error': 'Only super admins can publish results'}, status=status.HTTP_403_FORBIDDEN)
 
         if result.status != 'certified':
             return Response({'error': 'Results must be certified before publishing'}, status=status.HTTP_400_BAD_REQUEST)
@@ -158,29 +153,46 @@ class PublishResultsView(APIView):
         serializer = ElectionResultSerializer(result)
         return Response(serializer.data)
 
-# ----- GET /api/v1/results/elections/ -----
+
 class ResultsListView(generics.ListAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsElectionViewer]
     serializer_class = ElectionResultSerializer
     queryset = ElectionResult.objects.select_related('election').order_by('-created_at')
 
-# ----- GET /api/v1/results/certification-queue/ -----
+
 class CertificationQueueView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsAdmin]
 
     def get(self, request):
         results = ElectionResult.objects.filter(status__in=['generated', 'pending_certification']).select_related('election')
         serializer = ElectionResultSerializer(results, many=True)
         return Response(serializer.data)
 
-# ----- PUBLIC STUDENT RESULTS -----
+
 class PublishedResultsListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = ElectionResultSerializer
     queryset = ElectionResult.objects.filter(status='published').select_related('election').order_by('-published_at')
+
 
 class PublishedResultDetailView(generics.RetrieveAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = ElectionResultSerializer
     lookup_field = 'uuid'
     queryset = ElectionResult.objects.filter(status='published')
+
+
+class LiveResultsView(APIView):
+    """Live streaming results for the election monitor room."""
+    permission_classes = [IsElectionMonitorViewer]
+
+    def get(self, request, uuid):
+        election = get_object_or_404(Election, uuid=uuid)
+
+        if election.status not in ['open', 'paused', 'closed', 'scheduled']:
+            return Response(
+                {'error': 'Live results are only available for scheduled, open, paused, or closed elections'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(get_election_monitor_data(election))

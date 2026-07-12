@@ -1,106 +1,101 @@
 <template>
-  <div>
-    <div class="flex flex-wrap items-end justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Audit Logs</h1>
-        <p class="text-gray-500 text-sm mt-1">View all security and system logs.</p>
-      </div>
-      <Button label="Refresh" icon="pi pi-refresh" severity="secondary" size="small" @click="fetchAll" />
+  <div class="admin-page">
+    <PageHeader
+      title="Audit Logs"
+      subtitle="Unified security, MFA, and system activity trail for compliance review."
+      icon="fas fa-clipboard-list"
+      icon-tone="tone-indigo"
+      :loading="loading"
+      @refresh="fetchAll"
+    />
+
+    <div class="stat-grid page-section">
+      <StatCard label="Total Logs" :value="stats.total_logs || 0" icon="fas fa-database" tone="tone-slate" />
+      <StatCard label="Today" :value="stats.today_logs || 0" icon="fas fa-sun" tone="tone-teal" value-tone="text-teal-700" />
+      <StatCard label="MFA Events" :value="stats.mfa_count || 0" icon="fas fa-key" tone="tone-blue" value-tone="text-blue-700" />
+      <StatCard label="Audit Events" :value="stats.audit_count || 0" icon="fas fa-file-alt" tone="tone-indigo" value-tone="text-indigo-700" />
     </div>
 
-    <!-- Stats -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <p class="text-xs font-medium text-gray-400 uppercase">Total Logs</p>
-        <p class="text-xl font-bold text-gray-900">{{ stats.total_logs }}</p>
+    <div class="filter-bar page-section">
+      <div class="filter-input-wrap">
+        <i class="fas fa-search"></i>
+        <input v-model="filters.event_type" type="text" placeholder="Filter by event type…" @keyup.enter="applyFilters" />
       </div>
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <p class="text-xs font-medium text-gray-400 uppercase">Today</p>
-        <p class="text-xl font-bold text-emerald-600">{{ stats.today_logs }}</p>
+      <div class="filter-input-wrap">
+        <i class="fas fa-user"></i>
+        <input v-model="filters.user" type="text" placeholder="User email…" @keyup.enter="applyFilters" />
       </div>
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <p class="text-xs font-medium text-gray-400 uppercase">MFA Logs</p>
-        <p class="text-xl font-bold text-blue-600">{{ stats.mfa_count }}</p>
-      </div>
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <p class="text-xs font-medium text-gray-400 uppercase">Audit Logs</p>
-        <p class="text-xl font-bold text-purple-600">{{ stats.audit_count }}</p>
-      </div>
+      <button type="button" class="btn btn-primary" @click="applyFilters"><i class="fas fa-filter"></i> Apply</button>
+      <button type="button" class="btn btn-ghost" @click="clearFilters">Clear</button>
     </div>
 
-    <!-- Filters -->
-    <div class="flex flex-wrap gap-3 mb-4">
-      <div class="relative flex-1 min-w-[150px]">
-        <InputText v-model="filters.event_type" placeholder="Filter by event type..." class="w-full" />
-      </div>
-      <div class="relative flex-1 min-w-[150px]">
-        <InputText v-model="filters.user" placeholder="User email..." class="w-full" />
-      </div>
-      <div class="flex gap-2">
-        <Button label="Apply" icon="pi pi-search" @click="applyFilters" />
-        <Button label="Clear" severity="secondary" @click="clearFilters" />
-      </div>
-    </div>
-
-    <!-- Logs Table -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+    <DataPanel title="Activity log" subtitle="Most recent events first" no-padding>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
           <thead>
-            <tr class="bg-gray-50 border-b border-gray-100">
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Type</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">User</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Event</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">IP</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Timestamp</th>
+            <tr>
+              <th>Type</th>
+              <th>User</th>
+              <th>Event</th>
+              <th>IP</th>
+              <th>Timestamp</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="log in logs" :key="log.uuid" class="border-b border-gray-50 hover:bg-gray-50/30 transition-colors">
-              <td class="py-3 px-4">
-                <Badge :value="log.type" :severity="log.type === 'mfa' ? 'info' : 'secondary'" />
-              </td>
-              <td class="py-3 px-4">{{ log.user?.email || 'System' }}</td>
-              <td class="py-3 px-4 font-mono text-xs">{{ log.event_type }}</td>
-              <td class="py-3 px-4">{{ log.ip_address || '—' }}</td>
-              <td class="py-3 px-4 text-gray-600">{{ formatDate(log.timestamp) }}</td>
+            <tr v-for="log in paginated" :key="log.uuid">
+              <td><span class="admin-badge" :class="log.type === 'mfa' ? 'info' : 'neutral'">{{ log.type }}</span></td>
+              <td>{{ log.user?.email || 'System' }}</td>
+              <td class="mono">{{ log.event_type }}</td>
+              <td class="text-muted">{{ log.ip_address || '—' }}</td>
+              <td class="text-muted">{{ formatDate(log.timestamp) }}</td>
             </tr>
-            <tr v-if="logs.length === 0 && !loading">
-              <td colspan="5" class="py-12 text-center text-gray-400">
-                <i class="fas fa-clipboard-list text-4xl block mb-3 text-gray-200"></i>
-                <p class="text-sm">No logs found.</p>
+            <tr v-if="!loading && logs.length === 0">
+              <td colspan="5">
+                <EmptyState icon="fas fa-clipboard-list" title="No logs found" message="Try adjusting your filters or check back later." />
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-    </div>
+      <template #footer>
+        <TablePagination
+          :page="page"
+          :page-size="size"
+          :total="total"
+          :total-pages="totalPages"
+          :from="from"
+          :to="to"
+          @update:page="setPage"
+          @update:page-size="setPageSize"
+        />
+      </template>
+    </DataPanel>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { auditApi } from '@/api/audit'
-import Button from 'primevue/button'
-import Badge from 'primevue/badge'
-import InputText from 'primevue/inputtext'
+import { usePagination } from '@/composables/usePagination'
+import PageHeader from '@/components/admin/PageHeader.vue'
+import StatCard from '@/components/admin/StatCard.vue'
+import DataPanel from '@/components/admin/DataPanel.vue'
+import EmptyState from '@/components/admin/EmptyState.vue'
+import TablePagination from '@/components/admin/TablePagination.vue'
 
 const logs = ref([])
 const stats = ref({})
 const loading = ref(false)
-const filters = ref({
-  event_type: '',
-  user: '',
-  start_date: '',
-  end_date: ''
-})
+const filters = ref({ event_type: '', user: '' })
+
+const { page, size, total, totalPages, paginated, from, to, setPage, setPageSize, reset } = usePagination(logs, 15)
 
 const fetchStats = async () => {
   try {
     const response = await auditApi.getStats()
     stats.value = response.data
   } catch (error) {
-    console.error('Failed to fetch stats:', error)
+    console.error('Failed to fetch audit stats:', error)
   }
 }
 
@@ -112,6 +107,7 @@ const fetchLogs = async () => {
     if (filters.value.user) params.user = filters.value.user
     const response = await auditApi.getCombinedLogs(params)
     logs.value = response.data
+    reset()
   } catch (error) {
     console.error('Failed to fetch logs:', error)
   } finally {
@@ -123,25 +119,9 @@ const fetchAll = async () => {
   await Promise.all([fetchStats(), fetchLogs()])
 }
 
-const applyFilters = () => {
-  fetchLogs()
-}
-
-const clearFilters = () => {
-  filters.value = { event_type: '', user: '', start_date: '', end_date: '' }
-  fetchLogs()
-}
-
-const formatDate = (date) => {
-  if (!date) return '—'
-  return new Date(date).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  })
-}
+const applyFilters = () => fetchLogs()
+const clearFilters = () => { filters.value = { event_type: '', user: '' }; fetchLogs() }
+const formatDate = (date) => date ? new Date(date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'
 
 onMounted(fetchAll)
 </script>

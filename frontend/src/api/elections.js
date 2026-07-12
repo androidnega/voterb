@@ -36,6 +36,10 @@ export const electionApi = {
     return api.post(`/elections/${uuid}/close/`)
   },
   
+  getMonitor(uuid) {
+    return api.get(`/elections/${uuid}/monitor/`)
+  },
+
   // Get positions for election
   getPositions(electionUuid) {
     return api.get(`/elections/${electionUuid}/positions/`)

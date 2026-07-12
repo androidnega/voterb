@@ -1,0 +1,145 @@
+/* Global modal motion — elastic ease-in / ease-out for all dialogs */
+
+:root {
+  --modal-ease-out: cubic-bezier(0.22, 1.15, 0.36, 1);
+  --modal-ease-in: cubic-bezier(0.4, 0, 0.85, 0.45);
+  --modal-duration-in: 0.46s;
+  --modal-duration-out: 0.3s;
+  --modal-backdrop-in: 0.38s;
+  --modal-backdrop-out: 0.26s;
+}
+
+/* PrimeVue dialog backdrop */
+
+.p-dialog-mask {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.p-dialog-mask.p-overlay-mask-enter-active {
+  animation: modal-backdrop-in var(--modal-backdrop-in) var(--modal-ease-out) forwards;
+}
+
+.p-dialog-mask.p-overlay-mask-leave-active {
+  animation: modal-backdrop-out var(--modal-backdrop-out) var(--modal-ease-in) forwards;
+}
+
+/* PrimeVue dialog panel */
+
+.p-dialog {
+  transform-origin: center center;
+  will-change: transform, opacity;
+}
+
+.p-dialog-enter-active {
+  animation: modal-panel-in var(--modal-duration-in) var(--modal-ease-out) forwards;
+}
+
+.p-dialog-leave-active {
+  animation: modal-panel-out var(--modal-duration-out) var(--modal-ease-in) forwards;
+  pointer-events: none;
+}
+
+.p-dialog-enter-from,
+.p-dialog-leave-to {
+  opacity: 0;
+}
+
+/* Custom modals (e.g. vault access) */
+
+.app-modal-enter-active {
+  animation: modal-backdrop-in var(--modal-backdrop-in) var(--modal-ease-out) forwards;
+}
+
+.app-modal-leave-active {
+  animation: modal-backdrop-out var(--modal-backdrop-out) var(--modal-ease-in) forwards;
+}
+
+.app-modal-enter-active .app-modal-panel {
+  animation: modal-panel-in var(--modal-duration-in) var(--modal-ease-out) forwards;
+}
+
+.app-modal-leave-active .app-modal-panel {
+  animation: modal-panel-out var(--modal-duration-out) var(--modal-ease-in) forwards;
+  pointer-events: none;
+}
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+  }
+
+  to {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes modal-backdrop-out {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0);
+    -webkit-backdrop-filter: blur(0);
+  }
+}
+
+@keyframes modal-panel-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(18px);
+  }
+
+  58% {
+    opacity: 1;
+    transform: scale(1.02) translateY(-3px);
+  }
+
+  78% {
+    transform: scale(0.995) translateY(1px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modal-panel-out {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .p-dialog-mask.p-overlay-mask-enter-active,
+  .p-dialog-mask.p-overlay-mask-leave-active,
+  .p-dialog-enter-active,
+  .p-dialog-leave-active,
+  .app-modal-enter-active,
+  .app-modal-leave-active,
+  .app-modal-enter-active .app-modal-panel,
+  .app-modal-leave-active .app-modal-panel {
+    animation: none !important;
+    transition: opacity 0.15s ease !important;
+  }
+
+  .p-dialog-enter-from,
+  .p-dialog-leave-to {
+    opacity: 0;
+  }
+}

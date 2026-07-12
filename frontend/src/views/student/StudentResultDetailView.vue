@@ -24,6 +24,34 @@
       </div>
     </div>
 
+    <section v-if="featuredPosition" class="mb-6">
+      <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div class="mb-4">
+          <h2 class="text-lg font-semibold text-gray-900">How the vote split</h2>
+          <p class="text-sm text-gray-500">{{ featuredPosition.title }} results at a glance</p>
+        </div>
+        <div class="student-charts">
+          <div class="student-chart-card">
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Vote distribution</h3>
+            <DonutChart
+              :labels="chartLabels"
+              :data="chartVotes"
+              legend-position="bottom"
+              aria-label="Vote distribution donut chart"
+            />
+          </div>
+          <div class="student-chart-card">
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Candidate performance</h3>
+            <BarChart
+              :labels="chartLabels"
+              :data="chartVotes"
+              aria-label="Candidate performance bar chart"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Positions -->
     <div class="space-y-6">
       <div v-for="pos in standings" :key="pos.uuid" class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
@@ -76,6 +104,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { resultsApi } from '@/api/results'
 import Badge from 'primevue/badge'
+import DonutChart from '@/components/charts/DonutChart.vue'
+import BarChart from '@/components/charts/BarChart.vue'
 
 const route = useRoute()
 const result = ref(null)
@@ -84,6 +114,15 @@ const standings = computed(() => {
   if (!result.value?.standings) return []
   return result.value.standings.positions || []
 })
+
+const featuredPosition = computed(() => {
+  const positions = standings.value
+  if (!positions.length) return null
+  return positions.find((p) => /president/i.test(p.title)) || positions[0]
+})
+
+const chartLabels = computed(() => (featuredPosition.value?.candidates || []).map((c) => c.full_name))
+const chartVotes = computed(() => (featuredPosition.value?.candidates || []).map((c) => c.votes))
 
 const formatDate = (date) => {
   if (!date) return '—'
@@ -109,3 +148,21 @@ onMounted(() => {
   fetchResult()
 })
 </script>
+
+<style scoped>
+.student-charts {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+
+@media (min-width: 768px) {
+  .student-charts {
+    grid-template-columns: 1fr 1.2fr;
+  }
+}
+
+.student-chart-card {
+  min-height: 14rem;
+}
+</style>

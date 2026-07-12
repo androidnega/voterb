@@ -24,5 +24,8 @@ export const resultsApi = {
   },
   getPublishedDetail(uuid) {
     return api.get(`/results/published/${uuid}/`)
-  }
+  },
+  getLive(electionUuid) {
+    return api.get(`/results/elections/${electionUuid}/live/`)
+  },
 }

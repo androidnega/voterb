@@ -1,26 +1,33 @@
 <template>
-  <AdminDashboard v-if="authStore.isAdmin" />
+  <StudentDashboard v-if="isStudent" />
+  <AdminDashboard v-else-if="isStaffDashboard" />
   <div v-else class="text-center py-12 text-gray-500">
-    <p class="mb-2">Could not load admin dashboard.</p>
-    <p class="text-xs text-gray-400 mb-4">role: {{ authStore.roleName || 'none' }}</p>
-    <button
-      @click="reload"
-      class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-    >
-      Retry
-    </button>
+    <i class="fas fa-spinner fa-spin text-3xl"></i>
+    <p class="mt-2">Loading dashboard...</p>
   </div>
 </template>
 
 <script setup>
+import { computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import StudentDashboard from '@/views/student/StudentDashboardView.vue'
 import AdminDashboard from '@/views/admin/AdminDashboardView.vue'
 
+const router = useRouter()
 const authStore = useAuthStore()
 
-const reload = async () => {
-  authStore.initialized = false
-  authStore.initPromise = null
+const isStudent = computed(() => authStore.isStudent)
+const isStaffDashboard = computed(() => authStore.isAdmin)
+
+onMounted(async () => {
   await authStore.initialize()
-}
+  if (!authStore.isAuthenticated) {
+    router.push('/login')
+    return
+  }
+  if (isStudent.value) {
+    router.replace('/student')
+  }
+})
 </script>

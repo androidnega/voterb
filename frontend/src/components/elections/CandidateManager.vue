@@ -6,37 +6,44 @@
         <span class="text-sm font-medium text-gray-700">Candidates</span>
         <Badge :value="candidates.length" severity="info" />
       </div>
-      <Button label="Add Candidate" icon="pi pi-plus" size="small" @click="showDialog = true" />
+      <Button v-if="!readonly" label="Add Candidate" icon="pi pi-plus" size="small" @click="showDialog = true" />
     </div>
 
-    <!-- Clean Table -->
-    <div class="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-      <table class="w-full text-sm">
+    <div class="admin-table-wrap">
+      <table class="admin-table">
         <thead>
-          <tr class="bg-gray-50 border-b border-gray-100">
-            <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Name</th>
-            <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Department</th>
-            <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Position</th>
-            <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Status</th>
-            <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Ballot #</th>
-            <th class="text-center py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Actions</th>
+          <tr>
+            <th>Photo</th>
+            <th>Name</th>
+            <th>Department</th>
+            <th>Position</th>
+            <th>Status</th>
+            <th>Ballot #</th>
+            <th v-if="!readonly" class="text-center">Actions</th>
           </tr>
         </thead>
         <tbody>
-          <tr 
-            v-for="candidate in candidates" 
-            :key="candidate.uuid"
-            class="border-b border-gray-50 hover:bg-emerald-50/30 transition-colors duration-150"
-          >
-            <td class="py-3 px-4 font-medium text-gray-800">{{ candidate.full_name }}</td>
-            <td class="py-3 px-4 text-gray-600">{{ candidate.department || '—' }}</td>
-            <td class="py-3 px-4 text-gray-600">{{ candidate.position?.title || '—' }}</td>
-            <td class="py-3 px-4">
-              <Badge :value="candidate.status" :severity="getStatusSeverity(candidate.status)" class="capitalize" />
+          <tr v-for="candidate in candidates" :key="candidate.uuid">
+            <td>
+              <img
+                v-if="candidate.photo"
+                :src="resolveMediaUrl(candidate.photo)"
+                :alt="candidate.full_name"
+                class="candidate-photo"
+              />
+              <div v-else class="candidate-photo candidate-photo--fallback">
+                {{ candidate.full_name?.charAt(0) }}
+              </div>
             </td>
-            <td class="py-3 px-4 text-gray-600">{{ candidate.ballot_number || '—' }}</td>
-            <td class="py-3 px-4 text-center">
-              <div class="flex items-center justify-center gap-1">
+            <td><span class="cell-title">{{ candidate.full_name }}</span></td>
+            <td>{{ candidateDepartment(candidate) }}</td>
+            <td>{{ candidate.position?.title || '—' }}</td>
+            <td>
+              <span class="admin-badge" :class="statusBadgeClass(candidate.status)">{{ candidate.status }}</span>
+            </td>
+            <td class="mono">{{ candidate.ballot_number || '—' }}</td>
+            <td v-if="!readonly">
+              <div class="row-actions">
                 <Button 
                   v-if="candidate.status === 'pending'" 
                   icon="pi pi-check" 
@@ -70,9 +77,8 @@
             </td>
           </tr>
           <tr v-if="candidates.length === 0 && !loading">
-            <td colspan="6" class="py-12 text-center text-gray-400">
-              <i class="pi pi-users text-3xl block mb-2 text-gray-200"></i>
-              No candidates added yet.
+            <td :colspan="readonly ? 6 : 7">
+              <EmptyState icon="fas fa-user-tie" title="No candidates" message="Add candidates for each position." />
             </td>
           </tr>
         </tbody>
@@ -80,41 +86,79 @@
     </div>
 
     <!-- Add Candidate Dialog -->
-    <Dialog v-model:visible="showDialog" header="Add Candidate" :modal="true" class="w-full max-w-md">
-      <form @submit.prevent="submitCandidate" class="p-1">
-        <div class="space-y-4">
+    <Dialog
+      v-model:visible="showDialog"
+      header="Add Candidate"
+      :modal="true"
+      class="candidate-dialog w-full max-w-md"
+      :draggable="false"
+    >
+      <form @submit.prevent="submitCandidate" class="dialog-form candidate-form">
+        <div class="photo-field">
+          <label class="photo-picker" :class="{ 'photo-picker--has': photoPreview }">
+            <img v-if="photoPreview" :src="photoPreview" alt="Preview" class="photo-picker__img" />
+            <span v-else class="photo-picker__placeholder">
+              <i class="fas fa-camera" aria-hidden="true"></i>
+              <span>Photo</span>
+            </span>
+            <input
+              ref="photoInput"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              hidden
+              @change="onPhotoSelect"
+            />
+          </label>
+          <div class="photo-field__meta">
+            <span class="photo-field__label">Profile photo</span>
+            <span class="photo-field__hint">JPG or PNG, max 5 MB</span>
+            <button v-if="photoFile" type="button" class="photo-field__clear" @click="clearPhoto">Remove</button>
+          </div>
+        </div>
+
+        <div class="form-grid">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Position</label>
-            <Dropdown 
-              v-model="form.position_uuid" 
-              :options="positions" 
-              optionLabel="title" 
-              optionValue="uuid" 
-              placeholder="Select position" 
-              class="w-full" 
-              required 
+            <label>Position</label>
+            <Dropdown
+              v-model="form.position_uuid"
+              :options="positions"
+              optionLabel="title"
+              optionValue="uuid"
+              placeholder="Select position"
+              class="w-full"
+              required
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-            <InputText v-model="form.full_name" class="w-full" required />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Department</label>
-            <InputText v-model="form.department" class="w-full" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Manifesto</label>
-            <Textarea v-model="form.manifesto" rows="3" class="w-full" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Ballot Number</label>
+            <label>Ballot #</label>
             <InputNumber v-model="form.ballot_number" class="w-full" :min="1" />
           </div>
-          <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-            <Button label="Cancel" severity="secondary" @click="showDialog = false" />
-            <Button label="Add Candidate" type="submit" :loading="submitting" />
-          </div>
+        </div>
+
+        <div>
+          <label>Full name</label>
+          <InputText v-model="form.full_name" class="w-full" required />
+        </div>
+
+        <FacultyDepartmentSelect
+          v-model:faculty-uuid="form.faculty_uuid"
+          v-model:department-uuid="form.department_uuid"
+          required
+        />
+
+        <div>
+          <label>Manifesto</label>
+          <Textarea v-model="form.manifesto" rows="2" class="w-full manifesto-field" />
+        </div>
+
+        <p v-if="submitting && photoFile" class="upload-status">
+          <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
+          {{ uploadStatusText }}
+        </p>
+
+        <div class="dialog-actions">
+          <Button label="Cancel" severity="secondary" @click="closeDialog" />
+          <Button label="Add Candidate" type="submit" :loading="submitting" />
         </div>
       </form>
     </Dialog>
@@ -122,11 +166,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { candidateApi } from '@/api/candidates'
+import { resolveMediaUrl } from '@/utils/media'
 import { electionApi } from '@/api/elections'
+import { uploadQueue } from '@/utils/uploadQueue'
+import EmptyState from '@/components/admin/EmptyState.vue'
+import FacultyDepartmentSelect from '@/components/academic/FacultyDepartmentSelect.vue'
 import Button from 'primevue/button'
-import Badge from 'primevue/badge'
 import Dialog from 'primevue/dialog'
 import Dropdown from 'primevue/dropdown'
 import InputText from 'primevue/inputtext'
@@ -134,28 +181,83 @@ import Textarea from 'primevue/textarea'
 import InputNumber from 'primevue/inputnumber'
 
 const props = defineProps({
-  electionUuid: { type: String, required: true }
+  electionUuid: { type: String, required: true },
+  readonly: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['updated'])
+
+const MAX_PHOTO_MB = 5
 
 const candidates = ref([])
 const positions = ref([])
 const loading = ref(false)
 const submitting = ref(false)
 const showDialog = ref(false)
+const photoFile = ref(null)
+const photoPreview = ref(null)
+const photoInput = ref(null)
 
 const form = ref({
   position_uuid: null,
   full_name: '',
-  department: '',
+  faculty_uuid: null,
+  department_uuid: null,
   manifesto: '',
-  ballot_number: null
+  ballot_number: null,
 })
+
+const uploadStatusText = computed(() =>
+  uploadQueue.size > 1 ? 'Queued — uploading photo…' : 'Uploading photo…'
+)
+
+const resetForm = () => {
+  form.value = {
+    position_uuid: null,
+    full_name: '',
+    faculty_uuid: null,
+    department_uuid: null,
+    manifesto: '',
+    ballot_number: null,
+  }
+}
+
+const candidateDepartment = (candidate) =>
+  candidate.academic_department?.name || candidate.department || '—'
+
+const clearPhoto = () => {
+  if (photoPreview.value) URL.revokeObjectURL(photoPreview.value)
+  photoFile.value = null
+  photoPreview.value = null
+  if (photoInput.value) photoInput.value.value = ''
+}
+
+const closeDialog = () => {
+  showDialog.value = false
+  clearPhoto()
+  resetForm()
+}
+
+const onPhotoSelect = (event) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  if (file.size > MAX_PHOTO_MB * 1024 * 1024) {
+    alert(`Image must be under ${MAX_PHOTO_MB} MB`)
+    clearPhoto()
+    return
+  }
+
+  photoFile.value = file
+  photoPreview.value = URL.createObjectURL(file)
+}
 
 const fetchCandidates = async () => {
   loading.value = true
   try {
     const response = await candidateApi.list(props.electionUuid)
     candidates.value = response.data
+    emit('updated', candidates.value.length)
   } catch (error) {
     console.error('Failed to fetch candidates:', error)
   } finally {
@@ -172,22 +274,26 @@ const fetchPositions = async () => {
   }
 }
 
-const getStatusSeverity = (status) => {
+const statusBadgeClass = (status) => {
   const map = {
     pending: 'warning',
     approved: 'success',
     rejected: 'danger',
-    withdrawn: 'secondary'
+    withdrawn: 'neutral',
   }
-  return map[status] || 'secondary'
+  return map[status] || 'neutral'
 }
 
 const submitCandidate = async () => {
+  if (!form.value.department_uuid) {
+    alert('Please select a faculty and department.')
+    return
+  }
+
   submitting.value = true
   try {
-    await candidateApi.create(props.electionUuid, form.value)
-    showDialog.value = false
-    form.value = { position_uuid: null, full_name: '', department: '', manifesto: '', ballot_number: null }
+    await candidateApi.create(props.electionUuid, form.value, photoFile.value)
+    closeDialog()
     await fetchCandidates()
   } catch (error) {
     console.error('Failed to create candidate:', error)
@@ -244,27 +350,134 @@ onMounted(() => {
 </script>
 
 <style scoped>
-table {
-  border-collapse: separate;
-  border-spacing: 0;
-  width: 100%;
+.candidate-photo {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  object-fit: cover;
+  border: 1px solid #e2e8f0;
 }
-thead th {
+
+.candidate-photo--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.candidate-form {
+  gap: 0.65rem;
+}
+
+.photo-field {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.photo-picker {
+  flex-shrink: 0;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 0.5rem;
+  border: 1px dashed #cbd5e1;
   background: #f8fafc;
-  color: #475569;
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.photo-picker:hover {
+  border-color: #94a3b8;
+  background: #f1f5f9;
+}
+
+.photo-picker--has {
+  border-style: solid;
+}
+
+.photo-picker__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-picker__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  color: #64748b;
+  font-size: 0.6rem;
   font-weight: 600;
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  border-bottom: 1px solid #e9edf2;
 }
-tbody tr {
-  transition: background 0.15s;
+
+.photo-picker__placeholder i {
+  font-size: 0.85rem;
 }
-tbody tr:hover {
-  background: #f0fdf4;
+
+.photo-field__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
 }
-tbody td {
-  vertical-align: middle;
+
+.photo-field__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.photo-field__hint {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.photo-field__clear {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #dc2626;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.photo-field__clear:hover {
+  text-decoration: underline;
+}
+
+.manifesto-field {
+  resize: vertical;
+  min-height: 3.5rem;
+  max-height: 6rem;
+}
+
+.upload-status {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+</style>
+
+<style>
+.candidate-dialog .p-dialog-content {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.candidate-dialog .p-dialog-header {
+  padding: 0.85rem 1rem 0.5rem;
 }
 </style>

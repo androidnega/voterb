@@ -1,144 +1,111 @@
 <template>
-  <div>
-    <div class="flex flex-wrap items-end justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Operations Center</h1>
-        <p class="text-gray-500 text-sm mt-1">Monitor platform health, performance, and system status.</p>
-      </div>
-      <Button label="Refresh" icon="pi pi-refresh" severity="secondary" size="small" @click="fetchAll" />
+  <div class="admin-page">
+    <PageHeader
+      title="Operations Center"
+      subtitle="Platform health, infrastructure metrics, queues, and system logs."
+      icon="fas fa-server"
+      icon-tone="tone-slate"
+      :loading="loading"
+      @refresh="fetchAll"
+    />
+
+    <div class="stat-grid page-section">
+      <StatCard label="Total Users" :value="overview.total_users || 0" icon="fas fa-users" tone="tone-slate" />
+      <StatCard label="Active Sessions" :value="overview.active_sessions || 0" icon="fas fa-plug" tone="tone-teal" value-tone="text-teal-700" />
+      <StatCard label="Queue Tasks" :value="queues.active_tasks || 0" hint="Currently active" icon="fas fa-tasks" tone="tone-blue" value-tone="text-blue-700" />
+      <StatCard
+        label="System Status"
+        :value="health.status === 'healthy' ? 'Healthy' : 'Degraded'"
+        icon="fas fa-heartbeat"
+        :tone="health.status === 'healthy' ? 'tone-teal' : 'tone-rose'"
+        :value-tone="health.status === 'healthy' ? 'text-teal-700' : 'text-rose-700'"
+      />
     </div>
 
-    <!-- Stats Overview -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-        <p class="text-xs font-medium text-gray-400 uppercase">Total Users</p>
-        <p class="text-xl font-bold text-gray-900">{{ overview.total_users || 0 }}</p>
-      </div>
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-        <p class="text-xs font-medium text-gray-400 uppercase">Active Elections</p>
-        <p class="text-xl font-bold text-emerald-600">{{ overview.active_elections || 0 }}</p>
-      </div>
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-        <p class="text-xs font-medium text-gray-400 uppercase">Total Votes</p>
-        <p class="text-xl font-bold text-blue-600">{{ overview.total_votes || 0 }}</p>
-      </div>
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
-        <p class="text-xs font-medium text-gray-400 uppercase">Active Sessions</p>
-        <p class="text-xl font-bold text-purple-600">{{ overview.active_sessions || 0 }}</p>
-      </div>
+    <div class="ops-grid page-section">
+      <DataPanel title="System health" subtitle="Service availability">
+        <div class="metric-card-grid">
+          <div class="metric-row">
+            <span>Overall</span>
+            <span class="admin-badge" :class="health.status === 'healthy' ? 'success' : 'danger'">{{ health.status || 'unknown' }}</span>
+          </div>
+          <div v-for="(status, service) in health.services || {}" :key="service" class="metric-row">
+            <span class="capitalize">{{ service }}</span>
+            <span class="admin-badge" :class="status === 'healthy' ? 'success' : 'danger'">{{ status }}</span>
+          </div>
+        </div>
+        <p class="panel-foot">Last checked: {{ formatTime(health.timestamp) }}</p>
+      </DataPanel>
+
+      <DataPanel title="Infrastructure" subtitle="Runtime resources">
+        <div class="metric-card-grid">
+          <div class="metric-row"><span>CPU Usage</span><strong>{{ infra.cpu?.percent || 0 }}%</strong></div>
+          <div class="metric-row"><span>Memory Usage</span><strong>{{ infra.memory?.percent || 0 }}%</strong></div>
+          <div class="metric-row"><span>DB Connections</span><strong>{{ infra.database?.connections || 0 }}</strong></div>
+          <div class="metric-row"><span>Redis Clients</span><strong>{{ infra.redis?.clients || 0 }}</strong></div>
+        </div>
+        <p class="panel-foot">Uptime: {{ formatUptime(infra.uptime) }}</p>
+      </DataPanel>
     </div>
 
-    <!-- Health & Infrastructure -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-      <!-- Health -->
-      <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <h2 class="text-sm font-semibold text-gray-900 mb-4">System Health</h2>
-        <div class="space-y-3">
-          <div class="flex items-center justify-between py-2 border-b border-gray-100">
-            <span class="text-sm text-gray-600">Overall Status</span>
-            <Badge :value="health.status || 'unknown'" :severity="health.status === 'healthy' ? 'success' : 'danger'" />
-          </div>
-          <div v-for="(status, service) in health.services || {}" :key="service" class="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-            <span class="text-sm text-gray-600 capitalize">{{ service }}</span>
-            <Badge :value="status" :severity="status === 'healthy' ? 'success' : 'danger'" />
-          </div>
-        </div>
-        <div class="mt-4 text-xs text-gray-400">
-          Last checked: {{ formatTime(health.timestamp) }}
-        </div>
+    <DataPanel title="Queue status" subtitle="Background job throughput" class="page-section">
+      <div class="stat-grid stat-grid-3 stat-grid--flush">
+        <StatCard label="Active" :value="queues.active_tasks || 0" icon="fas fa-play" tone="tone-teal" value-tone="text-teal-700" />
+        <StatCard label="Scheduled" :value="queues.scheduled_tasks || 0" icon="fas fa-clock" tone="tone-blue" value-tone="text-blue-700" />
+        <StatCard label="Reserved" :value="queues.reserved_tasks || 0" icon="fas fa-pause" tone="tone-amber" value-tone="text-amber-700" />
       </div>
+      <p class="panel-foot">Celery: {{ queues.celery_enabled ? 'Enabled' : 'Not configured' }}</p>
+    </DataPanel>
 
-      <!-- Infrastructure -->
-      <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <h2 class="text-sm font-semibold text-gray-900 mb-4">Infrastructure</h2>
-        <div class="space-y-3">
-          <div class="flex items-center justify-between py-2 border-b border-gray-100">
-            <span class="text-sm text-gray-600">CPU Usage</span>
-            <span class="text-sm font-medium">{{ infra.cpu?.percent || 0 }}%</span>
-          </div>
-          <div class="flex items-center justify-between py-2 border-b border-gray-100">
-            <span class="text-sm text-gray-600">Memory Usage</span>
-            <span class="text-sm font-medium">{{ infra.memory?.percent || 0 }}%</span>
-          </div>
-          <div class="flex items-center justify-between py-2 border-b border-gray-100">
-            <span class="text-sm text-gray-600">Database Connections</span>
-            <span class="text-sm font-medium">{{ infra.database?.connections || 0 }}</span>
-          </div>
-          <div class="flex items-center justify-between py-2 last:border-0">
-            <span class="text-sm text-gray-600">Redis Clients</span>
-            <span class="text-sm font-medium">{{ infra.redis?.clients || 0 }}</span>
-          </div>
-        </div>
-        <div class="mt-4 text-xs text-gray-400">
-          Uptime: {{ formatUptime(infra.uptime) }}
-        </div>
-      </div>
-    </div>
-
-    <!-- Queue Status -->
-    <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm mb-6">
-      <h2 class="text-sm font-semibold text-gray-900 mb-4">Queue Status</h2>
-      <div class="grid grid-cols-3 gap-4">
-        <div class="bg-gray-50 rounded-lg p-4 text-center">
-          <p class="text-xs text-gray-500">Active Tasks</p>
-          <p class="text-2xl font-bold text-gray-900">{{ queues.active_tasks || 0 }}</p>
-        </div>
-        <div class="bg-gray-50 rounded-lg p-4 text-center">
-          <p class="text-xs text-gray-500">Scheduled Tasks</p>
-          <p class="text-2xl font-bold text-gray-900">{{ queues.scheduled_tasks || 0 }}</p>
-        </div>
-        <div class="bg-gray-50 rounded-lg p-4 text-center">
-          <p class="text-xs text-gray-500">Reserved Tasks</p>
-          <p class="text-2xl font-bold text-gray-900">{{ queues.reserved_tasks || 0 }}</p>
-        </div>
-      </div>
-      <div class="mt-3 text-xs text-gray-400">
-        Celery: {{ queues.celery_enabled ? 'Enabled' : 'Not configured' }}
-      </div>
-    </div>
-
-    <!-- System Logs -->
-    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-      <div class="px-6 py-4 border-b border-gray-200">
-        <h2 class="text-sm font-semibold text-gray-900">Recent System Logs</h2>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+    <DataPanel title="Recent system logs" subtitle="Latest platform events" no-padding class="page-section">
+      <div class="admin-table-wrap">
+        <table class="admin-table">
           <thead>
-            <tr class="bg-gray-50 border-b border-gray-100">
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Level</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Timestamp</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Source</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Message</th>
+            <tr>
+              <th>Level</th>
+              <th>Timestamp</th>
+              <th>Source</th>
+              <th>Message</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="log in logs" :key="log.timestamp + log.message" class="border-b border-gray-50 hover:bg-gray-50/30 transition-colors">
-              <td class="py-3 px-4">
-                <Badge :value="log.level" :severity="log.level === 'error' ? 'danger' : log.level === 'warning' ? 'warning' : 'info'" />
-              </td>
-              <td class="py-3 px-4 text-gray-600">{{ formatTime(log.timestamp) }}</td>
-              <td class="py-3 px-4 text-gray-600">{{ log.source }}</td>
-              <td class="py-3 px-4 text-gray-800">{{ log.message }}</td>
+            <tr v-for="(log, idx) in paginated" :key="`${log.timestamp}-${idx}`">
+              <td><span class="admin-badge" :class="logBadge(log.level)">{{ log.level }}</span></td>
+              <td class="text-muted">{{ formatTime(log.timestamp) }}</td>
+              <td>{{ log.source }}</td>
+              <td>{{ log.message }}</td>
             </tr>
-            <tr v-if="logs.length === 0 && !loading">
-              <td colspan="4" class="py-12 text-center text-gray-400">
-                <i class="fas fa-terminal text-4xl block mb-3 text-gray-200"></i>
-                <p class="text-sm">No logs available.</p>
-              </td>
+            <tr v-if="!loading && logs.length === 0">
+              <td colspan="4"><EmptyState icon="fas fa-terminal" title="No system logs" /></td>
             </tr>
           </tbody>
         </table>
       </div>
-    </div>
+      <template #footer>
+        <TablePagination
+          :page="page"
+          :page-size="size"
+          :total="total"
+          :total-pages="totalPages"
+          :from="from"
+          :to="to"
+          @update:page="setPage"
+          @update:page-size="setPageSize"
+        />
+      </template>
+    </DataPanel>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { operationsApi } from '@/api/operations'
-import Button from 'primevue/button'
-import Badge from 'primevue/badge'
+import { usePagination } from '@/composables/usePagination'
+import PageHeader from '@/components/admin/PageHeader.vue'
+import StatCard from '@/components/admin/StatCard.vue'
+import DataPanel from '@/components/admin/DataPanel.vue'
+import EmptyState from '@/components/admin/EmptyState.vue'
+import TablePagination from '@/components/admin/TablePagination.vue'
 
 const overview = ref({})
 const health = ref({})
@@ -146,6 +113,8 @@ const infra = ref({})
 const queues = ref({})
 const logs = ref([])
 const loading = ref(false)
+
+const { page, size, total, totalPages, paginated, from, to, setPage, setPageSize } = usePagination(logs, 10)
 
 const fetchAll = async () => {
   loading.value = true
@@ -155,7 +124,7 @@ const fetchAll = async () => {
       operationsApi.getHealth(),
       operationsApi.getInfrastructure(),
       operationsApi.getQueues(),
-      operationsApi.getLogs()
+      operationsApi.getLogs(),
     ])
     overview.value = overviewRes.data
     health.value = healthRes.data
@@ -169,24 +138,14 @@ const fetchAll = async () => {
   }
 }
 
-const formatTime = (timestamp) => {
-  if (!timestamp) return '—'
-  return new Date(timestamp).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  })
+const formatTime = (ts) => ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'
+const formatUptime = (s) => {
+  if (!s) return '—'
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60)
+  return `${d}d ${h}h ${m}m`
 }
-
-const formatUptime = (seconds) => {
-  if (!seconds) return '—'
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor((seconds % 86400) / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  return `${days}d ${hours}h ${minutes}m`
-}
+const logBadge = (l) => l === 'error' ? 'danger' : l === 'warning' ? 'warning' : 'info'
 
 onMounted(fetchAll)
 </script>
+

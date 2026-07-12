@@ -29,9 +29,8 @@
     </div>
 
     <!-- Table -->
-    <div class="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+    <div class="admin-table-wrap">
+      <table class="admin-table">
           <thead>
             <tr class="bg-gray-50 border-b border-gray-100">
               <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Election</th>
@@ -52,8 +51,8 @@
               <td class="py-3 px-4 text-center">
                 <div class="flex items-center justify-center gap-1">
                   <Button icon="pi pi-eye" size="small" severity="secondary" text rounded @click="viewResult(result.election.uuid)" tooltip="View" />
-                  <Button v-if="result.status === 'generated' && isSuperAdmin" icon="pi pi-check" size="small" severity="success" text rounded @click="certifyResult(result.election.uuid)" tooltip="Certify" />
-                  <Button v-if="result.status === 'certified' && isSuperAdmin" icon="pi pi-globe" size="small" severity="info" text rounded @click="publishResult(result.election.uuid)" tooltip="Publish" />
+                  <Button v-if="result.status === 'generated' && canManageResults" icon="pi pi-check" size="small" severity="success" text rounded @click="certifyResult(result.election.uuid)" tooltip="Certify" />
+                  <Button v-if="result.status === 'certified' && canManageResults" icon="pi pi-globe" size="small" severity="info" text rounded @click="publishResult(result.election.uuid)" tooltip="Publish" />
                 </div>
               </td>
             </tr>
@@ -66,7 +65,6 @@
             </tr>
           </tbody>
         </table>
-      </div>
     </div>
   </div>
 </template>
@@ -83,7 +81,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const results = ref([])
 const loading = ref(false)
-const isSuperAdmin = computed(() => authStore.roleName === 'super_admin' || !!authStore.user?.is_superuser)
+const canManageResults = computed(() => authStore.isElectionManager)
 
 const stats = computed(() => {
   const total = results.value.length

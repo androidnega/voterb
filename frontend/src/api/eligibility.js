@@ -1,4 +1,6 @@
 import api from './client'
+import uploadClient from './uploadClient'
+import { uploadQueue } from '@/utils/uploadQueue'
 
 export const eligibilityApi = {
   list(electionUuid) {
@@ -13,8 +15,11 @@ export const eligibilityApi = {
   import(electionUuid, file) {
     const formData = new FormData()
     formData.append('file', file)
-    return api.post(`/elections/${electionUuid}/eligibility/import/`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-  }
+    return uploadQueue.enqueue(
+      () => uploadClient.post(`/elections/${electionUuid}/eligibility/import/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
+      { label: 'voter-import' }
+    )
+  },
 }

@@ -10,6 +10,7 @@ from django.db import transaction
 
 from accounts.permissions import IsAdminOrSuperAdmin
 from elections.models import Election, VoterEligibility, Position
+from elections.services.scope_eligibility import student_can_access_election
 from candidates.models import Candidate
 from voting.models import Vote
 from security.models import SVTToken
@@ -34,6 +35,8 @@ class EligibleElectionsView(APIView):
         elections_data = []
         for el in eligibilities:
             election = el.election
+            if not student_can_access_election(user, election):
+                continue
             elections_data.append({
                 'uuid': election.uuid,
                 'title': election.title,
@@ -56,7 +59,7 @@ class SVTRequestView(APIView):
         if election.status != 'open':
             return Response({'error': 'Election is not open'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not VoterEligibility.objects.filter(user=user, election=election, is_eligible=True).exists():
+        if not student_can_access_election(user, election):
             return Response({'error': 'You are not eligible for this election'}, status=status.HTTP_403_FORBIDDEN)
 
         existing = SVTToken.objects.filter(

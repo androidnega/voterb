@@ -11,12 +11,7 @@
           <span class="student-brand-text">VoteBridge</span>
         </router-link>
 
-        <div class="student-topbar-meta">
-          <span v-if="indexDisplay" class="student-index">{{ indexDisplay }}</span>
-          <button type="button" class="student-signout" @click="handleLogout">
-            Sign out
-          </button>
-        </div>
+        <StudentProfileMenu />
       </div>
     </header>
 
@@ -27,20 +22,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
-import { formatIndexDisplay } from '@/utils/index'
-
-const router = useRouter()
-const authStore = useAuthStore()
-
-const indexDisplay = computed(() => formatIndexDisplay(authStore.user?.index_number))
-
-async function handleLogout() {
-  await authStore.logout()
-  await router.replace('/login')
-}
+import StudentProfileMenu from '@/components/student/StudentProfileMenu.vue'
 </script>
 
 <style scoped>
@@ -48,7 +30,6 @@ async function handleLogout() {
   --sd-bg: #f6f5f2;
   --sd-border: #ebe8e2;
   --sd-text: #1c1917;
-  --sd-muted: #78716c;
 
   min-height: 100vh;
   min-height: 100dvh;
@@ -59,15 +40,16 @@ async function handleLogout() {
 .student-topbar {
   position: sticky;
   top: 0;
-  z-index: 20;
-  background: rgba(246, 245, 242, 0.9);
+  z-index: 30;
+  background: rgba(246, 245, 242, 0.92);
   backdrop-filter: blur(12px);
-  border-bottom: 1px solid transparent;
+  border-bottom: 1px solid var(--sd-border);
 }
 
 .student-topbar-inner {
+  width: 100%;
   margin: 0 auto;
-  padding: 0.75rem 1rem;
+  padding: 0.7rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -80,6 +62,7 @@ async function handleLogout() {
   gap: 0.5rem;
   text-decoration: none;
   color: inherit;
+  flex-shrink: 0;
 }
 
 .student-brand-icon {
@@ -105,67 +88,26 @@ async function handleLogout() {
   letter-spacing: -0.02em;
 }
 
-.student-topbar-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.student-index {
-  font-size: 0.66rem;
-  font-weight: 600;
-  color: var(--sd-muted);
-  letter-spacing: 0.02em;
-}
-
-.student-signout {
-  border: none;
-  background: transparent;
-  color: var(--sd-muted);
-  font-size: 0.68rem;
-  font-weight: 600;
-  padding: 0.35rem 0.15rem;
-  cursor: pointer;
-  transition: color 0.2s ease;
-}
-
-.student-signout:hover {
-  color: var(--sd-text);
-}
-
 .student-main {
   margin: 0 auto;
   padding: 1.1rem 1rem 2.5rem;
   width: 100%;
 }
 
-@media (max-width: 639px) {
-  .student-topbar-inner {
-    padding: 0.7rem 0.95rem;
-  }
-
-  .student-index {
-    display: none;
-  }
-
-  .student-main {
-    padding: 1rem 0.95rem 2rem;
-  }
-}
-
 @media (min-width: 768px) {
-  .student-topbar {
-    border-bottom-color: var(--sd-border);
-  }
-
   .student-topbar-inner {
-    max-width: 40rem;
-    padding: 0.9rem 0;
+    padding: 0.85rem 1.5rem;
   }
 
   .student-main {
     max-width: 40rem;
     padding: 1.75rem 0 3rem;
+  }
+}
+
+@media (min-width: 1100px) {
+  .student-topbar-inner {
+    padding: 0.9rem 2rem;
   }
 }
 </style>

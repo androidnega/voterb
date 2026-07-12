@@ -30,6 +30,7 @@ class Command(BaseCommand):
 
         # Additional Settings
         other_settings = [
+            {'key': 'ui_theme', 'value': 'classic', 'category': 'general', 'description': 'Platform UI color theme (classic, pulse)'},
             {'key': 'email_enabled', 'value': 'true', 'category': 'integrations', 'description': 'Enable email notifications'},
             {'key': 'email_from_address', 'value': 'noreply@voterb.com', 'category': 'integrations', 'description': 'Email from address'},
             {'key': 'email_smtp_host', 'value': 'smtp.gmail.com', 'category': 'integrations', 'description': 'SMTP host'},

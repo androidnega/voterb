@@ -43,14 +43,17 @@
             <ElectionCountdown :election="election" />
           </div>
 
-          <button
-            type="button"
-            class="ballot-action"
-            :disabled="!canVote(election)"
-            @click="startVoting(election.uuid)"
-          >
-            Cast vote
-          </button>
+          <div class="ballot-footer">
+            <button
+              type="button"
+              class="ballot-action"
+              :disabled="!canVote(election)"
+              @click="startVoting(election.uuid)"
+            >
+              <span>Cast vote</span>
+              <i class="fas fa-arrow-right" aria-hidden="true"></i>
+            </button>
+          </div>
         </article>
       </div>
     </section>
@@ -279,27 +282,50 @@ onMounted(fetchElections)
   color: #78716c;
 }
 
+.ballot-footer {
+  padding: 0.75rem 0.85rem 0.85rem;
+}
+
 .ballot-action {
   width: 100%;
   border: none;
-  border-top: 1px solid #f0eeea;
-  background: #fafaf9;
-  color: #1c1917;
-  font-size: 0.78rem;
+  background: var(--vb-accent, #0f766e);
+  color: #fff;
+  font-size: 0.8rem;
   font-weight: 600;
-  padding: 0.82rem 1rem;
+  padding: 0.78rem 1rem;
+  border-radius: 0.65rem;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 14px rgba(15, 118, 110, 0.18);
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.ballot-action i {
+  font-size: 0.72rem;
+  transition: transform 0.2s ease;
 }
 
 .ballot-action:hover:not(:disabled) {
-  background: var(--vb-accent, #0f766e);
-  color: #fff;
+  background: var(--vb-accent-hover, #0d6b64);
+  box-shadow: 0 6px 18px rgba(15, 118, 110, 0.22);
+}
+
+.ballot-action:hover:not(:disabled) i {
+  transform: translateX(2px);
+}
+
+.ballot-action:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .ballot-action:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 /* Mobile: edge-tight, no clutter */
@@ -318,7 +344,17 @@ onMounted(fetchElections)
   }
 
   .ballot-main {
-    padding: 0.9rem 0.9rem 0.8rem;
+    padding: 0.9rem 0.9rem 0.65rem;
+  }
+
+  .ballot-footer {
+    padding: 0 0.85rem 0.9rem;
+  }
+
+  .ballot-action {
+    padding: 0.85rem 1rem;
+    font-size: 0.82rem;
+    border-radius: 0.7rem;
   }
 
   .ballot-head h2 {
@@ -364,8 +400,12 @@ onMounted(fetchElections)
   }
 
   .ballot-main {
-    padding: 1.2rem 1.25rem 1rem;
+    padding: 1.2rem 1.25rem 0.85rem;
     gap: 0.65rem;
+  }
+
+  .ballot-footer {
+    padding: 0 1.25rem 1.15rem;
   }
 
   .ballot-head h2 {
@@ -377,7 +417,7 @@ onMounted(fetchElections)
   }
 
   .ballot-action {
-    padding: 0.9rem 1.25rem;
+    padding: 0.82rem 1.1rem;
     font-size: 0.8rem;
   }
 }
