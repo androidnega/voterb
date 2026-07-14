@@ -1,16 +1,16 @@
 import api from './client'
 
 export const auditApi = {
-  // Get MFA logs
   getMFA() {
     return api.get('/audit/mfa/')
   },
-  // Get audit logs
-  getAudit() {
-    return api.get('/audit/audit/')
+  getAudit(params = {}) {
+    return api.get('/audit/audit/', { params })
   },
-  // Combined logs with filters
   getCombined(params = {}) {
     return api.get('/audit/combined/', { params })
-  }
+  },
+  getVoteDetail(auditId) {
+    return api.get(`/audit/${auditId}/`)
+  },
 }

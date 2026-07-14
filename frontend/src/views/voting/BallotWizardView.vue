@@ -1,18 +1,23 @@
 <template>
-  <div class="ballot-page">
+  <div class="ballot-page" :class="{ 'ballot-page--centered': !!(error && !loading && !showSkeleton) }">
     <BallotWizardSkeleton
       v-if="loading || showSkeleton"
       :hint="showSlowHint ? slowHint : ''"
     />
 
-    <FriendlyLoadState
-      v-else-if="error"
-      tone="error"
-      title="Couldn’t open your ballot"
-      :message="error"
-      action-label="Try again"
-      @action="fetchBallot"
-    />
+    <div v-else-if="error" class="ballot-center">
+      <div class="ballot-error-bg" aria-hidden="true">
+        <i class="fas fa-wifi ballot-error-bg__icon"></i>
+        <span class="ballot-error-bg__slash"></span>
+      </div>
+      <FriendlyLoadState
+        tone="error"
+        title="Couldn’t open your ballot"
+        :message="error"
+        action-label="Try again"
+        @action="fetchBallot"
+      />
+    </div>
 
     <template v-else>
       <header class="ballot-head">
@@ -68,81 +73,91 @@
           />
         </article>
 
-        <article v-else class="ballot-card">
-          <div class="ballot-card__top">
-            <div>
-              <h2 class="ballot-card__title">{{ currentPosition.title }}</h2>
-              <p v-if="currentPosition.description" class="ballot-card__desc">{{ currentPosition.description }}</p>
-              <p class="ballot-card__hint">
-                Select up to {{ currentPosition.max_votes_allowed }} candidate{{ currentPosition.max_votes_allowed === 1 ? '' : 's' }}.
-              </p>
-            </div>
-            <span v-if="isCurrentSealed" class="ballot-sealed-pill">
-              <i class="fas fa-lock" aria-hidden="true"></i>
-              Sealed
-            </span>
-          </div>
-
-          <div class="candidate-grid">
-            <button
-              v-for="candidate in currentPosition.candidates"
-              :key="candidate.uuid"
-              type="button"
-              class="candidate-card"
-              :class="{ 'is-selected': isSelected(currentPosition.uuid, candidate.uuid) }"
-              :disabled="isCurrentSealed"
-              @click="toggleCandidate(currentPosition.uuid, candidate.uuid, currentPosition.max_votes_allowed)"
+        <div v-else class="ballot-stage">
+          <Transition :name="stepTransition" mode="out-in">
+            <article
+              :key="currentPosition.uuid || activeStep"
+              class="ballot-card"
             >
-              <div class="candidate-card__photo-wrap">
-                <div class="candidate-card__photo-clip">
-                  <img
-                    v-if="photoUrl(candidate)"
-                    :src="photoUrl(candidate)"
-                    :alt="candidate.full_name"
-                    class="candidate-card__photo"
-                    loading="lazy"
-                    @error="onPhotoError(candidate.uuid)"
-                  />
-                  <div v-else class="candidate-card__fallback" aria-hidden="true">
-                    {{ initials(candidate.full_name) }}
-                  </div>
+              <div class="ballot-card__top">
+                <div>
+                  <h2 class="ballot-card__title">{{ currentPosition.title }}</h2>
+                  <p v-if="currentPosition.description" class="ballot-card__desc">{{ currentPosition.description }}</p>
+                  <p class="ballot-card__hint">
+                    Select up to {{ currentPosition.max_votes_allowed }} candidate{{ currentPosition.max_votes_allowed === 1 ? '' : 's' }}.
+                  </p>
                 </div>
-                <span
-                  v-if="isSelected(currentPosition.uuid, candidate.uuid)"
-                  class="candidate-card__check"
-                  aria-hidden="true"
-                >
-                  <i class="fas fa-check"></i>
+                <span v-if="isCurrentSealed" class="ballot-sealed-pill">
+                  <i class="fas fa-lock" aria-hidden="true"></i>
+                  Sealed
                 </span>
               </div>
-              <div class="candidate-card__copy">
-                <p class="candidate-card__name">{{ candidate.full_name }}</p>
-                <p v-if="candidate.department" class="candidate-card__meta">{{ candidate.department }}</p>
-              </div>
-              <span v-if="candidate.ballot_number" class="candidate-card__badge">#{{ candidate.ballot_number }}</span>
-            </button>
-          </div>
 
-          <div class="ballot-nav">
-            <button
-              type="button"
-              class="ballot-nav__btn"
-              :disabled="activeStepIndex === 0 || phase === 'ceremony'"
-              @click="prevStep"
-            >
-              Back
-            </button>
-            <button
-              type="button"
-              class="ballot-nav__btn ballot-nav__btn--primary"
-              :disabled="!canSealCurrent"
-              @click="sealCurrentPosition"
-            >
-              {{ primaryActionLabel }}
-            </button>
-          </div>
-          <p v-if="submitError && !showReview" class="ballot-soft-error">{{ submitError }}</p>
-        </article>
+              <div class="candidate-grid">
+                <button
+                  v-for="(candidate, cIdx) in currentPosition.candidates"
+                  :key="candidate.uuid"
+                  type="button"
+                  class="candidate-card"
+                  :class="{ 'is-selected': isSelected(currentPosition.uuid, candidate.uuid) }"
+                  :style="{ '--i': cIdx }"
+                  :disabled="isCurrentSealed"
+                  @click="toggleCandidate(currentPosition.uuid, candidate.uuid, currentPosition.max_votes_allowed)"
+                >
+                  <div class="candidate-card__photo-wrap">
+                    <div class="candidate-card__photo-clip">
+                      <img
+                        v-if="photoUrl(candidate)"
+                        :src="photoUrl(candidate)"
+                        :alt="candidate.full_name"
+                        class="candidate-card__photo"
+                        loading="lazy"
+                        @error="onPhotoError(candidate.uuid)"
+                      />
+                      <div v-else class="candidate-card__fallback" aria-hidden="true">
+                        {{ initials(candidate.full_name) }}
+                      </div>
+                    </div>
+                    <Transition name="check-pop">
+                      <span
+                        v-if="isSelected(currentPosition.uuid, candidate.uuid)"
+                        class="candidate-card__check"
+                        aria-hidden="true"
+                      >
+                        <i class="fas fa-check"></i>
+                      </span>
+                    </Transition>
+                  </div>
+                  <div class="candidate-card__copy">
+                    <p class="candidate-card__name">{{ candidate.full_name }}</p>
+                    <p v-if="candidate.department" class="candidate-card__meta">{{ candidate.department }}</p>
+                  </div>
+                  <span v-if="candidate.ballot_number" class="candidate-card__badge">#{{ candidate.ballot_number }}</span>
+                </button>
+              </div>
+
+              <div class="ballot-nav">
+                <button
+                  type="button"
+                  class="ballot-nav__btn"
+                  :disabled="activeStepIndex === 0 || phase === 'ceremony'"
+                  @click="prevStep"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  class="ballot-nav__btn ballot-nav__btn--primary"
+                  :disabled="!canSealCurrent"
+                  @click="sealCurrentPosition"
+                >
+                  {{ primaryActionLabel }}
+                </button>
+              </div>
+              <p v-if="submitError && !showReview" class="ballot-soft-error">{{ submitError }}</p>
+            </article>
+          </Transition>
+        </div>
       </div>
     </template>
 
@@ -184,6 +199,11 @@ import { resolveMediaUrl } from '@/utils/media'
 import { useFriendlyLoad } from '@/composables/useFriendlyLoad'
 import { friendlyActionError } from '@/utils/friendlyFeedback'
 import { clearSvtSession, readSvtSession } from '@/utils/svtSession'
+import {
+  collectVoteAuditContext,
+  cacheVoteAuditContext,
+  readCachedVoteAuditContext,
+} from '@/utils/deviceAudit'
 import BallotWizardSkeleton from '@/components/student/BallotWizardSkeleton.vue'
 import FriendlyLoadState from '@/components/student/FriendlyLoadState.vue'
 import BallotBoxCeremony from '@/components/voting/BallotBoxCeremony.vue'
@@ -202,6 +222,7 @@ const branding = ref({
 })
 const positions = ref([])
 const activeStep = ref('0')
+const stepDirection = ref(1) // 1 = forward, -1 = back
 const selections = ref({})
 const sealedIds = ref(new Set())
 const phase = ref('select') // select | ceremony
@@ -231,6 +252,17 @@ const {
 const activeStepIndex = computed(() => parseInt(activeStep.value, 10) || 0)
 const currentPosition = computed(() => positions.value[activeStepIndex.value] || { candidates: [] })
 const isCurrentSealed = computed(() => sealedIds.value.has(currentPosition.value?.uuid))
+const stepTransition = computed(() => (
+  stepDirection.value < 0 ? 'step-slide-back' : 'step-slide-forward'
+))
+
+function setStep(idx) {
+  const next = Math.max(0, Math.min(idx, positions.value.length - 1))
+  const current = activeStepIndex.value
+  if (next === current) return
+  stepDirection.value = next > current ? 1 : -1
+  activeStep.value = String(next)
+}
 const canSealCurrent = computed(() => {
   if (phase.value !== 'select') return false
   if (isCurrentSealed.value) return true
@@ -308,11 +340,23 @@ const fetchBallot = async () => {
   begin()
   try {
     const { data: session } = await votingApi.getSvtSession(electionUuid)
+    if (session?.status === 'voted' || session?.has_voted) {
+      clearSvtSession(electionUuid)
+      clearDraft()
+      succeed()
+      await router.replace(`/vote/${electionUuid}/confirmation`)
+      return
+    }
     if (session?.status !== 'validated') {
       clearSvtSession(electionUuid)
       clearDraft()
       succeed()
       await router.replace(`/vote/${electionUuid}`)
+      return
+    }
+    if (!session?.presence_captured) {
+      succeed()
+      await router.replace(`/vote/${electionUuid}/presence`)
       return
     }
     const response = await votingApi.getBallot(electionUuid)
@@ -340,6 +384,27 @@ const fetchBallot = async () => {
     succeed()
   } catch (err) {
     console.error('Failed to load ballot:', err)
+    const payload = err?.response?.data || {}
+    const errText = String(payload.error || payload.detail || '')
+    if (payload.has_voted || /already cast your vote/i.test(errText)) {
+      clearSvtSession(electionUuid)
+      clearDraft()
+      succeed()
+      await router.replace(`/vote/${electionUuid}/confirmation`)
+      return
+    }
+    if (payload.presence_required || /presence photo|presence check/i.test(errText)) {
+      succeed()
+      await router.replace(`/vote/${electionUuid}/presence`)
+      return
+    }
+    if (/valid svt|secure token|validate your secure/i.test(errText)) {
+      clearSvtSession(electionUuid)
+      clearDraft()
+      succeed()
+      await router.replace(`/vote/${electionUuid}`)
+      return
+    }
     positions.value = []
     fail(err)
   }
@@ -379,7 +444,7 @@ function goToStep(idx) {
   if (idx > firstOpen && firstOpen >= 0 && !sealedIds.value.has(positions.value[idx].uuid)) {
     return
   }
-  activeStep.value = String(idx)
+  setStep(idx)
   persistDraft()
 }
 
@@ -392,7 +457,7 @@ function sealCurrentPosition() {
     if (activeStepIndex.value >= positions.value.length - 1) {
       openReviewIfReady()
     } else {
-      activeStep.value = String(activeStepIndex.value + 1)
+      setStep(activeStepIndex.value + 1)
       persistDraft()
     }
     return
@@ -426,8 +491,7 @@ function finishCeremony() {
     openReviewIfReady()
     return
   }
-  const nextIdx = Math.min(activeStepIndex.value + 1, positions.value.length - 1)
-  activeStep.value = String(nextIdx)
+  setStep(Math.min(activeStepIndex.value + 1, positions.value.length - 1))
   persistDraft()
 }
 
@@ -437,7 +501,7 @@ function openReviewIfReady() {
   if (!allSelected || !allSealed) {
     submitError.value = 'Please seal every position before submitting.'
     const missing = positions.value.findIndex((pos) => !sealedIds.value.has(pos.uuid))
-    if (missing >= 0) activeStep.value = String(missing)
+    if (missing >= 0) setStep(missing)
     return
   }
   submitError.value = ''
@@ -448,7 +512,7 @@ const prevStep = () => {
   if (phase.value === 'ceremony') return
   const prevIndex = activeStepIndex.value - 1
   if (prevIndex >= 0) {
-    activeStep.value = String(prevIndex)
+    setStep(prevIndex)
     persistDraft()
   }
 }
@@ -469,7 +533,19 @@ const submitVote = async () => {
     }
     const session = readSvtSession(electionUuid)
     const svtCode = session?.code || ''
-    const { data } = await votingApi.submitVote(electionUuid, payload.selections, svtCode || undefined)
+    let clientContext = readCachedVoteAuditContext(electionUuid)
+    try {
+      clientContext = await collectVoteAuditContext({ includeLocation: true })
+      cacheVoteAuditContext(electionUuid, clientContext)
+    } catch (ctxErr) {
+      console.warn('Vote audit context collection failed:', ctxErr)
+    }
+    const { data } = await votingApi.submitVote(
+      electionUuid,
+      payload.selections,
+      svtCode || undefined,
+      clientContext || undefined,
+    )
     const code = data?.confirmation_code || ''
     if (code) sessionStorage.setItem(`vote_confirm:${electionUuid}`, code)
     clearSvtSession(electionUuid)
@@ -506,6 +582,77 @@ onUnmounted(clearSubmitSlow)
   width: min(46rem, 100%);
   margin: 0 auto;
   padding: 0.35rem 0 2rem;
+}
+
+.ballot-page--centered {
+  width: 100%;
+  min-height: calc(100dvh - 4.5rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.ballot-center {
+  position: relative;
+  width: min(22rem, 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+}
+
+.ballot-error-bg {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: min(18rem, 72vw);
+  height: min(18rem, 72vw);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.09;
+  animation: ballot-error-pulse 4.5s ease-in-out infinite;
+}
+
+.ballot-error-bg__icon {
+  font-size: clamp(7rem, 28vw, 11rem);
+  color: #78716c;
+  line-height: 1;
+}
+
+.ballot-error-bg__slash {
+  position: absolute;
+  width: 58%;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #78716c;
+  transform: rotate(-42deg);
+  box-shadow: 0 0 0 6px rgba(246, 245, 242, 0.55);
+}
+
+.ballot-center :deep(.friendly-state) {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes ballot-error-pulse {
+  0%, 100% {
+    opacity: 0.07;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    opacity: 0.12;
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ballot-error-bg {
+    animation: none;
+    opacity: 0.08;
+  }
 }
 
 .ballot-head {
@@ -605,6 +752,11 @@ onUnmounted(clearSubmitSlow)
   opacity: 0.75;
 }
 
+.ballot-stage {
+  position: relative;
+  overflow: hidden;
+}
+
 .ballot-card {
   background: #fff;
   border: 1px solid #ebe8e2;
@@ -613,9 +765,94 @@ onUnmounted(clearSubmitSlow)
   box-shadow: 0 4px 16px rgba(28, 25, 23, 0.03);
 }
 
+/* Direction-aware position transitions */
+.step-slide-forward-enter-active,
+.step-slide-forward-leave-active,
+.step-slide-back-enter-active,
+.step-slide-back-leave-active {
+  transition:
+    transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.32s ease;
+}
+
+.step-slide-forward-enter-from {
+  transform: translateX(1.65rem);
+  opacity: 0;
+}
+
+.step-slide-forward-leave-to {
+  transform: translateX(-1.1rem);
+  opacity: 0;
+}
+
+.step-slide-back-enter-from {
+  transform: translateX(-1.65rem);
+  opacity: 0;
+}
+
+.step-slide-back-leave-to {
+  transform: translateX(1.1rem);
+  opacity: 0;
+}
+
+/* Stagger candidates when a position enters */
+.step-slide-forward-enter-active .candidate-card,
+.step-slide-back-enter-active .candidate-card {
+  animation: candidate-rise 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(0.05s + var(--i, 0) * 0.055s);
+}
+
+@keyframes candidate-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.85rem) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.check-pop-enter-active {
+  transition: transform 0.38s cubic-bezier(0.34, 1.45, 0.64, 1), opacity 0.2s ease;
+}
+
+.check-pop-leave-active {
+  transition: transform 0.18s ease, opacity 0.15s ease;
+}
+
+.check-pop-enter-from,
+.check-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-slide-forward-enter-active,
+  .step-slide-forward-leave-active,
+  .step-slide-back-enter-active,
+  .step-slide-back-leave-active,
+  .check-pop-enter-active,
+  .check-pop-leave-active {
+    transition: opacity 0.15s ease;
+  }
+
+  .step-slide-forward-enter-from,
+  .step-slide-forward-leave-to,
+  .step-slide-back-enter-from,
+  .step-slide-back-leave-to {
+    transform: none;
+  }
+
+  .step-slide-forward-enter-active .candidate-card,
+  .step-slide-back-enter-active .candidate-card {
+    animation: none;
+  }
+}
+
 .ballot-card--ceremony {
   padding: 0.85rem 0.65rem 1.1rem;
-  background: linear-gradient(180deg, #f8fafc 0%, #fff 55%);
+  background: #fff;
 }
 
 .ballot-card__top {
@@ -679,12 +916,20 @@ onUnmounted(clearSubmitSlow)
   background: #fafaf9;
   cursor: pointer;
   overflow: visible;
-  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  transition:
+    border-color 0.28s ease,
+    background 0.28s ease,
+    box-shadow 0.28s ease,
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .candidate-card:hover:not(:disabled) {
   border-color: #d6d3d1;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+}
+
+.candidate-card:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
 }
 
 .candidate-card:disabled {
@@ -695,7 +940,14 @@ onUnmounted(clearSubmitSlow)
 .candidate-card.is-selected {
   border-color: #34d399;
   background: #f0fdf9;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.12);
+  box-shadow:
+    0 0 0 2px rgba(16, 185, 129, 0.14),
+    0 8px 20px rgba(16, 185, 129, 0.08);
+  transform: translateY(-1px);
+}
+
+.candidate-card.is-selected .candidate-card__photo-clip {
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35);
 }
 
 .candidate-card__photo-wrap {
@@ -712,6 +964,7 @@ onUnmounted(clearSubmitSlow)
   border-radius: 999px;
   overflow: hidden;
   background: #e7e5e4;
+  transition: box-shadow 0.28s ease;
 }
 
 .candidate-card__photo {

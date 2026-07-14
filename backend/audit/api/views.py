@@ -1,51 +1,87 @@
-from rest_framework import generics
+from django.db.models import Q
+from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import MFALog
-from accounts.permissions import IsAdminOrSuperAdmin
+from accounts.permissions import IsAuditor
 from security.models import AuditLog
+from security.services.vote_audit import VOTER_AUDIT_EVENTS
 
-from .serializers import MFALogSerializer, AuditLogSerializer
+from .serializers import (
+    MFALogSerializer,
+    VoteAuditListSerializer,
+    VoteAuditDetailSerializer,
+)
+
+
+def _voter_audit_queryset():
+    return (
+        AuditLog.objects.filter(event_type__in=VOTER_AUDIT_EVENTS)
+        .select_related('user', 'election', 'device_log', 'location_log')
+        .order_by('-timestamp')
+    )
+
+
+def _apply_voter_audit_filters(qs, params):
+    user_q = params.get('user')
+    event = params.get('event') or params.get('event_type')
+    election = params.get('election')
+    if user_q:
+        qs = qs.filter(
+            Q(user__email__icontains=user_q)
+            | Q(user__index_number__icontains=user_q)
+            | Q(user__first_name__icontains=user_q)
+            | Q(user__last_name__icontains=user_q)
+            | Q(user__uuid__iexact=user_q)
+        )
+    if event:
+        qs = qs.filter(event_type__icontains=event)
+    if election:
+        qs = qs.filter(election__uuid=election)
+    return qs
 
 
 class MFAHistoryView(generics.ListAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    """Legacy MFA trail — not shown in the voter audit UI."""
+
+    permission_classes = [IsAuditor]
     serializer_class = MFALogSerializer
     queryset = MFALog.objects.all().order_by('-created_at')
 
 
 class AuditHistoryView(generics.ListAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
-    serializer_class = AuditLogSerializer
-    queryset = AuditLog.objects.all().order_by('-timestamp')
+    """Voter vote-cast audits only (no login/logout noise)."""
+
+    permission_classes = [IsAuditor]
+    serializer_class = VoteAuditListSerializer
+
+    def get_queryset(self):
+        return _apply_voter_audit_filters(_voter_audit_queryset(), self.request.query_params)
+
+
+class VoteAuditDetailView(APIView):
+    """Full voter audit detail — device, location, presence photo. No ballot choices."""
+
+    permission_classes = [IsAuditor]
+
+    def get(self, request, audit_id):
+        audit = _voter_audit_queryset().filter(audit_id=audit_id).first()
+        if not audit:
+            return Response({'error': 'Audit record not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(VoteAuditDetailSerializer(audit, context={'request': request}).data)
 
 
 class CombinedAuditView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    """
+    Voter audits only. Login/MFA events are intentionally excluded —
+    this trail is for people who voted, with device/presence detail.
+    """
+
+    permission_classes = [IsAuditor]
 
     def get(self, request):
-        user_uuid = request.query_params.get('user')
-        event_type = request.query_params.get('event')
-        limit = int(request.query_params.get('limit', 50))
-
-        mfa_logs = MFALog.objects.all()
-        audit_logs = AuditLog.objects.all()
-
-        if user_uuid:
-            mfa_logs = mfa_logs.filter(user__uuid=user_uuid)
-            audit_logs = audit_logs.filter(user__uuid=user_uuid)
-        if event_type:
-            mfa_logs = mfa_logs.filter(event_type__icontains=event_type)
-            audit_logs = audit_logs.filter(event_type__icontains=event_type)
-
-        mfa_serializer = MFALogSerializer(mfa_logs[:limit], many=True)
-        audit_serializer = AuditLogSerializer(audit_logs[:limit], many=True)
-
-        combined = list(mfa_serializer.data) + list(audit_serializer.data)
-        combined.sort(
-            key=lambda x: x.get('created_at') or x.get('timestamp'),
-            reverse=True,
-        )
-
-        return Response(combined[:limit])
+        limit = min(int(request.query_params.get('limit', 100)), 500)
+        qs = _apply_voter_audit_filters(_voter_audit_queryset(), request.query_params)
+        data = VoteAuditListSerializer(qs[:limit], many=True, context={'request': request}).data
+        return Response(data)

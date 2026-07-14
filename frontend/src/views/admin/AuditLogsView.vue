@@ -2,8 +2,11 @@
   <div class="audit-page">
     <header class="audit-hero">
       <div>
-        <h1 class="audit-hero__title">Audit trail</h1>
-        <p class="audit-hero__sub">Review MFA and system activity across the platform.</p>
+        <h1 class="audit-hero__title">Voter audit trail</h1>
+        <p class="audit-hero__sub">
+          Device, location, and presence records for voters who cast a ballot.
+          Ballot choices are never shown.
+        </p>
       </div>
       <button type="button" class="audit-icon-btn" :disabled="loading" title="Refresh" @click="fetchLogs">
         <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
@@ -18,7 +21,7 @@
           type="button"
           class="audit-chip"
           :class="{ 'is-active': activeChip === chip.key }"
-          @click="setChip(chip.key)"
+          @click="activeChip = chip.key"
         >
           <span class="audit-chip__icon"><i :class="chip.icon"></i></span>
           <span class="audit-chip__label">{{ chip.label }}</span>
@@ -30,63 +33,58 @@
         <input
           v-model="searchQuery"
           type="search"
-          placeholder="Search user or event…"
+          placeholder="Search voter, IP, or receipt…"
           @keyup.enter="applyLocalFilter"
         />
-        <button type="button" class="audit-search__filter" title="Apply filters" @click="applyLocalFilter">
-          <i class="fas fa-sliders-h"></i>
-        </button>
       </div>
     </section>
 
     <section class="audit-grid">
       <article class="audit-card audit-card--list">
-        <div class="audit-tabs">
-          <button
-            type="button"
-            class="audit-tab"
-            :class="{ 'is-active': listTab === 'recent' }"
-            @click="listTab = 'recent'"
-          >
-            Recent activity
-          </button>
-          <button
-            type="button"
-            class="audit-tab"
-            :class="{ 'is-active': listTab === 'mfa' }"
-            @click="listTab = 'mfa'"
-          >
-            MFA events
-          </button>
+        <div class="audit-list-head">
+          <h2>Recent votes</h2>
+          <span>{{ filteredLogs.length }} records</span>
         </div>
 
         <div v-if="loading && !displayLogs.length" class="audit-empty">
           <i class="fas fa-spinner fa-spin"></i>
-          Loading activity…
+          Loading voter audits…
         </div>
 
         <ul v-else-if="displayLogs.length" class="audit-list">
-          <li v-for="log in displayLogs" :key="log.uuid || `${log.type}-${log.timestamp}-${log.event_type}`" class="audit-row">
-            <div class="audit-avatar" :class="log.type === 'mfa' ? 'is-mfa' : 'is-audit'">
-              <i :class="log.type === 'mfa' ? 'fas fa-key' : 'fas fa-clipboard-list'"></i>
+          <li
+            v-for="log in displayLogs"
+            :key="log.audit_id"
+            class="audit-row"
+            :class="{ 'is-selected': selectedId === log.audit_id }"
+            role="button"
+            tabindex="0"
+            @click="openDetail(log.audit_id)"
+            @keydown.enter="openDetail(log.audit_id)"
+          >
+            <div class="audit-avatar is-audit">
+              <i class="fas fa-user-check"></i>
             </div>
             <div class="audit-row__main">
-              <p class="audit-row__title">{{ log.user?.email || log.user || 'System' }}</p>
-              <p class="audit-row__sub">{{ formatEvent(log.event_type) }}</p>
+              <p class="audit-row__title">{{ log.user_display || log.user_email || 'Voter' }}</p>
+              <p class="audit-row__sub">
+                {{ log.election_title || 'Election' }}
+                <span v-if="log.operating_system"> · {{ log.operating_system }}</span>
+              </p>
             </div>
             <div class="audit-row__meta">
-              <span class="audit-row__date">{{ formatDate(log.timestamp || log.created_at) }}</span>
+              <span class="audit-row__date">{{ formatDate(log.timestamp) }}</span>
               <span class="audit-row__ip">{{ log.ip_address || '—' }}</span>
             </div>
-            <span class="audit-row__type" :class="log.type === 'mfa' ? 'is-mfa' : 'is-audit'">
-              {{ log.type }}
+            <span class="audit-row__type is-audit">
+              {{ log.has_presence_photo ? 'photo' : 'vote' }}
             </span>
           </li>
         </ul>
 
         <div v-else class="audit-empty">
           <i class="fas fa-inbox"></i>
-          No matching activity yet.
+          No voter audits yet. Records appear after a ballot is submitted.
         </div>
 
         <div v-if="totalPages > 1" class="audit-pager">
@@ -96,55 +94,119 @@
         </div>
       </article>
 
-      <div class="audit-side">
-        <article class="audit-card">
-          <h2 class="audit-card__title">Filter activity</h2>
-          <p class="audit-card__hint">Narrow the trail by event type or account.</p>
-
-          <label class="audit-field">
-            <span>Event type</span>
-            <input v-model="filters.event_type" type="text" placeholder="e.g. login_success" />
-          </label>
-
-          <label class="audit-field">
-            <span>User</span>
-            <input v-model="filters.user" type="text" placeholder="email@school.edu" />
-          </label>
-
-          <div class="audit-actions">
-            <button type="button" class="audit-btn audit-btn--primary" @click="applyFilters">
-              Apply filters
-            </button>
-            <button type="button" class="audit-btn audit-btn--ghost" @click="clearFilters">
-              Clear
-            </button>
+      <aside class="audit-side">
+        <article v-if="detailLoading" class="audit-card audit-detail">
+          <div class="audit-empty">
+            <i class="fas fa-spinner fa-spin"></i>
+            Loading details…
           </div>
         </article>
 
-        <article class="audit-card">
-          <h2 class="audit-card__title">Coverage</h2>
-          <p class="audit-card__hint">Share of loaded events in this view.</p>
+        <article v-else-if="detail" class="audit-card audit-detail">
+          <div class="audit-detail__head">
+            <div>
+              <p class="audit-detail__eyebrow">Vote cast</p>
+              <h2 class="audit-card__title">{{ detail.user_display || detail.user_email }}</h2>
+              <p class="audit-card__hint">{{ detail.election_title || 'Election' }}</p>
+            </div>
+            <button type="button" class="audit-icon-btn audit-icon-btn--sm" title="Close" @click="closeDetail">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+
+          <div v-if="detail.presence_photo_url" class="audit-presence">
+            <img :src="detail.presence_photo_url" alt="Voter presence photo for audit" />
+            <p>
+              Presence photo
+              <span v-if="detail.presence_captured_at">· {{ formatDate(detail.presence_captured_at) }}</span>
+            </p>
+          </div>
+          <div v-else class="audit-presence audit-presence--empty">
+            <i class="fas fa-camera"></i>
+            <span>No presence photo attached</span>
+          </div>
+
+          <dl class="audit-facts">
+            <div>
+              <dt>Receipt</dt>
+              <dd>{{ detail.confirmation_code || '—' }}</dd>
+            </div>
+            <div>
+              <dt>IP address</dt>
+              <dd>{{ detail.ip_address || detail.location?.ip_address || '—' }}</dd>
+            </div>
+            <div>
+              <dt>When</dt>
+              <dd>{{ formatDate(detail.timestamp) }}</dd>
+            </div>
+            <div>
+              <dt>Device</dt>
+              <dd>{{ detail.device?.device_type || detail.device_type || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Operating system</dt>
+              <dd>{{ detail.device?.operating_system || detail.operating_system || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Browser</dt>
+              <dd>
+                {{
+                  [detail.device?.browser_name, detail.device?.browser_version].filter(Boolean).join(' ')
+                    || '—'
+                }}
+              </dd>
+            </div>
+            <div>
+              <dt>Fingerprint</dt>
+              <dd class="audit-mono">{{ detail.device?.browser_fingerprint || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Location</dt>
+              <dd>{{ formatLocation(detail.location) }}</dd>
+            </div>
+            <div>
+              <dt>Timezone</dt>
+              <dd>{{ detail.device?.timezone || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Hints source</dt>
+              <dd>{{ detail.device?.hints_source || '—' }}</dd>
+            </div>
+          </dl>
+
+          <details class="audit-ua">
+            <summary>User agent</summary>
+            <p>{{ detail.user_agent || detail.device?.user_agent || '—' }}</p>
+          </details>
+
+          <p class="audit-secrecy">
+            <i class="fas fa-shield-alt"></i>
+            Ballot secrecy preserved — this record never includes who the voter selected.
+          </p>
+        </article>
+
+        <article v-else class="audit-card">
+          <h2 class="audit-card__title">Inspection</h2>
+          <p class="audit-card__hint">Select a vote audit to view device fingerprint, IP, location, and presence photo.</p>
 
           <div class="audit-meter">
             <div class="audit-meter__head">
-              <span>MFA events</span>
-              <strong>{{ derivedStats.mfa }}</strong>
+              <span>Loaded</span>
+              <strong>{{ derivedStats.total }}</strong>
             </div>
             <div class="audit-meter__track">
-              <div class="audit-meter__fill" :style="{ width: `${mfaPct}%` }"></div>
+              <div class="audit-meter__fill" :style="{ width: '100%' }"></div>
             </div>
           </div>
-
           <div class="audit-meter">
             <div class="audit-meter__head">
-              <span>Audit events</span>
-              <strong>{{ derivedStats.audit }}</strong>
+              <span>With presence photo</span>
+              <strong>{{ derivedStats.withPhoto }}</strong>
             </div>
             <div class="audit-meter__track">
-              <div class="audit-meter__fill is-slate" :style="{ width: `${auditPct}%` }"></div>
+              <div class="audit-meter__fill is-slate" :style="{ width: `${photoPct}%` }"></div>
             </div>
           </div>
-
           <div class="audit-meter">
             <div class="audit-meter__head">
               <span>Today</span>
@@ -155,7 +217,7 @@
             </div>
           </div>
         </article>
-      </div>
+      </aside>
     </section>
   </div>
 </template>
@@ -164,20 +226,21 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { auditApi } from '@/api/audit'
 import { usePagination } from '@/composables/usePagination'
+import { resolveMediaUrl } from '@/utils/media'
 
 const logs = ref([])
 const loading = ref(false)
-const filters = ref({ event_type: '', user: '' })
 const searchQuery = ref('')
 const activeChip = ref('all')
-const listTab = ref('recent')
+const selectedId = ref(null)
+const detail = ref(null)
+const detailLoading = ref(false)
 
 const { page, size, setPage, reset } = usePagination(logs, 8)
 
 const chips = [
-  { key: 'all', label: 'All', icon: 'fas fa-layer-group' },
-  { key: 'mfa', label: 'MFA', icon: 'fas fa-key' },
-  { key: 'audit', label: 'Audit', icon: 'fas fa-clipboard-list' },
+  { key: 'all', label: 'All votes', icon: 'fas fa-layer-group' },
+  { key: 'photo', label: 'With photo', icon: 'fas fa-camera' },
   { key: 'today', label: 'Today', icon: 'fas fa-sun' },
 ]
 
@@ -189,25 +252,19 @@ const startOfToday = () => {
 
 const derivedStats = computed(() => {
   const today = startOfToday()
-  let mfa = 0
-  let audit = 0
+  let withPhoto = 0
   let todayCount = 0
   for (const log of logs.value) {
-    if (log.type === 'mfa') mfa += 1
-    else audit += 1
-    const ts = new Date(log.timestamp || log.created_at || 0)
+    if (log.has_presence_photo) withPhoto += 1
+    const ts = new Date(log.timestamp || 0)
     if (ts >= today) todayCount += 1
   }
-  return { total: logs.value.length, today: todayCount, mfa, audit }
+  return { total: logs.value.length, withPhoto, today: todayCount }
 })
 
-const mfaPct = computed(() => {
+const photoPct = computed(() => {
   if (!derivedStats.value.total) return 0
-  return Math.round((derivedStats.value.mfa / derivedStats.value.total) * 100)
-})
-const auditPct = computed(() => {
-  if (!derivedStats.value.total) return 0
-  return Math.round((derivedStats.value.audit / derivedStats.value.total) * 100)
+  return Math.round((derivedStats.value.withPhoto / derivedStats.value.total) * 100)
 })
 const todayPct = computed(() => {
   if (!derivedStats.value.total) return 0
@@ -218,22 +275,26 @@ const filteredLogs = computed(() => {
   const today = startOfToday()
   const q = searchQuery.value.trim().toLowerCase()
   return logs.value.filter((log) => {
-    if (activeChip.value === 'mfa' && log.type !== 'mfa') return false
-    if (activeChip.value === 'audit' && log.type === 'mfa') return false
+    if (activeChip.value === 'photo' && !log.has_presence_photo) return false
     if (activeChip.value === 'today') {
-      const ts = new Date(log.timestamp || log.created_at || 0)
+      const ts = new Date(log.timestamp || 0)
       if (ts < today) return false
     }
-    if (listTab.value === 'mfa' && log.type !== 'mfa') return false
     if (!q) return true
-    const hay = `${log.user?.email || log.user || ''} ${log.event_type || ''} ${log.ip_address || ''}`.toLowerCase()
+    const hay = [
+      log.user_display,
+      log.user_email,
+      log.election_title,
+      log.ip_address,
+      log.confirmation_code,
+      log.operating_system,
+      log.event_type,
+    ].join(' ').toLowerCase()
     return hay.includes(q)
   })
 })
 
-watch(filteredLogs, () => {
-  setPage(1)
-})
+watch(filteredLogs, () => setPage(1))
 
 const displayLogs = computed(() => {
   const start = (page.value - 1) * size.value
@@ -242,10 +303,7 @@ const displayLogs = computed(() => {
 
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredLogs.value.length / size.value) || 1))
 
-watch([activeChip, listTab, searchQuery], () => {
-  setPage(1)
-})
-
+watch([activeChip, searchQuery], () => setPage(1))
 watch(totalPages, (pages) => {
   if (page.value > pages) setPage(pages)
 })
@@ -253,44 +311,48 @@ watch(totalPages, (pages) => {
 const normalizeLogs = (payload) => {
   if (Array.isArray(payload)) return payload
   if (Array.isArray(payload?.results)) return payload.results
-  if (Array.isArray(payload?.logs)) return payload.logs
   return []
 }
 
 const fetchLogs = async () => {
   loading.value = true
   try {
-    const params = {}
-    if (filters.value.event_type) params.event_type = filters.value.event_type
-    if (filters.value.user) params.user = filters.value.user
-    const response = await auditApi.getCombined(params)
+    const response = await auditApi.getCombined({ limit: 200 })
     logs.value = normalizeLogs(response.data)
     reset()
   } catch (error) {
-    console.error('Failed to fetch logs:', error)
+    console.error('Failed to fetch voter audits:', error)
     logs.value = []
   } finally {
     loading.value = false
   }
 }
 
-const setChip = (key) => {
-  activeChip.value = key
-  if (key === 'mfa') listTab.value = 'mfa'
-  if (key === 'all' || key === 'audit' || key === 'today') listTab.value = 'recent'
+const openDetail = async (auditId) => {
+  selectedId.value = auditId
+  detailLoading.value = true
+  detail.value = null
+  try {
+    const { data } = await auditApi.getVoteDetail(auditId)
+    if (data?.presence_photo_url) {
+      data.presence_photo_url = resolveMediaUrl(data.presence_photo_url) || data.presence_photo_url
+    }
+    detail.value = data
+  } catch (error) {
+    console.error('Failed to load audit detail:', error)
+    detail.value = null
+  } finally {
+    detailLoading.value = false
+  }
 }
 
-const applyFilters = () => fetchLogs()
+const closeDetail = () => {
+  selectedId.value = null
+  detail.value = null
+}
+
 const applyLocalFilter = () => setPage(1)
-const clearFilters = () => {
-  filters.value = { event_type: '', user: '' }
-  searchQuery.value = ''
-  activeChip.value = 'all'
-  listTab.value = 'recent'
-  fetchLogs()
-}
 
-const formatEvent = (eventType) => (eventType || 'event').replaceAll('_', ' ')
 const formatDate = (date) => (
   date
     ? new Date(date).toLocaleString('en-US', {
@@ -301,6 +363,17 @@ const formatDate = (date) => (
     })
     : '—'
 )
+
+const formatLocation = (loc) => {
+  if (!loc) return '—'
+  const place = [loc.city, loc.region, loc.country].filter(Boolean).join(', ')
+  if (place) return place
+  if (loc.latitude != null && loc.longitude != null) {
+    const acc = loc.accuracy_m != null ? ` (±${Math.round(loc.accuracy_m)}m)` : ''
+    return `${Number(loc.latitude).toFixed(5)}, ${Number(loc.longitude).toFixed(5)}${acc}`
+  }
+  return loc.ip_address || '—'
+}
 
 onMounted(fetchLogs)
 </script>
@@ -332,6 +405,8 @@ onMounted(fetchLogs)
   margin: 0.35rem 0 0;
   font-size: 0.9rem;
   color: #8a8a8a;
+  max-width: 36rem;
+  line-height: 1.45;
 }
 
 .audit-icon-btn {
@@ -343,6 +418,11 @@ onMounted(fetchLogs)
   color: #6b6b6b;
   cursor: pointer;
   box-shadow: 0 1px 2px rgba(28, 28, 28, 0.03);
+}
+
+.audit-icon-btn--sm {
+  width: 2.25rem;
+  height: 2.25rem;
 }
 
 .audit-toolbar {
@@ -382,8 +462,6 @@ onMounted(fetchLogs)
   background: #fff;
   border: 1px solid #ebeae4;
   color: #5c5c5c;
-  box-shadow: 0 1px 2px rgba(28, 28, 28, 0.03);
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .audit-chip__label {
@@ -405,49 +483,186 @@ onMounted(fetchLogs)
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  min-width: min(100%, 17rem);
-  padding: 0.35rem 0.4rem 0.35rem 0.95rem;
+  min-width: min(100%, 18rem);
+  padding: 0.65rem 0.9rem;
   border-radius: 9999px;
-  background: #fff;
   border: 1px solid #ebeae4;
-  box-shadow: 0 1px 2px rgba(28, 28, 28, 0.03);
+  background: #fff;
 }
 
 .audit-search i {
-  color: #9a9a9a;
+  color: #a3a3a3;
 }
 
 .audit-search input {
-  flex: 1;
-  min-width: 0;
   border: none;
   outline: none;
-  background: transparent;
+  width: 100%;
   font-size: 0.88rem;
-  color: #1c1c1c;
-}
-
-.audit-search__filter {
-  width: 2.35rem;
-  height: 2.35rem;
-  border: none;
-  border-radius: 9999px;
-  background: #f3f2ed;
-  color: #5c5c5c;
-  cursor: pointer;
+  background: transparent;
 }
 
 .audit-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(18rem, 0.9fr);
   gap: 1rem;
   align-items: start;
 }
 
-@media (min-width: 1024px) {
-  .audit-grid {
-    grid-template-columns: minmax(0, 1.35fr) minmax(17rem, 0.85fr);
-    gap: 1.15rem;
-  }
+.audit-card {
+  background: #fff;
+  border: 1px solid #ebeae4;
+  border-radius: 1.25rem;
+  padding: 1.1rem 1.15rem;
+  box-shadow: 0 1px 2px rgba(28, 28, 28, 0.03);
+}
+
+.audit-card--list {
+  padding: 0.85rem 0.85rem 1rem;
+}
+
+.audit-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.35rem 0.55rem 0.85rem;
+}
+
+.audit-list-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.audit-list-head span {
+  font-size: 0.75rem;
+  color: #8a8a8a;
+}
+
+.audit-card__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: #1c1c1c;
+}
+
+.audit-card__hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  color: #8a8a8a;
+  line-height: 1.45;
+}
+
+.audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.audit-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.7rem 0.65rem;
+  border-radius: 0.9rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.audit-row:hover,
+.audit-row.is-selected {
+  background: #f7f6f2;
+  border-color: #ebeae4;
+}
+
+.audit-avatar {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #edf2ef;
+  color: #3d4f44;
+}
+
+.audit-row__title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1c1c1c;
+}
+
+.audit-row__sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  color: #8a8a8a;
+}
+
+.audit-row__meta {
+  display: grid;
+  gap: 0.15rem;
+  text-align: right;
+}
+
+.audit-row__date {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #5c5c5c;
+}
+
+.audit-row__ip {
+  font-size: 0.68rem;
+  color: #a3a3a3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.audit-row__type {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.28rem 0.5rem;
+  border-radius: 999px;
+  background: #edf2ef;
+  color: #3d4f44;
+}
+
+.audit-empty {
+  display: grid;
+  place-items: center;
+  gap: 0.55rem;
+  padding: 2.5rem 1rem;
+  color: #8a8a8a;
+  font-size: 0.88rem;
+}
+
+.audit-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 0.85rem 0.4rem 0.2rem;
+  font-size: 0.8rem;
+  color: #6b6b6b;
+}
+
+.audit-pager__btn {
+  border: 1px solid #ebeae4;
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.audit-pager__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .audit-side {
@@ -455,321 +670,169 @@ onMounted(fetchLogs)
   gap: 1rem;
 }
 
-.audit-card {
-  background: #fff;
-  border-radius: 1.35rem;
-  padding: 1.25rem 1.25rem 1.15rem;
-  box-shadow: 0 1px 2px rgba(28, 28, 28, 0.03);
-}
-
-.audit-card__title {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
-  color: #1c1c1c;
-  letter-spacing: -0.02em;
-}
-
-.audit-card__hint {
-  margin: 0.3rem 0 1rem;
-  font-size: 0.8rem;
-  color: #8a8a8a;
-}
-
-.audit-tabs {
+.audit-detail__head {
   display: flex;
-  gap: 1.25rem;
-  margin-bottom: 0.85rem;
-  border-bottom: 1px solid #f0efe9;
-}
-
-.audit-tab {
-  border: none;
-  background: transparent;
-  padding: 0 0 0.75rem;
-  font-size: 0.92rem;
-  font-weight: 700;
-  color: #9a9a9a;
-  cursor: pointer;
-  position: relative;
-}
-
-.audit-tab.is-active {
-  color: #1c1c1c;
-}
-
-.audit-tab.is-active::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 9999px;
-  background: #1c1c1c;
-}
-
-.audit-list {
-  list-style: none;
-  margin: 0;
-  padding: 0.25rem 0 0;
-  display: flex;
-  flex-direction: column;
-  max-height: min(32rem, 58vh);
-  overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.audit-list::-webkit-scrollbar {
-  display: none;
-}
-
-.audit-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 0.9fr) auto;
-  gap: 0.85rem;
-  align-items: center;
-  padding: 0.85rem 0.15rem;
-  border-bottom: 1px solid #f5f4ef;
-}
-
-.audit-row:last-child {
-  border-bottom: none;
-}
-
-.audit-avatar {
-  width: 2.65rem;
-  height: 2.65rem;
-  border-radius: 9999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 0.85rem;
-}
-
-.audit-avatar.is-mfa {
-  background: #e8efe6;
-  color: #3d4f44;
-}
-
-.audit-avatar.is-audit {
-  background: #f0efe9;
-  color: #5c5c5c;
-}
-
-.audit-row__main {
-  min-width: 0;
-}
-
-.audit-row__title {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #1c1c1c;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.audit-row__sub {
-  margin: 0.15rem 0 0;
-  font-size: 0.78rem;
-  color: #8a8a8a;
-  text-transform: capitalize;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.audit-row__meta {
-  min-width: 0;
-  text-align: left;
-}
-
-.audit-row__date {
-  display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #1c1c1c;
-}
-
-.audit-row__ip {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 0.72rem;
-  color: #9a9a9a;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-
-.audit-row__type {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.28rem 0.65rem;
-  border-radius: 9999px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.audit-row__type.is-mfa {
-  background: #e8efe6;
-  color: #3d4f44;
-}
-
-.audit-row__type.is-audit {
-  background: #f0efe9;
-  color: #5c5c5c;
-}
-
-.audit-empty {
-  padding: 2.5rem 1rem;
-  text-align: center;
-  color: #8a8a8a;
-  font-size: 0.88rem;
-}
-
-.audit-empty i {
-  display: block;
-  margin-bottom: 0.55rem;
-  font-size: 1.25rem;
-}
-
-.audit-pager {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 0.75rem;
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid #f0efe9;
-  font-size: 0.8rem;
-  color: #8a8a8a;
-}
-
-.audit-pager__btn {
-  border: 1px solid #ebeae4;
-  background: #fff;
-  border-radius: 9999px;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #1c1c1c;
-  cursor: pointer;
-}
-
-.audit-pager__btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.audit-field {
-  display: grid;
-  gap: 0.4rem;
+  align-items: flex-start;
   margin-bottom: 0.85rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #8a8a8a;
 }
 
-.audit-field input {
-  width: 100%;
-  border: none;
-  outline: none;
-  border-radius: 0.9rem;
-  background: #f3f2ed;
-  padding: 0.85rem 0.95rem;
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: #1c1c1c;
-}
-
-.audit-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  margin-top: 0.35rem;
-}
-
-.audit-btn {
-  border-radius: 9999px;
-  padding: 0.75rem 1.15rem;
-  font-size: 0.84rem;
+.audit-detail__eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.65rem;
   font-weight: 700;
-  cursor: pointer;
-  border: 1px solid transparent;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0f766e;
 }
 
-.audit-btn--primary {
-  background: #1c1c1c;
-  color: #fff;
-  border-color: #1c1c1c;
+.audit-presence {
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid #ebeae4;
+  background: #f7f6f2;
+  margin-bottom: 1rem;
 }
 
-.audit-btn--ghost {
-  background: #fff;
+.audit-presence img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.audit-presence p {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.72rem;
+  color: #6b6b6b;
+}
+
+.audit-presence--empty {
+  display: grid;
+  place-items: center;
+  gap: 0.4rem;
+  min-height: 8rem;
+  color: #a3a3a3;
+  font-size: 0.8rem;
+}
+
+.audit-facts {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+}
+
+.audit-facts > div {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.audit-facts dt {
+  margin: 0;
+  color: #8a8a8a;
+  font-weight: 600;
+}
+
+.audit-facts dd {
+  margin: 0;
   color: #1c1c1c;
-  border-color: #dddcd6;
+  font-weight: 600;
+  word-break: break-word;
 }
 
-.audit-meter + .audit-meter {
-  margin-top: 1rem;
+.audit-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.68rem;
+  font-weight: 500 !important;
+  line-height: 1.4;
+}
+
+.audit-ua {
+  margin-top: 0.9rem;
+  border-top: 1px solid #f0efe9;
+  padding-top: 0.75rem;
+  font-size: 0.78rem;
+  color: #6b6b6b;
+}
+
+.audit-ua summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.audit-ua p {
+  margin: 0.45rem 0 0;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.audit-secrecy {
+  margin: 1rem 0 0;
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: #0f766e;
+  background: #f0fdf9;
+  border: 1px solid #ccfbf1;
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.audit-meter {
+  margin-top: 0.95rem;
 }
 
 .audit-meter__head {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.45rem;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
+  margin-bottom: 0.35rem;
   color: #6b6b6b;
 }
 
-.audit-meter__head strong {
-  color: #1c1c1c;
-  font-size: 0.9rem;
-}
-
 .audit-meter__track {
-  height: 0.45rem;
-  border-radius: 9999px;
+  height: 0.4rem;
+  border-radius: 999px;
   background: #f0efe9;
   overflow: hidden;
 }
 
 .audit-meter__fill {
   height: 100%;
-  border-radius: 9999px;
   background: #3d4f44;
-  transition: width 0.3s ease;
+  border-radius: 999px;
 }
 
 .audit-meter__fill.is-slate {
-  background: #1c1c1c;
+  background: #8a7355;
 }
 
 .audit-meter__fill.is-soft {
   background: #a3b18a;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 960px) {
+  .audit-grid {
+    grid-template-columns: 1fr;
+  }
+
   .audit-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto 1fr;
     grid-template-areas:
-      "avatar main type"
-      "avatar meta type";
+      "avatar main"
+      "avatar meta"
+      "type type";
   }
 
   .audit-avatar { grid-area: avatar; }
   .audit-row__main { grid-area: main; }
-  .audit-row__meta { grid-area: meta; }
-  .audit-row__type { grid-area: type; align-self: start; }
-
-  .audit-search {
-    width: 100%;
-  }
+  .audit-row__meta { grid-area: meta; text-align: left; }
+  .audit-row__type { grid-area: type; justify-self: start; }
 }
 </style>

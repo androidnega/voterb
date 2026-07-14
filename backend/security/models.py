@@ -26,6 +26,8 @@ class AuditLog(models.Model):
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True)
     metadata = models.JSONField(default=dict)
+    # Links the pre-vote presence selfie without joining through ballot data.
+    presence_capture_id = models.UUIDField(null=True, blank=True, db_index=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
 class DeviceLog(models.Model):
