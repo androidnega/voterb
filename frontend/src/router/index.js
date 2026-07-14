@@ -8,7 +8,7 @@ const electionViewerRoles = ['admin', 'auditor']
 /** Platform + election oversight dashboards and audit */
 const staffDashboardRoles = ['auditor', 'admin', 'super_admin']
 const studentRoles = ['student', 'candidate']
-const publicPaths = new Set(['/', '/login', '/otp', '/verify'])
+const publicPaths = new Set(['/', '/login', '/otp'])
 
 function layoutRoute(path, children, meta = {}) {
   return {
@@ -51,8 +51,7 @@ const routes = [
   },
   {
     path: '/verify',
-    component: () => import('../views/PublicVerifyView.vue'),
-    meta: { public: true },
+    redirect: '/strongroom',
   },
 
   studentLayoutRoute('/student', [
@@ -60,6 +59,7 @@ const routes = [
     { path: 'results/:uuid', component: () => import('../views/student/StudentResultDetailView.vue'), meta: { roles: studentRoles } },
     // Absolute child paths keep StudentLayout mounted for sleek page transitions
     { path: '/vote/:uuid', component: () => import('../views/voting/VoteEntryView.vue'), meta: { roles: studentRoles } },
+    { path: '/vote/:uuid/presence', component: () => import('../views/voting/PresenceCaptureView.vue'), meta: { roles: studentRoles } },
     { path: '/vote/:uuid/ballot', component: () => import('../views/voting/BallotWizardView.vue'), meta: { roles: studentRoles } },
     { path: '/vote/:uuid/confirmation', component: () => import('../views/voting/ConfirmationView.vue'), meta: { roles: studentRoles } },
   ], { roles: studentRoles }),
