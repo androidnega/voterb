@@ -41,38 +41,70 @@
             </router-link>
             <template v-else>
               <router-link to="/login" class="home-btn home-btn--primary">
-                Get started
+                Sign in to vote
                 <i class="fas fa-arrow-right" aria-hidden="true"></i>
-              </router-link>
-              <router-link to="/verify" class="home-btn home-btn--ghost">
-                Verify vote
               </router-link>
             </template>
           </div>
         </section>
 
-        <section class="home-visual" aria-label="Election day">
-          <div class="home-visual__stage">
-            <span class="home-visual__aura" aria-hidden="true" />
-            <div class="home-visual__mat">
-              <div class="home-visual__frame">
-                <picture>
-                  <source
-                    type="image/webp"
-                    srcset="/images/election-day-sm.webp 640w, /images/election-day.webp 900w"
-                    sizes="(max-width: 900px) 90vw, 44vw"
-                  />
-                  <img
-                    class="home-visual__img"
-                    src="/images/election-day.jpg"
-                    width="900"
-                    height="599"
-                    alt="Student holding a sealed Electoral Commission ballot box on election day"
-                    decoding="async"
-                    fetchpriority="high"
-                  />
-                </picture>
-              </div>
+        <section class="home-visual" aria-label="Sealed ballot box">
+          <div class="home-orbit">
+            <span class="home-orbit__glow" aria-hidden="true" />
+
+            <ul class="home-integrity" aria-label="Election integrity">
+              <li
+                v-for="line in integrityLines"
+                :key="line.id"
+                class="home-integrity__line"
+                :class="`from-${line.from}`"
+                :style="{
+                  '--d': line.delay,
+                  '--x': line.x,
+                  '--y': line.y,
+                  '--hold': line.hold,
+                }"
+              >
+                <span class="home-integrity__mark" aria-hidden="true" />
+                <span class="home-integrity__text">{{ line.text }}</span>
+              </li>
+            </ul>
+
+            <span class="home-orbit__ring home-orbit__ring--a" aria-hidden="true">
+              <span class="home-orbit__spoke" style="--a: 28deg">
+                <i class="home-orbit__node" />
+              </span>
+            </span>
+            <span class="home-orbit__ring home-orbit__ring--b" aria-hidden="true">
+              <span class="home-orbit__spoke" style="--a: 130deg">
+                <i class="home-orbit__node" />
+              </span>
+              <span class="home-orbit__spoke" style="--a: 255deg">
+                <i class="home-orbit__node home-orbit__node--soft" />
+              </span>
+            </span>
+            <span class="home-orbit__ring home-orbit__ring--c" aria-hidden="true">
+              <span class="home-orbit__spoke" style="--a: 200deg">
+                <i class="home-orbit__node" />
+              </span>
+            </span>
+            <span class="home-orbit__ring home-orbit__ring--d" aria-hidden="true">
+              <span class="home-orbit__spoke" style="--a: 70deg">
+                <i class="home-orbit__node home-orbit__node--soft" />
+              </span>
+            </span>
+
+            <div class="home-orbit__core">
+              <img
+                class="home-visual__img"
+                src="/images/ballot-box-hero.png?v=5"
+                width="1024"
+                height="1024"
+                alt="Transparent sealed Electoral Commission ballot box filled with ballots"
+                decoding="async"
+                fetchpriority="high"
+                draggable="false"
+              />
             </div>
           </div>
         </section>
@@ -85,6 +117,45 @@
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
+
+const integrityLines = [
+  {
+    id: 'sealed',
+    text: 'Sealed. Counted. Trusted.',
+    from: 'left',
+    x: '2%',
+    y: '18%',
+    delay: '0.55s',
+    hold: '0s',
+  },
+  {
+    id: 'one',
+    text: 'One voter. One vote.',
+    from: 'right',
+    x: '58%',
+    y: '8%',
+    delay: '0.85s',
+    hold: '0.4s',
+  },
+  {
+    id: 'chain',
+    text: 'Tamper-evident trail',
+    from: 'top',
+    x: '62%',
+    y: '62%',
+    delay: '1.15s',
+    hold: '0.8s',
+  },
+  {
+    id: 'truth',
+    text: 'Integrity you can verify',
+    from: 'bottom',
+    x: '6%',
+    y: '72%',
+    delay: '1.45s',
+    hold: '1.2s',
+  },
+]
 
 const orbs = [
   { id: 1, style: { width: '220px', height: '220px', top: '12%', left: '8%', animationDuration: '18s', animationDelay: '0s' } },
@@ -125,9 +196,10 @@ const orbs = [
 .home-bg__orb {
   position: absolute;
   border-radius: 999px;
-  background: rgba(167, 243, 208, 0.28);
+  background: rgba(167, 243, 208, 0.18);
   animation: home-float ease-in-out infinite;
   will-change: transform, opacity;
+  opacity: 0.55;
 }
 
 .home-shell {
@@ -169,7 +241,9 @@ const orbs = [
   font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: -0.04em;
+  line-height: 1.25;
   color: var(--home-ink);
+  overflow: visible;
 }
 
 .home-brand__name span {
@@ -202,21 +276,29 @@ const orbs = [
 .home-title {
   margin: 0;
   display: grid;
-  gap: 0.35rem;
+  gap: 0.45rem;
   font-size: clamp(2.35rem, 7vw, 4.25rem);
   font-weight: 800;
   letter-spacing: -0.045em;
-  line-height: 1.02;
+  line-height: 1.15;
   color: var(--home-ink);
+  overflow: visible;
 }
 
 .home-title__brand {
+  display: block;
   font-size: clamp(2.7rem, 8vw, 4.75rem);
   letter-spacing: -0.05em;
+  line-height: 1.2;
+  padding: 0.06em 0.02em 0.14em 0;
+  /* Keep descenders (g) fully visible with clipped gradient text */
   background: linear-gradient(120deg, #0f766e 0%, #0ea5a4 45%, #1d4ed8 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  overflow: visible;
 }
 
 .home-title em {
@@ -283,18 +365,6 @@ const orbs = [
   transform: translateX(3px);
 }
 
-.home-btn--ghost {
-  background: rgba(255, 255, 255, 0.55);
-  color: var(--home-ink);
-  border: 1px solid rgba(16, 42, 67, 0.1);
-  backdrop-filter: blur(10px);
-}
-
-.home-btn--ghost:hover {
-  transform: translateY(-2px);
-  border-color: rgba(15, 118, 110, 0.35);
-}
-
 .home-visual {
   display: flex;
   justify-content: center;
@@ -302,100 +372,210 @@ const orbs = [
   min-height: 0;
 }
 
-.home-visual__stage {
+.home-orbit {
+  --orbit-node: #0f766e;
   position: relative;
-  width: min(100%, 34rem);
+  width: min(100%, 28rem);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
 }
 
-.home-visual__aura {
+.home-integrity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   position: absolute;
-  inset: 10% -10% -12%;
-  border-radius: 50%;
-  background:
-    radial-gradient(closest-side, rgba(16, 185, 129, 0.2), transparent 72%),
-    radial-gradient(closest-side at 70% 40%, rgba(167, 243, 208, 0.25), transparent 70%);
-  filter: blur(36px);
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.home-integrity__line {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 11.5rem;
+  padding: 0.42rem 0.7rem 0.42rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  box-shadow:
+    0 10px 28px rgba(16, 42, 67, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  animation:
+    integrity-in 0.95s cubic-bezier(0.16, 1, 0.3, 1) var(--d, 0.5s) both,
+    integrity-breathe 5.5s ease-in-out calc(var(--d, 0.5s) + 1.1s + var(--hold, 0s)) infinite;
+  will-change: transform, opacity;
+}
+
+.home-integrity__mark {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: linear-gradient(145deg, #14b8a6, #0f766e);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.home-integrity__text {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: #243b53;
+  white-space: nowrap;
+}
+
+.home-integrity__line.from-left {
+  --ox: -1.6rem;
+  --oy: 0.35rem;
+}
+
+.home-integrity__line.from-right {
+  --ox: 1.75rem;
+  --oy: -0.2rem;
+}
+
+.home-integrity__line.from-top {
+  --ox: 0.35rem;
+  --oy: -1.5rem;
+}
+
+.home-integrity__line.from-bottom {
+  --ox: -0.4rem;
+  --oy: 1.65rem;
+}
+
+.home-orbit__glow {
+  position: absolute;
+  inset: 18%;
+  border-radius: 999px;
+  background: radial-gradient(closest-side, rgba(16, 185, 129, 0.12), transparent 72%);
+  filter: blur(22px);
   z-index: 0;
   pointer-events: none;
 }
 
-.home-visual__mat {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  padding: 0.55rem;
-  border-radius: 1.65rem;
-  background:
-    linear-gradient(155deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.72) 45%, rgba(236, 253, 245, 0.9));
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow:
-    0 1px 2px rgba(16, 42, 67, 0.04),
-    0 16px 36px rgba(16, 42, 67, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-
-.home-visual__mat::before {
-  content: '';
+.home-orbit__ring {
   position: absolute;
-  inset: 0.28rem;
-  border-radius: 1.4rem;
-  border: 1px solid rgba(15, 118, 110, 0.14);
+  inset: var(--inset, 6%);
+  border-radius: 999px;
+  border: 1px solid rgba(15, 118, 110, 0.2);
   pointer-events: none;
-  z-index: 2;
-}
-
-.home-visual__frame {
-  position: relative;
   z-index: 1;
-  width: 100%;
-  aspect-ratio: 900 / 599;
-  border-radius: 1.2rem;
-  overflow: hidden;
-  background: #e8f2ef;
-  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.08);
+  animation: orbit-spin var(--spin, 28s) linear infinite;
+  will-change: transform;
 }
 
-.home-visual__frame::after {
-  content: '';
+.home-orbit__ring--a {
+  --inset: 2%;
+  --spin: 44s;
+  border-color: rgba(15, 118, 110, 0.12);
+}
+
+.home-orbit__ring--b {
+  --inset: 8%;
+  --spin: 34s;
+  animation-direction: reverse;
+  border-color: rgba(15, 118, 110, 0.18);
+}
+
+.home-orbit__ring--c {
+  --inset: 15%;
+  --spin: 26s;
+  border-color: rgba(15, 118, 110, 0.24);
+}
+
+.home-orbit__ring--d {
+  --inset: 22%;
+  --spin: 38s;
+  animation-direction: reverse;
+  border-color: rgba(16, 42, 67, 0.1);
+}
+
+.home-orbit__spoke {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.18) 0%,
-    transparent 28%,
-    transparent 72%,
-    rgba(16, 42, 67, 0.08) 100%
-  );
-  pointer-events: none;
+  transform: rotate(var(--a, 0deg));
+}
+
+.home-orbit__node {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 0.52rem;
+  height: 0.52rem;
+  margin: -0.26rem 0 0 -0.26rem;
+  border-radius: 999px;
+  background: var(--orbit-node);
+  box-shadow:
+    0 0 0 3px rgba(15, 118, 110, 0.1),
+    0 0 10px rgba(15, 118, 110, 0.28);
+}
+
+.home-orbit__node--soft {
+  width: 0.36rem;
+  height: 0.36rem;
+  margin: -0.18rem 0 0 -0.18rem;
+  background: #14b8a6;
+  opacity: 0.85;
+  box-shadow:
+    0 0 0 2px rgba(20, 184, 166, 0.12),
+    0 0 8px rgba(20, 184, 166, 0.25);
+}
+
+.home-orbit__core {
+  position: relative;
   z-index: 2;
+  width: 66%;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.72) 68%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(15, 118, 110, 0.1),
+    0 12px 32px rgba(16, 42, 67, 0.08);
+  overflow: hidden;
+  animation: hero-float 7s ease-in-out infinite;
+  will-change: transform;
 }
 
 .home-visual__img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 70% center;
+  width: 90%;
+  height: 90%;
+  object-fit: contain;
   display: block;
-  transform: scale(1.05);
-  transform-origin: 70% 42%;
-  will-change: transform;
-  animation: hero-zoom 16s cubic-bezier(0.22, 1, 0.36, 1) infinite alternate;
+  background: transparent;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
-@keyframes hero-zoom {
-  0% { transform: scale(1.03); }
-  100% { transform: scale(1.1); }
+@keyframes orbit-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes hero-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-0.45rem); }
 }
 
 @keyframes home-float {
   0%, 100% {
     transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.45;
+    opacity: 0.4;
   }
   50% {
-    transform: translate3d(0, -36px, 0) scale(1.14);
-    opacity: 0.85;
+    transform: translate3d(0, -32px, 0) scale(1.1);
+    opacity: 0.62;
   }
 }
 
@@ -407,6 +587,37 @@ const orbs = [
   to {
     opacity: 1;
     transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes integrity-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--ox, 0), var(--oy, 0.8rem), 0) scale(0.92);
+    filter: blur(4px);
+  }
+  70% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes integrity-breathe {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+    box-shadow:
+      0 10px 28px rgba(16, 42, 67, 0.08),
+      0 1px 0 rgba(255, 255, 255, 0.9) inset;
+  }
+  50% {
+    transform: translate3d(0, -0.28rem, 0);
+    box-shadow:
+      0 16px 34px rgba(15, 118, 110, 0.14),
+      0 1px 0 rgba(255, 255, 255, 0.95) inset;
   }
 }
 
@@ -424,8 +635,8 @@ const orbs = [
     justify-content: flex-end;
   }
 
-  .home-visual__stage {
-    width: min(100%, 37rem);
+  .home-orbit {
+    width: min(100%, 30rem);
     animation: frame-rise 1s cubic-bezier(0.16, 1, 0.3, 1) 0.12s both;
   }
 }
@@ -459,39 +670,52 @@ const orbs = [
     padding-bottom: 1.25rem;
   }
 
-  .home-visual__stage {
-    width: min(100%, 28rem);
+  .home-orbit {
+    width: min(100%, 20rem);
   }
 
-  .home-visual__mat {
-    padding: 0.45rem;
-    border-radius: 1.35rem;
+  .home-integrity__line {
+    max-width: 9.5rem;
+    padding: 0.34rem 0.55rem 0.34rem 0.45rem;
   }
 
-  .home-visual__mat::before {
-    inset: 0.22rem;
-    border-radius: 1.15rem;
+  .home-integrity__text {
+    font-size: 0.6rem;
+    white-space: normal;
   }
 
-  .home-visual__frame {
-    border-radius: 1rem;
+  .home-integrity__line.from-right {
+    left: 48%;
+  }
+
+  .home-integrity__line.from-top {
+    left: 52%;
+    top: 58%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .home-bg__orb,
   .home-visual__img,
+  .home-orbit__core,
+  .home-orbit__ring,
   .home-copy,
-  .home-visual__stage {
+  .home-orbit,
+  .home-integrity__line {
     animation: none !important;
   }
 
   .home-bg__orb {
-    opacity: 0.5;
+    opacity: 0.4;
   }
 
-  .home-visual__img {
-    transform: scale(1.04);
+  .home-orbit__core {
+    transform: none;
+  }
+
+  .home-integrity__line {
+    opacity: 1;
+    filter: none;
   }
 }
 </style>
