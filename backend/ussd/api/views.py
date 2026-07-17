@@ -1,6 +1,5 @@
 from django.core.cache import cache
-from django.db.models import Count, Q
-from django.http import HttpResponse
+from django.http import JsonResponse
 from django.utils import timezone
 from rest_framework import generics, permissions
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -18,15 +17,20 @@ from ussd.services.ussd_flow import process_ussd_request
 
 class USSDWebhookView(APIView):
     """
-    Arkesel USSD callback.
+    Arkesel USSD callback (official Ghana API).
     POST /api/v1/ussd/callback/
 
-    Accepts JSON, form fields, or query params from Arkesel
-    (sessionID/sessionId, msisdn/phoneNumber, userData/text).
-    Responds with plain-text CON/END menus.
+    Request (JSON):
+      sessionID, userID, newSession, msisdn, userData, network
 
-    Auth: when `ussd_api_key` is set, require matching
-    X-API-Key / api-key / Authorization: Bearer header.
+    Response (JSON):
+      sessionID, userID, msisdn, message, continueSession
+
+    See: https://developers.arkesel.com/ (USSD) and
+    https://github.com/ArkeselDev/express-ussd-sample
+
+    Optional: when `ussd_api_key` is set, require X-API-Key.
+    Leave blank for Arkesel — they do not send a webhook key.
     """
 
     authentication_classes = []
@@ -34,44 +38,71 @@ class USSDWebhookView(APIView):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     def post(self, request):
-        if not self._api_key_ok(request):
-            return HttpResponse('END Unauthorized', content_type='text/plain', status=401)
-
         payload = self._flatten_payload(request.data)
         if request.query_params:
-            query_payload = self._flatten_payload(request.query_params)
-            payload = {**query_payload, **payload}
+            payload = {**self._flatten_payload(request.query_params), **payload}
 
         safe_payload = {}
         for key, value in payload.items():
-            safe_payload[str(key)] = value if isinstance(value, (str, int, float, bool, type(None))) else str(value)
+            safe_payload[str(key)] = (
+                value if isinstance(value, (str, int, float, bool, type(None))) else str(value)
+            )
 
-        # Arkesel sometimes sends differently cased aliases. Normalize them before
-        # passing into the USSD state machine.
-        safe_payload.setdefault('sessionID', safe_payload.get('session_id') or safe_payload.get('sessionId') or '')
-        safe_payload.setdefault('userData', safe_payload.get('text') or safe_payload.get('message') or '')
-        safe_payload.setdefault(
-            'msisdn',
-            safe_payload.get('phoneNumber')
-            or safe_payload.get('phone_number')
-            or safe_payload.get('mobile')
-            or safe_payload.get('subscriber')
+        # Canonical Arkesel fields (+ Africa's Talking aliases for local tests).
+        session_id = (
+            safe_payload.get('sessionID')
+            or safe_payload.get('sessionId')
+            or safe_payload.get('session_id')
             or ''
         )
-        safe_payload.setdefault('serviceCode', safe_payload.get('service_code') or safe_payload.get('shortCode') or '')
-        if safe_payload.get('userID') or safe_payload.get('userId') or safe_payload.get('user_id'):
-            safe_payload['arkesel_user_id'] = (
-                safe_payload.get('userID') or safe_payload.get('userId') or safe_payload.get('user_id')
-            )
+        user_id = (
+            safe_payload.get('userID')
+            or safe_payload.get('userId')
+            or safe_payload.get('user_id')
+            or ''
+        )
+        user_data = safe_payload.get('userData')
+        if user_data is None:
+            user_data = safe_payload.get('text')
+        if user_data is None:
+            user_data = safe_payload.get('message')
+        if user_data is None:
+            user_data = ''
 
         msisdn = normalize_msisdn(
             safe_payload.get('msisdn')
             or safe_payload.get('phoneNumber')
             or safe_payload.get('phone_number')
+            or safe_payload.get('mobile')
+            or ''
+        ) or (
+            safe_payload.get('msisdn')
+            or safe_payload.get('phoneNumber')
+            or safe_payload.get('phone_number')
             or ''
         )
-        if msisdn:
-            safe_payload['msisdn'] = msisdn
+
+        safe_payload['sessionID'] = str(session_id).strip()
+        safe_payload['sessionId'] = safe_payload['sessionID']
+        safe_payload['userID'] = str(user_id).strip()
+        safe_payload['arkesel_user_id'] = safe_payload['userID']
+        safe_payload['userData'] = user_data
+        safe_payload['text'] = user_data
+        safe_payload['msisdn'] = msisdn
+        safe_payload.setdefault(
+            'serviceCode',
+            safe_payload.get('service_code') or safe_payload.get('shortCode') or '',
+        )
+
+        if not self._api_key_ok(request):
+            return self._arkesel_json(
+                session_id=safe_payload['sessionID'],
+                user_id=safe_payload['userID'],
+                msisdn=msisdn,
+                message='Unauthorized',
+                continue_session=False,
+                status=401,
+            )
 
         forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
         gateway_ip = (
@@ -83,27 +114,66 @@ class USSDWebhookView(APIView):
             safe_payload['_gateway_ip'] = gateway_ip
 
         if self._rate_limited(msisdn or 'unknown'):
-            body = 'END Too many requests. Please try again shortly.'
-            return HttpResponse(body, content_type='text/plain', status=429)
+            return self._arkesel_json(
+                session_id=safe_payload['sessionID'],
+                user_id=safe_payload['userID'],
+                msisdn=msisdn,
+                message='Too many requests. Please try again shortly.',
+                continue_session=False,
+                status=429,
+            )
 
         result = process_ussd_request(safe_payload)
+        message, continue_session = self._split_flow_response(result.response)
+
         USSDRequestLog.objects.create(
             session=result.session,
             request_payload=safe_payload,
             response_text=result.response,
             outcome=result.outcome,
         )
-        return HttpResponse(result.response, content_type='text/plain')
+        return self._arkesel_json(
+            session_id=safe_payload['sessionID'],
+            user_id=safe_payload['userID'],
+            msisdn=msisdn or getattr(result.session, 'msisdn', '') or '',
+            message=message,
+            continue_session=continue_session,
+        )
 
     def get(self, request):
         """Health / discovery for gateway configuration checks."""
         return Response({
             'service': 'ussd',
+            'provider': 'arkesel',
             'callback': '/api/v1/ussd/callback/',
             'method': 'POST',
-            'response': 'text/plain CON|END',
-            'auth': 'X-API-Key when ussd_api_key is configured',
+            'request': 'application/json sessionID,userID,newSession,msisdn,userData,network',
+            'response': 'application/json sessionID,userID,msisdn,message,continueSession',
+            'auth': 'none (leave ussd_api_key blank for Arkesel)',
         })
+
+    @staticmethod
+    def _split_flow_response(flow_response: str) -> tuple[str, bool]:
+        text = (flow_response or '').strip()
+        if text.startswith('CON '):
+            return text[4:].strip(), True
+        if text.startswith('END '):
+            return text[4:].strip(), False
+        # Already plain menu text — keep session open unless empty.
+        return text, bool(text)
+
+    @staticmethod
+    def _arkesel_json(*, session_id, user_id, msisdn, message, continue_session, status=200):
+        return JsonResponse(
+            {
+                'sessionID': session_id or '',
+                'userID': user_id or '',
+                'msisdn': msisdn or '',
+                'message': message or '',
+                'continueSession': bool(continue_session),
+            },
+            status=status,
+        )
 
     def _flatten_payload(self, data) -> dict:
         flattened = {}

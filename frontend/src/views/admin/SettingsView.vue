@@ -108,7 +108,7 @@
             />
           </label>
           <p class="integration-hint">
-            Paste this exact callback in Arkesel (no API key header — leave webhook key blank):
+            Arkesel callback (JSON in / JSON out — leave webhook API key blank):
             <code>https://votebridge.online/api/v1/ussd/callback/</code>
           </p>
         </div>

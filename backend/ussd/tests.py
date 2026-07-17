@@ -16,6 +16,10 @@ class USSDWebhookTests(TestCase):
             key='ussd_enabled',
             defaults={'value': 'true', 'category': 'integrations'},
         )
+        SystemSetting.objects.update_or_create(
+            key='ussd_service_code',
+            defaults={'value': '*928*013#', 'category': 'integrations'},
+        )
         FeatureFlag.objects.update_or_create(
             key='ussd_voting',
             defaults={'is_enabled': True, 'category': 'voting'},
@@ -63,63 +67,64 @@ class USSDWebhookTests(TestCase):
         self.url = '/api/v1/ussd/callback/'
         self.index = 'BC/ITS/24/USSD'
         self.phone = '233501234567'
+        self.user_id = 'R3ETNHCMVR_LOHp'
 
-    def test_welcome_asks_for_index(self):
-        response = self.client.post(
-            self.url,
-            {'msisdn': self.phone, 'text': '*920#', 'sessionId': 'sess-1', 'newSession': True},
-            format='json',
-        )
+    def _arkesel(self, **overrides):
+        body = {
+            'sessionID': 'arkesel-sess',
+            'userID': self.user_id,
+            'newSession': True,
+            'msisdn': self.phone,
+            'userData': '*928*013#',
+            'network': 'MTN',
+        }
+        body.update(overrides)
+        return self.client.post(self.url, body, format='json')
+
+    def test_arkesel_welcome_json(self):
+        response = self._arkesel(sessionID='sess-welcome')
         self.assertEqual(response.status_code, 200)
-        body = response.content.decode()
-        self.assertTrue(body.startswith('CON '))
-        self.assertIn('INDEX', body.upper())
+        self.assertEqual(response['Content-Type'].split(';')[0], 'application/json')
+        data = response.json()
+        self.assertEqual(data['sessionID'], 'sess-welcome')
+        self.assertEqual(data['userID'], self.user_id)
+        self.assertEqual(data['msisdn'], self.phone)
+        self.assertTrue(data['continueSession'])
+        self.assertIn('INDEX', data['message'].upper())
+        self.assertFalse(data['message'].startswith('CON '))
         self.assertEqual(USSDSession.objects.count(), 1)
         self.assertEqual(USSDRequestLog.objects.count(), 1)
 
-    def test_arkesel_alias_payload_for_live_short_code(self):
-        SystemSetting.objects.update_or_create(
-            key='ussd_service_code',
-            defaults={'value': '*928*013#', 'category': 'integrations'},
+    def test_arkesel_subsequent_user_data_is_latest_input(self):
+        sid = 'sess-svt'
+        self._arkesel(sessionID=sid, newSession=True, userData='*928*013#')
+        r2 = self._arkesel(
+            sessionID=sid,
+            newSession=False,
+            userData=self.index,
         )
+        data = r2.json()
+        self.assertTrue(data['continueSession'])
+        self.assertIn('SVT', data['message'].upper())
+        session = USSDSession.objects.filter(provider_session_id=sid).first()
+        self.assertEqual(session.current_step, 'enter_svt')
+
+    def test_legacy_alias_still_maps_to_arkesel_json(self):
         response = self.client.post(
             self.url,
             {
                 'msisdn': self.phone,
-                'userData': '*928*013#',
-                'sessionID': 'arkesel-sess-1',
-                'newSession': 'true',
-                'userID': 'R3ETNHCMVR_LOHp',
+                'text': '*928*013#',
+                'sessionId': 'legacy-1',
+                'newSession': True,
             },
-            format='multipart',
-        )
-        self.assertEqual(response.status_code, 200)
-        body = response.content.decode()
-        self.assertTrue(body.startswith('CON '))
-        self.assertIn('INDEX', body.upper())
-        session = USSDSession.objects.get(provider_session_id='arkesel-sess-1')
-        self.assertEqual(session.msisdn, self.phone)
-        self.assertEqual(session.current_step, 'enter_index')
-
-    def test_index_issues_svt_prompt(self):
-        sid = 'sess-svt'
-        self.client.post(
-            self.url,
-            {'msisdn': self.phone, 'text': '*920#', 'sessionId': sid, 'newSession': True},
             format='json',
         )
-        r2 = self.client.post(
-            self.url,
-            {'msisdn': self.phone, 'text': f'*920*{self.index}', 'sessionId': sid},
-            format='json',
-        )
-        body = r2.content.decode()
-        self.assertTrue(body.startswith('CON '))
-        self.assertIn('SVT', body.upper())
-        session = USSDSession.objects.filter(provider_session_id=sid).first()
-        self.assertEqual(session.current_step, 'enter_svt')
+        data = response.json()
+        self.assertTrue(data['continueSession'])
+        self.assertIn('INDEX', data['message'].upper())
 
-    def test_voted_lockout_without_index(self):
+    def test_voted_lockout_ends_session(self):
         Vote.objects.create(
             user=self.voter,
             election=self.election,
@@ -137,11 +142,7 @@ class USSDWebhookTests(TestCase):
             status='completed',
             state_data={'ballot_complete': True},
         )
-        response = self.client.post(
-            self.url,
-            {'msisdn': self.phone, 'text': '*920#', 'sessionId': 'sess-lock', 'newSession': True},
-            format='json',
-        )
-        body = response.content.decode()
-        self.assertTrue(body.startswith('END '))
-        self.assertIn('already voted', body.lower())
+        response = self._arkesel(sessionID='sess-lock')
+        data = response.json()
+        self.assertFalse(data['continueSession'])
+        self.assertIn('already voted', data['message'].lower())
