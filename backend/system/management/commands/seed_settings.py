@@ -23,8 +23,10 @@ class Command(BaseCommand):
             {'key': 'ussd_enabled', 'value': 'true', 'category': 'integrations', 'description': 'Enable USSD voting channel'},
             {'key': 'ussd_service_code', 'value': '*920#', 'category': 'integrations', 'description': 'USSD service code'},
             {'key': 'ussd_callback_url', 'value': '', 'category': 'integrations', 'description': 'USSD callback webhook URL'},
-            {'key': 'ussd_session_timeout', 'value': '300', 'category': 'integrations', 'description': 'USSD session timeout in seconds'},
+            {'key': 'ussd_session_timeout', 'value': '1800', 'category': 'integrations', 'description': 'USSD session timeout in seconds (non-SVT steps)'},
+            {'key': 'ussd_svt_resume_seconds', 'value': '7200', 'category': 'integrations', 'description': 'How long an SVT wait session can be resumed after hang-up (seconds)'},
             {'key': 'ussd_retry_attempts', 'value': '3', 'category': 'integrations', 'description': 'USSD retry attempts per session'},
+            {'key': 'ussd_rate_limit_per_minute', 'value': '10', 'category': 'integrations', 'description': 'Max USSD callback requests per MSISDN per minute'},
             {'key': 'ussd_api_key', 'value': '', 'category': 'integrations', 'description': 'USSD API key for webhook authentication', 'is_encrypted': True},
         ]
 

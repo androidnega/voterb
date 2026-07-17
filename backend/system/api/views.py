@@ -1,9 +1,10 @@
 from rest_framework import status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 
-from accounts.permissions import IsSuperAdmin
+from accounts.permissions import IsSuperAdmin, IsAdminOrSuperAdmin, IsElectionViewer
 from system.models import SystemSetting, FeatureFlag, InstitutionProfile, MaintenanceState
 from system.serializers import (
     SystemSettingSerializer,
@@ -14,7 +15,8 @@ from system.serializers import (
 
 
 class FeatureFlagListView(APIView):
-    permission_classes = [IsSuperAdmin]
+    """Main/Sub EC and auditors can read flags (e.g. sms_notifications); only super admin updates."""
+    permission_classes = [IsElectionViewer]
 
     def get(self, request):
         flags = FeatureFlag.objects.all().order_by('key')
@@ -36,6 +38,7 @@ class FeatureFlagUpdateView(APIView):
 
 class InstitutionProfileView(APIView):
     permission_classes = [IsSuperAdmin]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
         profile = InstitutionProfile.objects.first()
@@ -51,6 +54,9 @@ class InstitutionProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+    def patch(self, request):
+        return self.put(request)
 
 
 class MaintenanceStateView(APIView):

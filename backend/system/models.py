@@ -4,19 +4,37 @@ from django.utils import timezone
 from accounts.models import User
 
 class InstitutionProfile(models.Model):
+    """
+    Tenant institution (e.g. TTU).
+
+    Formerly branding-only; now the root of the org hierarchy:
+    Institution → Main EC → Sub EC → Registers.
+    """
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, default='VoterB')
     short_name = models.CharField(max_length=50, default='VoterB')
+    code = models.CharField(max_length=32, unique=True, null=True, blank=True)
     logo = models.ImageField(upload_to='institution/', blank=True, null=True)
     primary_color = models.CharField(max_length=7, default='#1e5f46')
     secondary_color = models.CharField(max_length=7, default='#0f7d3e')
     contact_email = models.EmailField(blank=True, null=True)
     contact_phone = models.CharField(max_length=20, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Institution'
+        verbose_name_plural = 'Institutions'
+
     def __str__(self):
-        return self.name
+        return self.short_name or self.name
+
+    @property
+    def display_code(self):
+        return self.code or self.short_name or 'INST'
 
 class SystemSetting(models.Model):
     CATEGORY_CHOICES = [

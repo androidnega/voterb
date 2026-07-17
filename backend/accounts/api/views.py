@@ -1,61 +1,20 @@
 from rest_framework import generics, status
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import transaction
-from django.db.models import Q
+from django.db import models as django_models
 from django.shortcuts import get_object_or_404
 
-from accounts.models import User, MFALog, Role
-from accounts.permissions import IsAdminOrSuperAdmin
-from accounts.serializers import (
-    LoginSerializer,
-    OTPVerifySerializer,
-    UserSerializer,
-    AdminUserSerializer,
-    UserWriteSerializer,
-    RoleSerializer,
-    StudentOnboardingSerializer,
-)
+from accounts.models import User, Role, MFALog, OTPRequest
+from accounts.serializers import LoginSerializer, OTPVerifySerializer, UserSerializer, UserListSerializer, RoleSerializer
 from accounts.services import OTPService, SessionService
+from accounts.permissions import IsSuperAdmin, IsElectionManager, IsAdminOrSuperAdmin, get_role_name
 
-
-def resolve_role_name(user):
-    if user.is_superuser:
-        return 'super_admin'
-    role_name = getattr(user.role, 'name', None)
-    if role_name:
-        return role_name
-    if user.is_staff:
-        return 'admin'
-    if user.index_number:
-        return 'student'
-    return role_name
-
-
-def student_auth_flags(user):
-    """
-    Single source of truth for student onboarding gates.
-    Heals legacy profiles that already have faculty+department+level.
-    Completed students never require onboarding again.
-    """
-    role_name = resolve_role_name(user)
-    is_student = role_name == 'student'
-    if not is_student:
-        return False, False
-    if user.onboarding_completed:
-        return True, False
-    if user.faculty_id and user.department_id and user.level_id:
-        user.onboarding_completed = True
-        user.save(update_fields=['onboarding_completed'])
-        return True, False
-    return True, True
-
-
-def ensure_onboarding_state(user):
-    """Return fresh onboarding flags after healing, for auth responses."""
-    return student_auth_flags(user)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# AUTHENTICATION
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -67,12 +26,10 @@ class LoginView(APIView):
         identifier = serializer.validated_data['identifier']
         password = serializer.validated_data.get('password', '')
 
-        if '@' not in identifier:
-            from elections.services.eligibility import normalize_index_input
-            identifier = normalize_index_input(identifier)
-
+        # Find user
         user = User.objects.filter(email=identifier).first() or User.objects.filter(index_number=identifier).first()
-
+        
+        # Auto-create student if eligible
         if not user and '@' not in identifier:
             from elections.models import VoterEligibility
             if VoterEligibility.objects.filter(user__index_number=identifier, is_eligible=True).exists():
@@ -82,36 +39,32 @@ class LoginView(APIView):
                     role=role,
                     is_active=True,
                     is_verified=True,
-                    is_staff=False,
+                    is_staff=False
                 )
-            else:
-                return Response({'error': 'Index number not eligible for any election'}, status=status.HTTP_404_NOT_FOUND)
+                print(f"🆕 Auto-created student: {identifier}")
 
         if not user:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        role_name = getattr(user.role, 'name', None)
-        is_staff_user = user.is_staff or user.is_superuser or role_name in ['admin', 'super_admin', 'auditor']
-
+        # Check if staff login requires password
+        is_staff_user = user.is_staff or user.is_superuser or (user.role and user.role.name in ['admin', 'super_admin', 'auditor'])
+        
         if is_staff_user:
             if not password:
                 return Response({'requires_password': True}, status=status.HTTP_200_OK)
             if not user.check_password(password):
                 return Response({'error': 'Invalid password'}, status=status.HTTP_401_UNAUTHORIZED)
 
+        # Generate OTP
         otp = OTPService.create_otp(user, purpose='login', channel='sms')
         MFALog.objects.create(user=user, event_type='login_otp_sent', ip_address=request.META.get('REMOTE_ADDR'))
-
-        _, requires_onboarding = student_auth_flags(user)
 
         return Response({
             'requires_otp': True,
             'otp_session_id': str(otp.uuid),
             'is_staff': is_staff_user,
-            'is_new_user': bool(requires_onboarding),
-            'requires_onboarding': requires_onboarding,
+            'is_new_user': not user.first_name and not user.last_name and not user.email
         })
-
 
 class OTPVerifyView(APIView):
     permission_classes = [AllowAny]
@@ -129,20 +82,34 @@ class OTPVerifyView(APIView):
         tokens = SessionService.create_session(user, request)
         MFALog.objects.create(user=user, event_type='otp_verified', ip_address=request.META.get('REMOTE_ADDR'))
 
-        role_name = resolve_role_name(user)
-        _, requires_onboarding = student_auth_flags(user)
+        role_name = user.role.name if user.role else None
         return Response({
             **tokens,
             'role': role_name,
             'role_name': role_name,
-            'is_staff': user.is_staff,
             'is_superuser': user.is_superuser,
+            'is_staff': user.is_staff,
             'index_number': user.index_number,
-            'is_new_user': requires_onboarding,
-            'requires_onboarding': requires_onboarding,
             'onboarding_completed': user.onboarding_completed,
+            'is_new_user': not user.onboarding_completed and (
+                not user.first_name and not user.last_name
+            ),
         })
 
+class OTPResendView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        otp_session_id = request.data.get('otp_session_id')
+        if not otp_session_id:
+            return Response({'error': 'OTP session ID required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            otp = OTPRequest.objects.get(uuid=otp_session_id, is_verified=False)
+        except OTPRequest.DoesNotExist:
+            return Response({'error': 'Invalid OTP session'}, status=status.HTTP_404_NOT_FOUND)
+        new_otp = OTPService.create_otp(otp.user, purpose='login', channel='sms')
+        otp.delete()
+        return Response({'message': 'OTP resent', 'otp_session_id': str(new_otp.uuid)})
 
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
@@ -160,196 +127,203 @@ class LogoutView(APIView):
             pass
         return Response({'message': 'Logged out successfully'})
 
-
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = User.objects.select_related(
-            'role', 'faculty', 'department', 'level'
-        ).get(pk=request.user.pk)
-        student_auth_flags(user)
-        user.refresh_from_db(fields=['onboarding_completed'])
-        serializer = UserSerializer(user)
-        return Response(serializer.data)
+        from accounts.org import serialize_membership, user_ec_memberships, user_is_main_ec, user_is_sub_ec
+        from accounts.governance import institution_governance_status, resolve_user_institution
 
+        serializer = UserSerializer(request.user)
+        data = serializer.data
+        data['role_name'] = request.user.role.name if request.user.role else None
+        data['is_main_ec'] = user_is_main_ec(request.user)
+        data['is_sub_ec'] = user_is_sub_ec(request.user)
+        institution = resolve_user_institution(request.user)
+        if institution:
+            data['institution'] = {
+                'uuid': str(institution.uuid),
+                'name': institution.name,
+                'short_name': institution.short_name,
+                'code': institution.code,
+            }
+        elif request.user.institution_id:
+            inst = request.user.institution
+            data['institution'] = {
+                'uuid': str(inst.uuid),
+                'name': inst.name,
+                'short_name': inst.short_name,
+                'code': inst.code,
+            }
+        else:
+            data['institution'] = None
+        data['governance'] = institution_governance_status(institution)
+        data['ec_memberships'] = [
+            serialize_membership(m) for m in user_ec_memberships(request.user)
+        ]
+        return Response(data)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# STUDENT ONBOARDING
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class StudentOnboardingOptionsView(APIView):
-    """Academic picklists for the student onboarding wizard."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = User.objects.select_related('role').get(pk=request.user.pk)
-        role_name = resolve_role_name(user)
-        if role_name != 'student':
-            return Response(
-                {'error': 'Only students can access onboarding options'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        from elections.models import Faculty, Department
+        from elections.serializers import FacultySerializer, DepartmentSerializer
 
-        from elections.models import Faculty, Department, Level
-        from elections.serializers import FacultySerializer, DepartmentSerializer, LevelSerializer
-
-        faculties = Faculty.objects.filter(is_active=True).order_by('name')
-        departments = Department.objects.filter(
-            is_active=True,
-            faculty__is_active=True,
-        ).select_related('faculty').order_by('faculty__name', 'name')
-        levels = Level.objects.all().order_by('display_order', 'name')
+        faculties = Faculty.objects.filter(is_active=True)
+        departments = Department.objects.filter(is_active=True).select_related('faculty')
 
         return Response({
             'faculties': FacultySerializer(faculties, many=True).data,
             'departments': DepartmentSerializer(departments, many=True).data,
-            'levels': LevelSerializer(levels, many=True).data,
         })
-
 
 class StudentOnboardingView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        user = User.objects.select_related('role').get(pk=request.user.pk)
-        role_name = resolve_role_name(user)
-        if role_name != 'student':
+        user = request.user
+
+        if user.role.name not in ['student', 'candidate']:
             return Response({'error': 'Only students can complete onboarding'}, status=status.HTTP_403_FORBIDDEN)
 
         if user.onboarding_completed:
-            return Response({
-                'message': 'Onboarding already completed',
-                'already_completed': True,
-                'user': UserSerializer(user).data,
-            })
+            return Response({'error': 'Onboarding already completed'}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = StudentOnboardingSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
+        from elections.models import Faculty, Department
 
-        from elections.models import Faculty, Department, Level
+        faculty_uuid = request.data.get('faculty_uuid')
+        department_uuid = request.data.get('department_uuid')
+        programme = request.data.get('programme', '')
+        phone_number = request.data.get('phone_number', user.phone_number)
+        first_name = request.data.get('first_name', user.first_name)
+        last_name = request.data.get('last_name', user.last_name)
+
+        if not faculty_uuid or not department_uuid:
+            return Response(
+                {'error': 'Faculty and Department are required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
-            faculty = Faculty.objects.get(uuid=data['faculty_uuid'], is_active=True)
-            department = Department.objects.get(uuid=data['department_uuid'], is_active=True)
-            level = Level.objects.get(uuid=data['level_uuid'])
+            faculty = Faculty.objects.get(uuid=faculty_uuid)
+            department = Department.objects.get(uuid=department_uuid)
+
+            if department.faculty != faculty:
+                return Response(
+                    {'error': 'Department does not belong to selected faculty'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user.faculty = faculty
+            user.department = department
+            user.programme = programme
+            user.phone_number = phone_number
+            user.first_name = first_name
+            user.last_name = last_name
+            user.onboarding_completed = True
+            user.save()
+
+            return Response({
+                'message': 'Onboarding completed successfully',
+                'user': {
+                    'uuid': user.uuid,
+                    'email': user.email,
+                    'index_number': user.index_number,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'faculty': user.faculty.name if user.faculty else None,
+                    'department': user.department.name if user.department else None,
+                }
+            })
         except Faculty.DoesNotExist:
             return Response({'error': 'Faculty not found'}, status=status.HTTP_404_NOT_FOUND)
         except Department.DoesNotExist:
             return Response({'error': 'Department not found'}, status=status.HTTP_404_NOT_FOUND)
-        except Level.DoesNotExist:
-            return Response({'error': 'Level not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        if department.faculty_id != faculty.pk:
-            return Response({'error': 'Department does not belong to selected faculty'}, status=status.HTTP_400_BAD_REQUEST)
-
-        user.faculty = faculty
-        user.department = department
-        user.level = level
-        user.programme = data.get('programme', '') or user.programme
-        if data.get('phone_number'):
-            user.phone_number = data['phone_number']
-        if data.get('first_name'):
-            user.first_name = data['first_name']
-        if data.get('last_name'):
-            user.last_name = data['last_name']
-
-        level_digits = ''.join(ch for ch in level.name if ch.isdigit())
-        user.year_of_study = int(level_digits) if level_digits else None
-        user.onboarding_completed = True
-        user.save()
-
-        user = User.objects.select_related('role', 'faculty', 'department', 'level').get(pk=user.pk)
-        return Response({
-            'message': 'Onboarding completed successfully',
-            'user': UserSerializer(user).data,
-        })
-
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# USER MANAGEMENT – SUPER ADMIN ONLY
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class UserListView(generics.ListCreateAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsSuperAdmin]
+    queryset = User.objects.all().order_by('-created_at')
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
-            return UserWriteSerializer
-        return AdminUserSerializer
+            return UserSerializer
+        return UserListSerializer
 
     def get_queryset(self):
-        qs = User.objects.select_related('role').order_by('-created_at')
+        queryset = super().get_queryset()
         search = self.request.query_params.get('search')
         role = self.request.query_params.get('role')
         is_active = self.request.query_params.get('is_active')
 
         if search:
-            qs = qs.filter(
-                Q(email__icontains=search)
-                | Q(first_name__icontains=search)
-                | Q(last_name__icontains=search)
-                | Q(index_number__icontains=search)
+            queryset = queryset.filter(
+                django_models.Q(email__icontains=search) |
+                django_models.Q(first_name__icontains=search) |
+                django_models.Q(last_name__icontains=search) |
+                django_models.Q(index_number__icontains=search) |
+                django_models.Q(phone_number__icontains=search)
             )
         if role:
-            qs = qs.filter(role__name=role)
-        if is_active in ('true', 'false'):
-            qs = qs.filter(is_active=(is_active == 'true'))
-        return qs
+            queryset = queryset.filter(role__name=role)
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active.lower() == 'true')
 
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        return Response(AdminUserSerializer(user).data, status=status.HTTP_201_CREATED)
-
+        return queryset
 
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsSuperAdmin]
+    queryset = User.objects.all()
     lookup_field = 'uuid'
-    queryset = User.objects.select_related('role')
 
     def get_serializer_class(self):
-        if self.request.method in ('PUT', 'PATCH'):
-            return UserWriteSerializer
-        return AdminUserSerializer
-
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = UserWriteSerializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        return Response(AdminUserSerializer(user).data)
-
+        if self.request.method in ['PUT', 'PATCH']:
+            return UserSerializer
+        return UserListSerializer
 
 class UserActivateView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsSuperAdmin]
 
     def post(self, request, uuid):
         user = get_object_or_404(User, uuid=uuid)
         user.is_active = True
-        user.save(update_fields=['is_active'])
-        return Response(AdminUserSerializer(user).data)
-
+        user.save()
+        return Response({'message': 'User activated'})
 
 class UserDeactivateView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsSuperAdmin]
 
     def post(self, request, uuid):
         user = get_object_or_404(User, uuid=uuid)
         user.is_active = False
-        user.save(update_fields=['is_active'])
-        return Response(AdminUserSerializer(user).data)
-
+        user.save()
+        return Response({'message': 'User deactivated'})
 
 class UserResetPasswordView(APIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsSuperAdmin]
 
     def post(self, request, uuid):
         user = get_object_or_404(User, uuid=uuid)
-        password = request.data.get('password')
-        if not password:
-            return Response({'error': 'password is required'}, status=status.HTTP_400_BAD_REQUEST)
-        user.set_password(password)
-        user.save(update_fields=['password'])
-        return Response({'message': 'Password updated'})
+        new_password = request.data.get('password')
+        if not new_password or len(new_password) < 6:
+            return Response({'error': 'Password must be at least 6 characters'}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save()
+        return Response({'message': 'Password reset successfully'})
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ROLE MANAGEMENT – SUPER ADMIN ONLY
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class RoleListView(generics.ListAPIView):
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsSuperAdmin]
     serializer_class = RoleSerializer
-    queryset = Role.objects.filter(is_active=True).order_by('name')
+    queryset = Role.objects.filter(is_active=True)
