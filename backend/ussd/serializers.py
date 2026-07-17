@@ -13,8 +13,11 @@ class USSDSessionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = USSDSession
-        fields = ['uuid', 'msisdn', 'user', 'user_email', 'election', 'election_title',
-                  'current_step', 'state_data', 'status', 'created_at', 'updated_at', 'logs']
+        fields = [
+            'uuid', 'provider_session_id', 'msisdn', 'user', 'user_email', 'election',
+            'election_title', 'current_step', 'state_data', 'status', 'created_at',
+            'updated_at', 'logs',
+        ]
 
     def get_user_email(self, obj):
         return obj.user.email if obj.user else None
