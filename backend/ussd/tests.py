@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from accounts.models import Role, User
@@ -9,6 +9,7 @@ from ussd.models import USSDSession, USSDRequestLog
 from voting.models import Vote
 
 
+@override_settings(DEBUG=True, CELERY_TASK_ALWAYS_EAGER=True)
 class USSDWebhookTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -104,6 +105,8 @@ class USSDWebhookTests(TestCase):
             userData=self.index,
         )
         data = r2.json()
+        if not data.get('continueSession'):
+            self.fail(f'Expected continueSession; got {data}')
         self.assertTrue(data['continueSession'])
         self.assertIn('SVT', data['message'].upper())
         session = USSDSession.objects.filter(provider_session_id=sid).first()

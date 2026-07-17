@@ -275,9 +275,10 @@ def _confirm_prompt(candidate_name: str, position_title: str) -> str:
     )
 
 
-def _issue_svt_for_ussd(user, election: Election) -> tuple[SVTToken | None, str | None, str | None]:
-    """Issue SVT + SMS. Returns (svt, plaintext_or_None, error_or_None)."""
-    from notifications.sms import send_svt_sms, mask_phone
+def _issue_svt_for_ussd(user, election: Election, dialing_msisdn: str | None = None) -> tuple[SVTToken | None, str | None, str | None]:
+    """Issue SVT + realtime SMS to the phone on the voter record. Returns (svt, plaintext_or_None, error_or_None)."""
+    from notifications.sms import mask_phone
+    from notifications.tasks import dispatch_svt_sms
     from voting.api.views import (
         generate_svt,
         hash_svt,
@@ -291,7 +292,7 @@ def _issue_svt_for_ussd(user, election: Election) -> tuple[SVTToken | None, str 
     if _svt_request_count_total(user, election) >= _svt_max_requests():
         return None, None, 'SVT request limit reached. Contact the EC.'
 
-    phone = _resolve_voter_phone(user, election)
+    phone = _resolve_voter_phone(user, election, preferred_msisdn=dialing_msisdn)
     if not phone:
         return None, None, 'No phone on your voter record. Contact the EC.'
 
@@ -305,7 +306,7 @@ def _issue_svt_for_ussd(user, election: Election) -> tuple[SVTToken | None, str 
         status='issued',
         expires_at=expires_at,
     )
-    sms = send_svt_sms(
+    sms = dispatch_svt_sms(
         phone=phone,
         code=code,
         election_title=election.title,
@@ -313,7 +314,10 @@ def _issue_svt_for_ussd(user, election: Election) -> tuple[SVTToken | None, str 
         user_uuid=str(user.uuid),
     )
     if not sms.get('ok'):
-        return svt, None, sms.get('error') or 'Could not send SVT SMS. Try again.'
+        # Do not leave a usable token when SMS never left the platform.
+        svt.status = 'revoked'
+        svt.save(update_fields=['status'])
+        return None, None, sms.get('error') or 'Could not send SVT SMS. Try again.'
     return svt, code, None
 
 
@@ -391,7 +395,7 @@ def _bind_election(session: USSDSession, user, election: Election) -> FlowResult
         _save_step(session, STEP_SELECT_POSITION, svt_id=str(validated.svt_id), svt_validated=True)
         return FlowResult(_menu_positions(open_positions_for_user(election, user)), 'continue', session)
 
-    svt, _code, err = _issue_svt_for_ussd(user, election)
+    svt, _code, err = _issue_svt_for_ussd(user, election, dialing_msisdn=session.msisdn)
     if err and not svt:
         session.status = 'error'
         _save_step(session, STEP_DONE)
@@ -401,7 +405,7 @@ def _bind_election(session: USSDSession, user, election: Election) -> FlowResult
     try:
         from voting.api.views import _resolve_voter_phone
         from notifications.sms import mask_phone
-        phone = _resolve_voter_phone(user, election)
+        phone = _resolve_voter_phone(user, election, preferred_msisdn=session.msisdn)
         if phone:
             phone_hint = f'\nSent to {mask_phone(phone)}'
     except Exception:
@@ -669,7 +673,7 @@ def _handle_enter_svt(session: USSDSession, user_input: str) -> FlowResult:
         return FlowResult(_welcome(), 'continue', session)
 
     if user_input == '0':
-        svt, _code, err = _issue_svt_for_ussd(user, election)
+        svt, _code, err = _issue_svt_for_ussd(user, election, dialing_msisdn=session.msisdn)
         if err and not svt:
             return FlowResult(con(f'{err}\n0. Try resend again\nOr enter SVT:'), 'continue', session)
         _save_step(session, STEP_ENTER_SVT, svt_id=str(svt.svt_id) if svt else None)

@@ -1,0 +1,26 @@
+[Unit]
+Description=VoteBridge Celery workers (SMS + background jobs)
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/srv/apps/votebridge/backend
+Environment=DJANGO_SETTINGS_MODULE=config.settings
+Environment=REDIS_URL=redis://127.0.0.1:6379/0
+Environment=CELERY_BROKER_URL=redis://127.0.0.1:6379/0
+Environment=CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/0
+Environment=CELERY_WORKER_CONCURRENCY=6
+Environment=CELERY_TASK_ALWAYS_EAGER=0
+Environment=DEBUG=0
+EnvironmentFile=-/srv/apps/votebridge/backend/.env
+ExecStart=/srv/apps/votebridge/backend/venv/bin/celery -A config worker --loglevel=INFO --concurrency=${CELERY_WORKER_CONCURRENCY} -Q votebridge -n votebridge@%h
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

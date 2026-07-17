@@ -154,7 +154,7 @@ SIMPLE_JWT = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-# Redis powers live monitor fan-out + SMS prewarm cache.
+# Redis powers live monitor fan-out, Celery broker/result backend, and SMS prewarm cache.
 # Set REDIS_URL (e.g. redis://127.0.0.1:6379/0). Falls back to in-memory for local/dev.
 REDIS_URL = (os.environ.get('REDIS_URL') or '').strip()
 USE_REDIS = bool(REDIS_URL) and os.environ.get('USE_REDIS', '1') != '0'
@@ -190,5 +190,32 @@ else:
             'BACKEND': 'channels.layers.InMemoryChannelLayer',
         },
     }
+
+# Celery — SMS + background jobs. Broker prefers REDIS_URL, then CELERY_BROKER_URL.
+CELERY_BROKER_URL = (
+    os.environ.get('CELERY_BROKER_URL')
+    or REDIS_URL
+    or 'redis://127.0.0.1:6379/1'
+).strip()
+CELERY_RESULT_BACKEND = (
+    os.environ.get('CELERY_RESULT_BACKEND')
+    or REDIS_URL
+    or CELERY_BROKER_URL
+).strip()
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 60
+CELERY_TASK_SOFT_TIME_LIMIT = 45
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_DEFAULT_QUEUE = 'votebridge'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Africa/Accra'
+# When workers are down, critical SMS still sends in-process (see notifications.tasks).
+CELERY_TASK_ALWAYS_EAGER = os.environ.get('CELERY_TASK_ALWAYS_EAGER', '0').strip().lower() in (
+    '1', 'true', 'yes', 'on',
+)
+CELERY_WORKER_CONCURRENCY = max(1, int(os.environ.get('CELERY_WORKER_CONCURRENCY', '6') or 6))
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

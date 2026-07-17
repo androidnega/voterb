@@ -68,13 +68,14 @@ class OTPService:
         phone = resolve_otp_phone(user)
         if channel == 'sms' and phone:
             try:
-                from notifications.sms import send_sms
-                send_sms(
+                from notifications.tasks import dispatch_sms
+                dispatch_sms(
                     phone=phone,
                     message=(
                         f'Your VoteBridge login code is {code}. '
                         'It expires in 5 minutes. Do not share this code.'
                     ),
+                    realtime=True,
                 )
             except Exception as exc:
                 print(f'⚠️ OTP SMS failed for {user.index_number or user.email}: {exc}')

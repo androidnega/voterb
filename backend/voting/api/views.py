@@ -21,7 +21,8 @@ from accounts.permissions import IsMainEC
 from security.models import SVTAbuseBlock, SVTToken
 from system.settings_utils import get_setting_int
 from voting.models import Vote, PreVotePresenceCapture
-from notifications.sms import mask_phone, send_svt_sms
+from notifications.sms import mask_phone
+from notifications.tasks import dispatch_svt_sms
 
 SVT_PATTERN = re.compile(r'^v-[a-z]{3}-\d{4}$')
 
@@ -85,31 +86,44 @@ def _svt_validated_expires_at(election):
     return now + timedelta(hours=12)
 
 
-def _resolve_voter_phone(user, election):
-    """Prefer account phone; fall back to register entry phone for this election."""
+def _resolve_voter_phone(user, election, preferred_msisdn: str | None = None):
+    """
+    Prefer account phone; fall back to register entry phone for this election.
+    If preferred_msisdn (e.g. dialing USSD number) matches a stored phone, use that.
+    """
     from django.db.models import Q
     from elections.models import VoterRegisterEntry
+    from ussd.services.ussd_auth import msisdn_matches_phone
 
+    candidates = []
     phone = (getattr(user, 'phone_number', None) or '').strip()
     if phone:
-        return phone
+        candidates.append(phone)
+
     scope = (
         Q(register=election.register)
         if getattr(election, 'register_id', None)
         else Q(register__election=election)
     )
-    entry = (
+    entries = (
         VoterRegisterEntry.objects
         .filter(user=user)
         .filter(scope)
         .exclude(phone_number__isnull=True)
         .exclude(phone_number='')
-        .order_by('-created_at')
-        .first()
+        .order_by('-created_at')[:5]
     )
-    if entry and entry.phone_number:
-        return entry.phone_number.strip()
-    return ''
+    for entry in entries:
+        value = (entry.phone_number or '').strip()
+        if value and value not in candidates:
+            candidates.append(value)
+
+    if preferred_msisdn:
+        for candidate in candidates:
+            if msisdn_matches_phone(preferred_msisdn, candidate):
+                return candidate
+
+    return candidates[0] if candidates else ''
 
 
 def _active_issued_svt(user, election):
@@ -431,7 +445,7 @@ class SVTRequestView(APIView):
             last_resent_at=timezone.now() if force_resend else None,
         )
 
-        sms_result = send_svt_sms(
+        sms_result = dispatch_svt_sms(
             phone=phone,
             code=code,
             election_title=election.title,
