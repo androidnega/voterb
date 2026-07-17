@@ -149,3 +149,49 @@ class USSDWebhookTests(TestCase):
         data = response.json()
         self.assertFalse(data['continueSession'])
         self.assertIn('already voted', data['message'].lower())
+
+    def test_closed_election_vote_does_not_block_new_open_election(self):
+        """After voting in a closed election, a new open eligible election stays reachable."""
+        Vote.objects.create(
+            user=self.voter,
+            election=self.election,
+            position=self.position,
+            candidate=self.candidate,
+            channel=VotingChannel.objects.get(channel_name='ussd'),
+            vote_hash='closed-vote',
+        )
+        USSDSession.objects.create(
+            msisdn=self.phone,
+            provider_session_id='old-closed',
+            user=self.voter,
+            election=self.election,
+            current_step='done',
+            status='completed',
+            state_data={'ballot_complete': True},
+        )
+        self.election.status = 'closed'
+        self.election.save(update_fields=['status'])
+
+        new_election = Election.objects.create(
+            title='Next USSD Election',
+            status='open',
+            allow_ussd_voting=True,
+            created_by=self.admin,
+        )
+        Position.objects.create(
+            election=new_election,
+            title='Secretary',
+            display_order=1,
+            is_votable=True,
+        )
+        VoterEligibility.objects.create(
+            election=new_election,
+            user=self.voter,
+            is_eligible=True,
+        )
+
+        response = self._arkesel(sessionID='sess-new-open')
+        data = response.json()
+        self.assertTrue(data['continueSession'])
+        self.assertIn('INDEX', data['message'].upper())
+        self.assertNotIn('already voted', data['message'].lower())

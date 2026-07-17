@@ -17,6 +17,7 @@ from system.settings_utils import get_setting, get_setting_bool, get_setting_int
 from ussd.models import USSDSession
 from ussd.services.ussd_auth import (
     is_valid_index_format,
+    index_finished_all_open_ussd,
     msisdn_already_voted,
     normalize_index,
     normalize_msisdn,
@@ -527,13 +528,17 @@ def process_ussd_request(payload: dict) -> FlowResult:
         session.save(update_fields=['status', 'updated_at'])
         return FlowResult(end('Invalid request. Missing phone number.'), 'error', session)
 
-    # Voted lockout — no index asked
+    # Voted lockout — only when every currently open USSD ballot for this
+    # number is already complete. Closed elections never block a new open one.
     if msisdn_already_voted(msisdn):
         session = get_or_create_session(msisdn, session_id)
         session.status = 'completed'
         _save_step(session, STEP_DONE, ballot_complete=True)
         return FlowResult(
-            end('You have already voted.\nThis number cannot vote again via USSD.\nThank you.'),
+            end(
+                'You have already voted in all open elections.\n'
+                'Thank you.'
+            ),
             'completed',
             session,
         )
@@ -612,6 +617,14 @@ def _handle_enter_index(session: USSDSession, user_input: str) -> FlowResult:
 
     matches = resolve_index_candidates(user_input, session.msisdn)
     if not matches:
+        if index_finished_all_open_ussd(user_input, session.msisdn):
+            session.status = 'completed'
+            _save_step(session, STEP_DONE, ballot_complete=True)
+            return FlowResult(
+                end('You have already voted in all open elections.\nThank you.'),
+                'completed',
+                session,
+            )
         attempts = int((session.state_data or {}).get('index_attempts', 0)) + 1
         max_attempts = _retry_attempts()
         if attempts >= max_attempts:

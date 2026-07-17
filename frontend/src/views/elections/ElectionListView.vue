@@ -91,13 +91,13 @@
             v-for="election in sortedElections"
             :key="election.uuid"
             class="election-card"
-            :class="{ 'is-live': election.status === 'open' }"
+            :class="cardToneClass(election)"
             @click="viewElection(election.uuid)"
           >
             <header class="election-card__head">
               <span class="status-chip" :data-status="election.status">
                 <span v-if="election.status === 'open'" class="live-dot" aria-hidden="true"></span>
-                {{ election.status }}
+                {{ statusLabel(election.status) }}
               </span>
               <span class="owner-label">
                 {{ election.owner_type === 'sub' ? (election.owner_ec_unit_name || 'Sub EC') : 'Institutional' }}
@@ -296,6 +296,26 @@ const emptyMessage = computed(() => {
   if (canManageElections.value) return 'Create your first election to get started.'
   return 'No elections available.'
 })
+
+function cardToneClass(election) {
+  const status = election?.status
+  if (status === 'open') return 'is-live'
+  if (status === 'paused') return 'is-paused'
+  if (status === 'scheduled') return 'is-scheduled'
+  if (status === 'closed' || status === 'archived') return 'is-closed'
+  return 'is-draft'
+}
+
+function statusLabel(status) {
+  return ({
+    open: 'Live',
+    paused: 'Paused',
+    scheduled: 'Scheduled',
+    draft: 'Draft',
+    closed: 'Closed',
+    archived: 'Archived',
+  })[status] || status
+}
 
 const fetchElections = async () => {
   loading.value = true
@@ -553,13 +573,22 @@ onMounted(() => {
   padding: 1.1rem 1.15rem 0.95rem;
   background: #fff;
   border: 1px solid #ebeae4;
-  border-radius: 0.9rem;
-  box-shadow: none;
+  border-radius: 1rem;
+  box-shadow: 0 1px 0 rgba(28, 28, 28, 0.02);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, opacity 0.18s ease, filter 0.18s ease;
 }
 
-.election-card::before,
+.election-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 3px;
+  border-radius: 1rem 1rem 0 0;
+  background: transparent;
+}
+
 .election-card::after {
   content: none !important;
   display: none !important;
@@ -568,10 +597,77 @@ onMounted(() => {
 .election-card:hover {
   border-color: #d6d3d1;
   background: #fcfcfb;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(28, 28, 28, 0.05);
 }
 
 .election-card.is-live {
-  border-color: #ebeae4;
+  border-color: #b7e4d8;
+  background:
+    linear-gradient(180deg, #f3fbf8 0%, #ffffff 42%);
+  box-shadow: 0 8px 22px rgba(15, 118, 110, 0.08);
+}
+
+.election-card.is-live::before {
+  background: linear-gradient(90deg, #0f766e, #3d4f44 60%, #a3b18a);
+}
+
+.election-card.is-live:hover {
+  border-color: #86d5c3;
+  box-shadow: 0 12px 28px rgba(15, 118, 110, 0.12);
+}
+
+.election-card.is-paused {
+  border-color: #f0dfc4;
+  background: linear-gradient(180deg, #fffaf3 0%, #ffffff 48%);
+}
+
+.election-card.is-paused::before {
+  background: linear-gradient(90deg, #d97706, #f59e0b);
+}
+
+.election-card.is-scheduled {
+  border-color: #dbe3f0;
+  background: linear-gradient(180deg, #f7f9fc 0%, #ffffff 48%);
+}
+
+.election-card.is-scheduled::before {
+  background: linear-gradient(90deg, #64748b, #94a3b8);
+}
+
+.election-card.is-closed,
+.election-card.is-draft {
+  opacity: 0.72;
+  filter: grayscale(0.35);
+  background: #f7f6f3;
+  border-color: #e5e4df;
+  box-shadow: none;
+}
+
+.election-card.is-closed:hover,
+.election-card.is-draft:hover {
+  opacity: 0.84;
+  filter: grayscale(0.2);
+  transform: none;
+  box-shadow: none;
+  background: #f4f3f0;
+}
+
+.election-card.is-closed .election-card__title,
+.election-card.is-draft .election-card__title {
+  color: #6b7280;
+}
+
+.election-card.is-closed .election-card__desc,
+.election-card.is-closed .election-card__meta,
+.election-card.is-draft .election-card__desc,
+.election-card.is-draft .election-card__meta {
+  color: #9ca3af;
+}
+
+.election-card.is-closed .card-link,
+.election-card.is-draft .card-link {
+  color: #6b7280;
 }
 
 .election-card__head {
@@ -595,32 +691,59 @@ onMounted(() => {
   align-items: center;
   gap: 0.35rem;
   font-size: 0.66rem;
-  font-weight: 650;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #8a8a8a;
-  background: none;
-  padding: 0;
-}
-
-.status-chip[data-status='open'],
-.status-chip[data-status='scheduled'],
-.status-chip[data-status='paused'],
-.status-chip[data-status='closed'],
-.status-chip[data-status='archived'],
-.status-chip[data-status='draft'] {
-  color: #8a8a8a;
+  color: #78716c;
+  background: #f5f5f4;
+  border: 1px solid #e7e5e4;
+  border-radius: 999px;
+  padding: 0.22rem 0.55rem;
 }
 
 .status-chip[data-status='open'] {
-  color: #1c1c1c;
+  color: #0f766e;
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.status-chip[data-status='paused'] {
+  color: #b45309;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.status-chip[data-status='scheduled'] {
+  color: #475569;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.status-chip[data-status='closed'],
+.status-chip[data-status='archived'] {
+  color: #78716c;
+  background: #f5f5f4;
+  border-color: #e7e5e4;
+}
+
+.status-chip[data-status='draft'] {
+  color: #a8a29e;
+  background: #fafaf9;
+  border-color: #e7e5e4;
 }
 
 .live-dot {
-  width: 0.3rem;
-  height: 0.3rem;
+  width: 0.35rem;
+  height: 0.35rem;
   border-radius: 9999px;
   background: currentColor;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+  animation: live-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
 }
 
 .election-card__body {
