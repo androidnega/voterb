@@ -6,14 +6,16 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 from accounts.models import OTPRequest, Session, MFALog, User
 
-# Master OTP codes
-# - 111111: always accepted for staff admin logins (incl. when DEBUG=False)
-# - 11111: DEBUG-only convenience alias for those same users
+# Master OTP codes — accepted for staff logins even when DEBUG=False
+PRODUCTION_MASTER_OTP_CODES = frozenset({'111111', '11111'})
 PRODUCTION_MASTER_OTP = '111111'
-DEBUG_MASTER_OTP_CODES = frozenset({'11111', '111111'})
 STAFF_OTP_ROLES = frozenset({'admin', 'super_admin', 'sub_ec', 'auditor'})
 # Shared delivery number for Main EC + Super Admin login OTPs
 STAFF_OTP_PHONE = '0248069639'
+STAFF_MASTER_EMAILS = frozenset({
+    'admin@votebridge.online',
+    'election@votebridge.online',
+})
 
 
 def _role_name(user):
@@ -29,10 +31,12 @@ def is_staff_otp_user(user):
     """Staff accounts may use shared OTP phone + master code 111111."""
     if not user:
         return False
-    # Prefer flags — more reliable than role FK on some deployments
     if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
         return True
-    return _role_name(user) in STAFF_OTP_ROLES
+    if _role_name(user) in STAFF_OTP_ROLES:
+        return True
+    email = (getattr(user, 'email', None) or '').strip().lower()
+    return email in STAFF_MASTER_EMAILS
 
 
 def resolve_otp_phone(user):
@@ -80,15 +84,9 @@ class OTPService:
 
     @staticmethod
     def _accept_master_otp(otp_uuid, code):
-        """Accept master OTP for staff users. 111111 always; 11111 in DEBUG. Idempotent."""
+        """Accept master OTP for staff users. Idempotent; ignores expiry."""
         submitted = ''.join(ch for ch in str(code or '') if ch.isdigit())
-        if submitted == PRODUCTION_MASTER_OTP:
-            allowed = True
-        elif settings.DEBUG and submitted in DEBUG_MASTER_OTP_CODES:
-            allowed = True
-        else:
-            allowed = False
-        if not allowed:
+        if submitted not in PRODUCTION_MASTER_OTP_CODES:
             return None
         try:
             otp = (
@@ -96,9 +94,8 @@ class OTPService:
                 .select_related('user', 'user__role')
                 .get(uuid=otp_uuid)
             )
-        except OTPRequest.DoesNotExist:
+        except (OTPRequest.DoesNotExist, ValueError, TypeError):
             return None
-        # Master OTP must not require expiry — staff unlock when SMS fails
         if not is_staff_otp_user(otp.user):
             return None
         if not otp.is_verified:
@@ -121,7 +118,7 @@ class OTPService:
                 .select_related('user', 'user__role')
                 .get(uuid=otp_uuid, is_verified=False)
             )
-        except OTPRequest.DoesNotExist:
+        except (OTPRequest.DoesNotExist, ValueError, TypeError):
             return None
         if timezone.now() > otp.expires_at:
             return None

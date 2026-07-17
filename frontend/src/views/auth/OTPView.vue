@@ -10,7 +10,7 @@
         <h1 class="auth-title">Verify OTP</h1>
         <p class="auth-subtitle">Enter the 6-digit code sent to your phone</p>
         <p v-if="isDev" class="auth-debug">
-          Debug mode: master OTP is <span>11111</span>
+          Debug mode: master OTP is <span>111111</span>
         </p>
       </div>
 
@@ -100,12 +100,12 @@ let verifyInFlight = false
 
 const getOTPString = () => otpDigits.value.join('').replace(/\s/g, '')
 
-const isMasterOtp = (code = getOTPString()) => code === '11111' || code === '111111'
+const isMasterOtp = (code = getOTPString()) => code === '111111'
 
 const isOTPComplete = computed(() => {
   const code = getOTPString()
-  if (isMasterOtp(code)) return true
-  return otpDigits.value.every((d) => d && d.length === 1)
+  // Always require 6 digits so auto-submit does not fire early on 11111
+  return code.length === 6 && otpDigits.value.every((d) => d && d.length === 1)
 })
 
 const scheduleVerify = () => {

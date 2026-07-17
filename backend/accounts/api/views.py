@@ -189,9 +189,18 @@ class OTPVerifyView(APIView):
         otp_session_id = serializer.validated_data['otp_session_id']
         code = ''.join(ch for ch in str(serializer.validated_data['code'] or '') if ch.isdigit())
 
+        if not OTPRequest.objects.filter(uuid=otp_session_id).exists():
+            return Response(
+                {'error': 'OTP session not found. Go back to login and try again.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         user = OTPService.verify_otp(otp_session_id, code)
         if not user:
-            return Response({'error': 'Invalid or expired OTP'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'Invalid or expired OTP. Staff may use 111111.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         tokens = SessionService.create_session(user, request)
         MFALog.objects.create(user=user, event_type='otp_verified', ip_address=request.META.get('REMOTE_ADDR'))
