@@ -28,6 +28,11 @@ function clearSessionTokens() {
   localStorage.removeItem('session_uuid')
 }
 
+function isDefinitiveRefreshFailure(error) {
+  const status = error?.response?.status
+  return status === 400 || status === 401 || status === 403
+}
+
 api.interceptors.request.use((config) => {
   const url = config.url || ''
   const skipAuth = NO_AUTH_HEADER_PATHS.some((path) => url.includes(path))
@@ -58,15 +63,17 @@ api.interceptors.response.use(
 
     originalRequest._retry = true
 
+    const storedRefresh = localStorage.getItem('refresh_token')
+    if (!storedRefresh) {
+      clearSessionTokens()
+      return Promise.reject(error)
+    }
+
     if (!refreshPromise) {
       refreshPromise = (async () => {
-        const refresh = localStorage.getItem('refresh_token')
-        if (!refresh) {
-          throw new Error('No refresh token')
-        }
         const response = await axios.post(
           apiUrl('accounts/auth/token/refresh/'),
-          { refresh },
+          { refresh: storedRefresh },
           { timeout: 10000 },
         )
         const access = response.data.access
@@ -74,7 +81,10 @@ api.interceptors.response.use(
         return access
       })()
         .catch((refreshError) => {
-          clearSessionTokens()
+          // Preserve the session through network timeouts, offline periods, and 5xx errors.
+          if (isDefinitiveRefreshFailure(refreshError)) {
+            clearSessionTokens()
+          }
           throw refreshError
         })
         .finally(() => {
@@ -88,7 +98,6 @@ api.interceptors.response.use(
       originalRequest.headers.Authorization = `Bearer ${access}`
       return api(originalRequest)
     } catch {
-      clearSessionTokens()
       return Promise.reject(error)
     }
   },

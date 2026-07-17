@@ -248,8 +248,22 @@ export const useAuthStore = defineStore('auth', {
           this.isNewUser = localStorage.getItem('is_new_user') === 'true'
           this.syncOnboardingFlag()
         } catch (error) {
-          console.error('Token validation failed:', error)
-          this.clearLocalStorage()
+          const status = error?.response?.status
+          if (status === 401 || status === 403) {
+            // Only a definitive auth rejection should end the local session.
+            this.clearLocalStorage()
+          } else {
+            // Keep valid tokens during timeouts, offline periods, deploys, and 5xx errors.
+            const cachedRole = localStorage.getItem('user_role') || ''
+            this.user = {
+              uuid: localStorage.getItem('user_uuid') || null,
+              role_name: cachedRole || null,
+              role: cachedRole ? { name: cachedRole } : null,
+            }
+            this.isAuthenticated = true
+            this.resolveRoles()
+            console.warn('Session hydration deferred; keeping cached login:', error)
+          }
         }
         this.initialized = true
       } finally {
