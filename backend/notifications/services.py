@@ -200,11 +200,14 @@ def notify_main_ec_approval_needed(decision, exclude_user_ids=None):
 
     to_create = []
     for uid in recipient_ids:
-        already = InAppNotification.objects.filter(
-            user_id=uid,
-            notification_type='main_ec_approval',
-            metadata__decision_uuid=du,
-        ).exists()
+        try:
+            already = InAppNotification.objects.filter(
+                user_id=uid,
+                notification_type='main_ec_approval',
+                metadata__decision_uuid=du,
+            ).exists()
+        except Exception:
+            already = False
         if already:
             continue
         to_create.append(InAppNotification(

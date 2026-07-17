@@ -194,13 +194,32 @@ def submit_main_ec_decision(
         defaults={'note': 'Proposed'},
     )
     decision = try_enroll_decision(decision)
-    if decision.status == MainECDecision.STATUS_PENDING:
-        from notifications.services import notify_main_ec_approval_needed
-        notify_main_ec_approval_needed(decision, exclude_user_ids={user.id})
-    elif decision.status == MainECDecision.STATUS_ENROLLED:
-        from notifications.services import notify_main_ec_decision_enrolled
-        notify_main_ec_decision_enrolled(decision)
+    # Notify after commit so a notification failure never rolls back the proposal.
+    _schedule_decision_notification(decision, exclude_user_ids={user.id})
     return decision
+
+
+def _schedule_decision_notification(decision: MainECDecision, exclude_user_ids=None):
+    decision_pk = decision.pk
+    status = decision.status
+    exclude = set(exclude_user_ids or [])
+
+    def _notify():
+        try:
+            from notifications.services import (
+                notify_main_ec_approval_needed,
+                notify_main_ec_decision_enrolled,
+            )
+
+            refreshed = MainECDecision.objects.get(pk=decision_pk)
+            if status == MainECDecision.STATUS_PENDING and refreshed.status == MainECDecision.STATUS_PENDING:
+                notify_main_ec_approval_needed(refreshed, exclude_user_ids=exclude)
+            elif status == MainECDecision.STATUS_ENROLLED or refreshed.status == MainECDecision.STATUS_ENROLLED:
+                notify_main_ec_decision_enrolled(refreshed)
+        except Exception:
+            pass
+
+    transaction.on_commit(_notify)
 
 
 @transaction.atomic
@@ -226,8 +245,7 @@ def approve_main_ec_decision(decision: MainECDecision, user: User, note: str = '
     )
     decision = try_enroll_decision(decision)
     if decision.status == MainECDecision.STATUS_ENROLLED:
-        from notifications.services import notify_main_ec_decision_enrolled
-        notify_main_ec_decision_enrolled(decision)
+        _schedule_decision_notification(decision)
     return decision
 
 
@@ -259,7 +277,17 @@ def reject_main_ec_decision(decision: MainECDecision, user: User, reason: str = 
             VoterRegister.objects.filter(uuid=staging_uuid).delete()
 
     from notifications.services import notify_main_ec_decision_rejected
-    notify_main_ec_decision_rejected(decision)
+
+    decision_pk = decision.pk
+
+    def _notify_rejected():
+        try:
+            refreshed = MainECDecision.objects.get(pk=decision_pk)
+            notify_main_ec_decision_rejected(refreshed)
+        except Exception:
+            pass
+
+    transaction.on_commit(_notify_rejected)
     return decision
 
 

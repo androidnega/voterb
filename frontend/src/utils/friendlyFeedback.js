@@ -70,7 +70,13 @@ export function friendlyActionError(error, fallback = 'Something went wrong. Ple
 
   const status = error.response.status
   if (status === 401) return 'Your session expired. Please sign in again.'
-  if (status === 403) return 'You don’t have permission to do that.'
+  if (status === 403) {
+    const denied = error.response?.data?.detail || error.response?.data?.error
+    if (typeof denied === 'string' && !isLikelyTechnical(denied) && denied.length <= 160) {
+      return denied
+    }
+    return 'You don’t have permission to do that.'
+  }
   if (status === 429) {
     const raw429 = error.response?.data?.error || error.response?.data?.detail
     if (typeof raw429 === 'string' && /wait|moment|later|try again/i.test(raw429) && !isLikelyTechnical(raw429)) {
@@ -80,16 +86,60 @@ export function friendlyActionError(error, fallback = 'Something went wrong. Ple
   }
   if (status >= 500) return 'Something went wrong on our side. Please try again in a moment.'
 
-  const raw = error.response?.data?.error || error.response?.data?.detail
+  const data = error.response?.data
+  const fieldMessage = firstDrfFieldError(data)
+  if (fieldMessage) return fieldMessage
+
+  const raw = data?.error || data?.detail
   if (typeof raw === 'string' && !isLikelyTechnical(raw)) {
     for (const hint of SAFE_ACTION_HINTS) {
       if (hint.test.test(raw)) return hint.message
     }
     // Short, plain server copy that already reads human-friendly
-    if (raw.length <= 90 && !/[<>_/\\]{2,}/.test(raw)) return raw
+    if (raw.length <= 160 && !/[<>_/\\]{2,}/.test(raw)) return raw
   }
 
   return fallback
+}
+
+/** Prefer the first readable DRF field / non_field_errors message. */
+function firstDrfFieldError(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  const preferred = [
+    'detail',
+    'non_field_errors',
+    'email',
+    'unit_name',
+    'password',
+    'faculty_uuids',
+    'department_uuids',
+  ]
+  for (const key of preferred) {
+    const msg = stringifyDrfValue(data[key])
+    if (msg) return msg
+  }
+  for (const [key, value] of Object.entries(data)) {
+    if (key === 'code') continue
+    const msg = stringifyDrfValue(value)
+    if (msg) {
+      if (key === 'detail' || key === 'non_field_errors') return msg
+      return msg
+    }
+  }
+  return null
+}
+
+function stringifyDrfValue(value) {
+  if (typeof value === 'string' && value.trim() && !isLikelyTechnical(value)) {
+    return value.trim()
+  }
+  if (Array.isArray(value) && value.length) {
+    const first = value[0]
+    if (typeof first === 'string' && first.trim() && !isLikelyTechnical(first)) {
+      return first.trim()
+    }
+  }
+  return null
 }
 
 export const SLOW_LOAD_HINT = 'Still working — thanks for waiting.'

@@ -1,5 +1,8 @@
 """Main EC dual-approval governance APIs."""
 
+import logging
+from uuid import UUID
+
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.hashers import make_password
 from rest_framework import status
@@ -21,6 +24,70 @@ from accounts.governance import (
 )
 from accounts.models import ECUnit, MainECDecision, User
 from accounts.org import user_is_main_ec
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_uuid_list(raw) -> list[str]:
+    """Accept a list (or single value) of UUIDs and return unique string UUIDs."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        raw = [raw] if raw.strip() else []
+    elif not isinstance(raw, (list, tuple, set)):
+        raw = [raw]
+    out = []
+    seen = set()
+    for item in raw:
+        value = str(item or '').strip()
+        if not value:
+            continue
+        try:
+            value = str(UUID(value))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out
+
+
+def _validate_sub_ec_scope(faculty_uuids, department_uuids):
+    """Ensure every selected faculty/department UUID exists. Return Response on error."""
+    from elections.models import Department, Faculty
+
+    faculty_uuids = _normalize_uuid_list(faculty_uuids)
+    department_uuids = _normalize_uuid_list(department_uuids)
+    if not faculty_uuids and not department_uuids:
+        return None, None, Response(
+            {'detail': 'Select at least one faculty or department.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if faculty_uuids:
+        found = set(
+            str(u) for u in Faculty.objects.filter(uuid__in=faculty_uuids).values_list('uuid', flat=True)
+        )
+        missing = [u for u in faculty_uuids if u not in found]
+        if missing:
+            return None, None, Response(
+                {'faculty_uuids': ['One or more selected faculties were not found. Refresh and try again.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    if department_uuids:
+        found = set(
+            str(u)
+            for u in Department.objects.filter(uuid__in=department_uuids).values_list('uuid', flat=True)
+        )
+        missing = [u for u in department_uuids if u not in found]
+        if missing:
+            return None, None, Response(
+                {'department_uuids': ['One or more selected departments were not found. Refresh and try again.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    return faculty_uuids, department_uuids, None
 
 
 class GovernanceStatusView(APIView):
@@ -252,36 +319,47 @@ class MainECStructureView(APIView):
         if ECUnit.objects.filter(institution=institution, name__iexact=unit_name).exists():
             return Response({'unit_name': ['An EC unit with this name already exists.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        faculty_uuids = request.data.get('faculty_uuids') or []
-        department_uuids = request.data.get('department_uuids') or []
-        if not faculty_uuids and not department_uuids:
+        faculty_uuids, department_uuids, scope_error = _validate_sub_ec_scope(
+            request.data.get('faculty_uuids'),
+            request.data.get('department_uuids'),
+        )
+        if scope_error:
+            return scope_error
+
+        try:
+            decision = submit_main_ec_decision(
+                user=request.user,
+                decision_type=MainECDecision.TYPE_SUB_EC_CREATE,
+                title=f'Create Sub EC: {unit_name}',
+                summary=(
+                    'Create a faculty/department Sub EC account and scoped unit. '
+                    'The other Main EC must approve before enrollment.'
+                ),
+                payload={
+                    'sub_ec': {
+                        'unit_name': unit_name,
+                        'email': email,
+                        'password_hash': make_password(password),
+                        'first_name': (request.data.get('first_name') or '').strip(),
+                        'last_name': (request.data.get('last_name') or '').strip(),
+                        'phone_number': (request.data.get('phone_number') or '').strip(),
+                        'title': request.data.get('title') or 'member',
+                        'faculty_uuids': faculty_uuids,
+                        'department_uuids': department_uuids,
+                    },
+                },
+            )
+        except GovernanceBlocked as exc:
             return Response(
-                {'detail': 'Select at least one faculty or department.'},
+                {'detail': str(exc), 'code': exc.code},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        decision = submit_main_ec_decision(
-            user=request.user,
-            decision_type=MainECDecision.TYPE_SUB_EC_CREATE,
-            title=f'Create Sub EC: {unit_name}',
-            summary=(
-                'Create a faculty/department Sub EC account and scoped unit. '
-                'The other Main EC must approve before enrollment.'
-            ),
-            payload={
-                'sub_ec': {
-                    'unit_name': unit_name,
-                    'email': email,
-                    'password_hash': make_password(password),
-                    'first_name': (request.data.get('first_name') or '').strip(),
-                    'last_name': (request.data.get('last_name') or '').strip(),
-                    'phone_number': (request.data.get('phone_number') or '').strip(),
-                    'title': request.data.get('title') or 'member',
-                    'faculty_uuids': faculty_uuids,
-                    'department_uuids': department_uuids,
-                },
-            },
-        )
+        except Exception:
+            logger.exception('Failed to submit Sub EC create proposal')
+            return Response(
+                {'detail': 'Could not submit this Sub EC for approval. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return decision_submitted_response(decision)
 
 
@@ -345,13 +423,12 @@ class MainECStructureUpdateView(APIView):
             )
 
         if faculty_uuids is not None or department_uuids is not None:
-            faculty_uuids = faculty_uuids or []
-            department_uuids = department_uuids or []
-            if not faculty_uuids and not department_uuids:
-                return Response(
-                    {'detail': 'Select at least one faculty or department.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            faculty_uuids, department_uuids, scope_error = _validate_sub_ec_scope(
+                faculty_uuids,
+                department_uuids,
+            )
+            if scope_error:
+                return scope_error
 
         sub_ec_payload = {
             'unit_name': unit_name,
@@ -372,17 +449,29 @@ class MainECStructureUpdateView(APIView):
             sub_ec_payload['faculty_uuids'] = faculty_uuids
             sub_ec_payload['department_uuids'] = department_uuids
 
-        decision = submit_main_ec_decision(
-            user=request.user,
-            decision_type=MainECDecision.TYPE_SUB_EC_UPDATE,
-            title=f'Update Sub EC: {unit_name}',
-            summary=(
-                'Update Sub EC account, status, or faculty/department scope. '
-                'The other Main EC must approve before changes are applied.'
-            ),
-            payload={
-                'unit_uuid': str(unit.uuid),
-                'sub_ec': sub_ec_payload,
-            },
-        )
+        try:
+            decision = submit_main_ec_decision(
+                user=request.user,
+                decision_type=MainECDecision.TYPE_SUB_EC_UPDATE,
+                title=f'Update Sub EC: {unit_name}',
+                summary=(
+                    'Update Sub EC account, status, or faculty/department scope. '
+                    'The other Main EC must approve before changes are applied.'
+                ),
+                payload={
+                    'unit_uuid': str(unit.uuid),
+                    'sub_ec': sub_ec_payload,
+                },
+            )
+        except GovernanceBlocked as exc:
+            return Response(
+                {'detail': str(exc), 'code': exc.code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            logger.exception('Failed to submit Sub EC update proposal')
+            return Response(
+                {'detail': 'Could not submit this Sub EC change for approval. Please try again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return decision_submitted_response(decision)
