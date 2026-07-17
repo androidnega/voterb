@@ -65,7 +65,9 @@
 
       <DataPanel title="Feature flags" subtitle="Live platform capabilities from the server">
         <div v-if="flagsLoading" class="settings-loading"><i class="fas fa-spinner fa-spin"></i> Loading flags…</div>
-        <div v-else-if="featureFlags.length === 0" class="settings-empty">No feature flags configured.</div>
+        <div v-else-if="featureFlags.length === 0" class="settings-empty">
+          No feature flags configured. Run <code>seed_system_defaults</code> on the backend.
+        </div>
         <div v-else class="toggle-list">
           <label v-for="flag in featureFlags" :key="flag.key" class="toggle-row">
             <div>
@@ -82,6 +84,33 @@
               <span class="toggle-knob"></span>
             </button>
           </label>
+        </div>
+      </DataPanel>
+
+      <DataPanel title="SMS & USSD integrations" subtitle="Arkesel, Moolre, and USSD callback used in production">
+        <div v-if="integrationsLoading" class="settings-loading"><i class="fas fa-spinner fa-spin"></i> Loading integrations…</div>
+        <div v-else-if="integrationSettings.length === 0" class="settings-empty">
+          No integration settings found. Run <code>seed_system_defaults</code> on the backend.
+        </div>
+        <div v-else class="integration-settings">
+          <label v-for="setting in integrationSettings" :key="setting.key" class="integration-row">
+            <div>
+              <p class="toggle-title">{{ integrationLabel(setting.key) }}</p>
+              <p class="toggle-desc">{{ setting.description || setting.key }}</p>
+            </div>
+            <input
+              v-model="setting.value"
+              class="integration-input"
+              :type="isSecretKey(setting.key) ? 'password' : 'text'"
+              :placeholder="isSecretKey(setting.key) ? 'Enter API key…' : ''"
+              :disabled="integrationSavingKey === setting.key"
+              @change="saveIntegrationSetting(setting)"
+            />
+          </label>
+          <p class="integration-hint">
+            USSD Arkesel endpoint:
+            <code>https://votebridge.online/api/v1/ussd/callback/</code>
+          </p>
         </div>
       </DataPanel>
 
@@ -218,6 +247,9 @@ const flagSavingKey = ref('')
 const securitySettings = ref([])
 const securityLoading = ref(false)
 const securitySavingKey = ref('')
+const integrationSettings = ref([])
+const integrationsLoading = ref(false)
+const integrationSavingKey = ref('')
 const institution = ref({})
 const institutionForm = ref({ name: '', short_name: '' })
 const institutionSaving = ref(false)
@@ -259,6 +291,41 @@ const SECURITY_LABELS = {
 
 const SECURITY_KEYS = Object.keys(SECURITY_LABELS)
 
+const INTEGRATION_LABELS = {
+  sms_enabled: 'SMS enabled',
+  sms_provider_primary: 'Primary SMS provider',
+  sms_provider_fallback: 'Fallback SMS provider',
+  sms_arkesel_api_key: 'Arkesel API key',
+  sms_arkesel_sender_id: 'Arkesel sender ID',
+  sms_arkesel_url: 'Arkesel SMS URL',
+  sms_moolre_api_key: 'Moolre API key',
+  sms_moolre_sender_id: 'Moolre sender ID',
+  sms_moolre_url: 'Moolre SMS URL',
+  ussd_enabled: 'USSD enabled',
+  ussd_service_code: 'USSD service code',
+  ussd_callback_url: 'USSD callback URL',
+  ussd_api_key: 'USSD webhook API key',
+  ussd_session_timeout: 'USSD session timeout (seconds)',
+  ussd_svt_resume_seconds: 'USSD SVT resume window (seconds)',
+  ussd_retry_attempts: 'USSD retry attempts',
+  ussd_rate_limit_per_minute: 'USSD rate limit / minute',
+  email_enabled: 'Email enabled',
+  email_from_address: 'Email from address',
+  email_smtp_host: 'SMTP host',
+  email_smtp_port: 'SMTP port',
+  email_smtp_username: 'SMTP username',
+  email_smtp_password: 'SMTP password',
+}
+
+const INTEGRATION_KEYS = Object.keys(INTEGRATION_LABELS)
+const SECRET_KEYS = new Set([
+  'sms_arkesel_api_key',
+  'sms_moolre_api_key',
+  'ussd_api_key',
+  'sms_api_key',
+  'email_smtp_password',
+])
+
 const isSuperAdmin = computed(() => authStore.isSuperAdmin)
 
 const institutionLogoPreview = computed(() => {
@@ -285,6 +352,8 @@ const dashboardOptions = computed(() => (
 
 const flagLabel = (flag) => FLAG_LABELS[flag.key] || flag.key.replaceAll('_', ' ')
 const securityLabel = (key) => SECURITY_LABELS[key] || key.replaceAll('_', ' ')
+const integrationLabel = (key) => INTEGRATION_LABELS[key] || key.replaceAll('_', ' ')
+const isSecretKey = (key) => SECRET_KEYS.has(key)
 
 const flash = (message, tone = 'success') => {
   saveTone.value = tone
@@ -479,6 +548,45 @@ const loadSecuritySettings = async () => {
   }
 }
 
+const loadIntegrationSettings = async () => {
+  integrationsLoading.value = true
+  try {
+    const { data } = await systemApi.listSettings('integrations')
+    const rows = Array.isArray(data) ? data : []
+    integrationSettings.value = rows
+      .filter((row) => INTEGRATION_KEYS.includes(row.key))
+      .sort((a, b) => INTEGRATION_KEYS.indexOf(a.key) - INTEGRATION_KEYS.indexOf(b.key))
+      .map((row) => ({ ...row, value: String(row.value ?? '') }))
+  } catch (error) {
+    console.error(error)
+    integrationSettings.value = []
+  } finally {
+    integrationsLoading.value = false
+  }
+}
+
+const saveIntegrationSetting = async (setting) => {
+  integrationSavingKey.value = setting.key
+  try {
+    const { data } = await systemApi.updateSetting(setting.key, String(setting.value ?? ''))
+    const idx = integrationSettings.value.findIndex((s) => s.key === setting.key)
+    if (idx >= 0) {
+      integrationSettings.value[idx] = {
+        ...integrationSettings.value[idx],
+        ...data,
+        value: String(data.value ?? ''),
+      }
+    }
+    flash(`${integrationLabel(setting.key)} saved.`)
+  } catch (error) {
+    console.error(error)
+    flash('Failed to save integration setting.', 'error')
+    await loadIntegrationSettings()
+  } finally {
+    integrationSavingKey.value = ''
+  }
+}
+
 const saveSecuritySetting = async (setting) => {
   const value = String(setting.value ?? '').trim()
   if (!value || Number(value) < 1) {
@@ -505,7 +613,13 @@ onMounted(async () => {
   selectedTheme.value = themeStore.theme
   selectedDashboard.value = themeStore.dashboard
   if (!isSuperAdmin.value) return
-  await Promise.all([loadFlags(), loadSecuritySettings(), loadInstitution(), loadMaintenance()])
+  await Promise.all([
+    loadFlags(),
+    loadSecuritySettings(),
+    loadIntegrationSettings(),
+    loadInstitution(),
+    loadMaintenance(),
+  ])
 })
 </script>
 
@@ -607,6 +721,54 @@ onMounted(async () => {
   color: var(--vb-ink, #1c1c1c);
   text-align: center;
   background: #fafaf9;
+}
+
+.integration-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.integration-row {
+  display: grid;
+  gap: 0.55rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--vb-line, #ebeae4);
+}
+
+@media (min-width: 720px) {
+  .integration-row {
+    grid-template-columns: minmax(0, 1.1fr) minmax(12rem, 1fr);
+    align-items: center;
+  }
+}
+
+.integration-row:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.integration-input {
+  width: 100%;
+  border: 1px solid var(--vb-line, #ebeae4);
+  border-radius: 0.7rem;
+  padding: 0.65rem 0.8rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--vb-ink, #1c1c1c);
+  background: #fafaf9;
+}
+
+.integration-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--vb-muted, #8a8a8a);
+  line-height: 1.45;
+}
+
+.integration-hint code {
+  font-size: 0.72rem;
+  word-break: break-all;
 }
 
 .maint-message {

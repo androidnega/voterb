@@ -1,5 +1,6 @@
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
@@ -14,9 +15,19 @@ from system.serializers import (
 )
 
 
+class CanReadFeatureFlags(BasePermission):
+    """Super Admin, Main/Sub EC, and auditors can list feature flags."""
+
+    def has_permission(self, request, view):
+        return (
+            IsSuperAdmin().has_permission(request, view)
+            or IsElectionViewer().has_permission(request, view)
+        )
+
+
 class FeatureFlagListView(APIView):
-    """Main/Sub EC and auditors can read flags (e.g. sms_notifications); only super admin updates."""
-    permission_classes = [IsElectionViewer]
+    """Super Admin manages flags; Main/Sub EC and auditors may read them."""
+    permission_classes = [CanReadFeatureFlags]
 
     def get(self, request):
         flags = FeatureFlag.objects.all().order_by('key')
