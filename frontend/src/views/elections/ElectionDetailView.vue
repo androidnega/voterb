@@ -260,7 +260,10 @@
 
       <!-- Dummy preview (draft / scheduled only) -->
       <div v-else-if="activeTab === 'preview'" class="tab-panel-body">
-        <DummyPreview :election-uuid="route.params.uuid" />
+        <DummyPreview
+          :election-uuid="route.params.uuid"
+          @completed="onDummyPreviewCompleted"
+        />
       </div>
     </DataPanel>
 
@@ -707,6 +710,11 @@ const openElection = async () => {
     console.error('Failed to open election:', error)
     alert(error.response?.data?.detail || 'Failed to open election. Please check readiness.')
   }
+}
+
+const onDummyPreviewCompleted = () => {
+  // Dry-run never records votes — return to setup so the EC can schedule/open.
+  activeTab.value = 'positions'
 }
 
 const closeElection = async () => {
