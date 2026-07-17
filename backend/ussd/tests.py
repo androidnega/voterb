@@ -77,6 +77,30 @@ class USSDWebhookTests(TestCase):
         self.assertEqual(USSDSession.objects.count(), 1)
         self.assertEqual(USSDRequestLog.objects.count(), 1)
 
+    def test_arkesel_alias_payload_for_live_short_code(self):
+        SystemSetting.objects.update_or_create(
+            key='ussd_service_code',
+            defaults={'value': '*928*013#', 'category': 'integrations'},
+        )
+        response = self.client.post(
+            self.url,
+            {
+                'msisdn': self.phone,
+                'userData': '*928*013#',
+                'sessionID': 'arkesel-sess-1',
+                'newSession': 'true',
+                'userID': 'R3ETNHCMVR_LOHp',
+            },
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertTrue(body.startswith('CON '))
+        self.assertIn('INDEX', body.upper())
+        session = USSDSession.objects.get(provider_session_id='arkesel-sess-1')
+        self.assertEqual(session.msisdn, self.phone)
+        self.assertEqual(session.current_step, 'enter_index')
+
     def test_index_issues_svt_prompt(self):
         sid = 'sess-svt'
         self.client.post(

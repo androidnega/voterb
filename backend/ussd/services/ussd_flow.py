@@ -92,15 +92,30 @@ def _normalize_payload(data: dict) -> dict:
         data.get('sessionId')
         or data.get('sessionID')
         or data.get('session_id')
+        or data.get('session')
+        or data.get('session_id'.upper())
         or ''
     )
-    msisdn = data.get('msisdn') or data.get('phoneNumber') or data.get('phone_number') or ''
+    msisdn = (
+        data.get('msisdn')
+        or data.get('phoneNumber')
+        or data.get('phone_number')
+        or data.get('mobile')
+        or data.get('subscriber')
+        or ''
+    )
     text = data.get('text')
     if text is None:
-        text = data.get('userData') if data.get('userData') is not None else ''
+        text = (
+            data.get('userData')
+            if data.get('userData') is not None
+            else data.get('message') if data.get('message') is not None else ''
+        )
     new_session = data.get('newSession')
     if new_session is None:
         new_session = str(data.get('type', '')).lower() == 'initiation'
+    if isinstance(new_session, str):
+        new_session = new_session.strip().lower() in ('1', 'true', 'yes', 'y', 'initiation', 'new')
     return {
         'session_id': str(session_id).strip(),
         'msisdn': normalize_msisdn(str(msisdn).strip()) or str(msisdn).strip(),

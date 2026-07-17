@@ -21,7 +21,8 @@ class USSDWebhookView(APIView):
     Arkesel USSD callback.
     POST /api/v1/ussd/callback/
 
-    Accepts JSON or form fields (sessionId/msisdn/text or sessionID/userData).
+    Accepts JSON, form fields, or query params from Arkesel
+    (sessionID/sessionId, msisdn/phoneNumber, userData/text).
     Responds with plain-text CON/END menus.
 
     Auth: when `ussd_api_key` is set, require matching
@@ -36,10 +37,32 @@ class USSDWebhookView(APIView):
         if not self._api_key_ok(request):
             return HttpResponse('END Unauthorized', content_type='text/plain', status=401)
 
-        payload = dict(request.data) if request.data is not None else {}
+        payload = self._flatten_payload(request.data)
+        if request.query_params:
+            query_payload = self._flatten_payload(request.query_params)
+            payload = {**query_payload, **payload}
+
         safe_payload = {}
         for key, value in payload.items():
             safe_payload[str(key)] = value if isinstance(value, (str, int, float, bool, type(None))) else str(value)
+
+        # Arkesel sometimes sends differently cased aliases. Normalize them before
+        # passing into the USSD state machine.
+        safe_payload.setdefault('sessionID', safe_payload.get('session_id') or safe_payload.get('sessionId') or '')
+        safe_payload.setdefault('userData', safe_payload.get('text') or safe_payload.get('message') or '')
+        safe_payload.setdefault(
+            'msisdn',
+            safe_payload.get('phoneNumber')
+            or safe_payload.get('phone_number')
+            or safe_payload.get('mobile')
+            or safe_payload.get('subscriber')
+            or ''
+        )
+        safe_payload.setdefault('serviceCode', safe_payload.get('service_code') or safe_payload.get('shortCode') or '')
+        if safe_payload.get('userID') or safe_payload.get('userId') or safe_payload.get('user_id'):
+            safe_payload['arkesel_user_id'] = (
+                safe_payload.get('userID') or safe_payload.get('userId') or safe_payload.get('user_id')
+            )
 
         msisdn = normalize_msisdn(
             safe_payload.get('msisdn')
@@ -81,6 +104,15 @@ class USSDWebhookView(APIView):
             'response': 'text/plain CON|END',
             'auth': 'X-API-Key when ussd_api_key is configured',
         })
+
+    def _flatten_payload(self, data) -> dict:
+        flattened = {}
+        if data is None:
+            return flattened
+        for key in data.keys():
+            values = data.getlist(key) if hasattr(data, 'getlist') else [data.get(key)]
+            flattened[key] = values[-1] if values else ''
+        return flattened
 
     def _api_key_ok(self, request) -> bool:
         expected = (get_setting('ussd_api_key') or '').strip()

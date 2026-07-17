@@ -21,8 +21,8 @@ class Command(BaseCommand):
         # USSD Settings
         ussd_settings = [
             {'key': 'ussd_enabled', 'value': 'true', 'category': 'integrations', 'description': 'Enable USSD voting channel'},
-            {'key': 'ussd_service_code', 'value': '*920#', 'category': 'integrations', 'description': 'USSD service code'},
-            {'key': 'ussd_callback_url', 'value': '', 'category': 'integrations', 'description': 'USSD callback webhook URL'},
+            {'key': 'ussd_service_code', 'value': '*928*013#', 'category': 'integrations', 'description': 'USSD service code'},
+            {'key': 'ussd_callback_url', 'value': 'https://votebridge.online/api/v1/ussd/callback/', 'category': 'integrations', 'description': 'USSD callback webhook URL'},
             {'key': 'ussd_session_timeout', 'value': '1800', 'category': 'integrations', 'description': 'USSD session timeout in seconds (non-SVT steps)'},
             {'key': 'ussd_svt_resume_seconds', 'value': '7200', 'category': 'integrations', 'description': 'How long an SVT wait session can be resumed after hang-up (seconds)'},
             {'key': 'ussd_retry_attempts', 'value': '3', 'category': 'integrations', 'description': 'USSD retry attempts per session'},
