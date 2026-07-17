@@ -1,0 +1,787 @@
+================================================================================
+VOTEBRIDGE / VOTERB — ELECTION SYSTEM AUDIT
+Generated: 2026-07-16
+Purpose: Baseline before restructuring the election creation flow
+================================================================================
+
+This document audits the CURRENT implementation only. Paths are relative to the
+repo root unless noted.
+
+
+================================================================================
+1. ELECTION CREATION (CURRENT STATE)
+================================================================================
+
+1.1 Election model
+------------------
+File: backend/elections/models.py (class Election, ~lines 44–123)
+
+Fields:
+  id                      BigAutoField (PK)
+  uuid                    UUIDField (unique, non-editable)
+  title                   CharField(255)                         REQUIRED
+  description             TextField (blank=True)                 OPTIONAL
+  election_type           CharField choices TYPE_CHOICES         default='general'
+  status                  CharField choices STATUS_CHOICES       default='draft'
+  start_date              DateTimeField (null/blank)             OPTIONAL at model;
+                                                                 REQUIRED by create form UX
+  end_date                DateTimeField (null/blank)             OPTIONAL at model;
+                                                                 REQUIRED by create form UX
+  allow_web_voting        BooleanField                           default=True
+  allow_ussd_voting       BooleanField                           default=False
+  allow_sms_notifications BooleanField                           default=False
+  scope_type              CharField SCOPE_CHOICES                default='school'
+  scope_faculty           FK Faculty (SET_NULL, null/blank)
+  scope_department        FK Department (SET_NULL, null/blank)
+  scope_level             FK Level (SET_NULL, null/blank)
+  created_by              FK User (PROTECT)                      set on create
+  demo_seed               BooleanField                           default=False
+  created_at / updated_at auto timestamps
+
+STATUS_CHOICES:
+  draft | scheduled | open | paused | closed | archived
+
+TYPE_CHOICES (election_type):
+  general | student_union | faculty | departmental | special
+
+SCOPE_CHOICES (scope_type):
+  school | faculty | department | level
+
+Helper methods on Election:
+  user_matches_scope(user)
+    - school → True for everyone
+    - faculty → user.faculty_id == scope_faculty_id
+    - department → user.department_id == scope_department_id
+    - level → user.level_id == scope_level_id
+
+  get_scope_eligible_students()
+    - Returns active onboarded students filtered by scope FKs
+
+
+1.2 Where election_type is used
+-------------------------------
+SEARCH RESULTS (functional usage is LIGHT — mostly display/label):
+
+  backend/elections/models.py
+    - Field definition + TYPE_CHOICES
+
+  backend/elections/serializers.py
+    - Included in ElectionSerializer + ElectionCreateUpdateSerializer
+
+  frontend/src/components/elections/CreateElectionForm.vue
+    - Dropdown to set election_type on create
+
+  frontend/src/views/elections/ElectionListView.vue
+    - Displays formatType(election.election_type) on cards
+
+  frontend/src/views/elections/ElectionDetailView.vue
+    - StatCard hint: formatType(election.election_type)
+
+  backend/voting/api/views.py (BallotView)
+    - branding['election_type'] = election.get_election_type_display()
+      (shown on ballot branding only)
+
+  Seed commands:
+    backend/elections/management/commands/seed_election_live_data.py
+    backend/elections/management/commands/seed_voting_test_data.py
+
+NOT USED FOR:
+  - Eligibility filtering
+  - Ballot construction
+  - Permissions
+  - Results logic
+→ election_type is currently a LABEL / taxonomy field, not a behavior driver.
+
+
+1.3 Where scope is used
+-----------------------
+  backend/elections/models.py
+    - scope_type + scope_* FKs + user_matches_scope / get_scope_eligible_students
+
+  backend/elections/serializers.py (ElectionCreateUpdateSerializer)
+    - Validates required FK for faculty/department/level scopes
+    - Resolves *_uuid write fields to FKs on create/update
+
+  backend/elections/services/scope_eligibility.py
+    - student_can_access_election(user, election):
+        1) user active
+        2) student must have onboarding_completed
+        3) VoterEligibility row exists (is_eligible=True)
+        4) election.user_matches_scope(user)
+
+  backend/voting/api/views.py
+    - EligibleElectionsView + SVT request path call student_can_access_election
+
+  frontend CreateElectionForm.vue
+    - Collects scope_type + conditional faculty/department/level
+
+IMPORTANT COMBINED RULE:
+  Scope alone does NOT put someone on the ballot. They must ALSO be on the
+  election's VoterEligibility list. Scope is an ADDITIONAL filter.
+
+
+1.4 CreateElectionForm.vue
+--------------------------
+File: frontend/src/components/elections/CreateElectionForm.vue
+
+UI fields collected:
+  title                  (InputText, HTML required)
+  description            (Textarea, optional)
+  election_type          (Dropdown: general/student_union/faculty/departmental/special)
+  scope_type             (Dropdown: school/faculty/department/level)
+  scope_faculty_uuid     (if scope=faculty)
+  scope_department_uuid  (if scope=department; via FacultyDepartmentSelect)
+  scope_level_uuid       (if scope=level)
+  start_date             (Calendar, required in handleSubmit)
+  end_date               (Calendar, required in handleSubmit)
+  allow_web_voting       (Checkbox, default true)
+  allow_ussd_voting      (Checkbox, default false)
+
+NOT collected in form (but exist on model/serializer):
+  allow_sms_notifications
+  status (defaults to draft)
+  created_by (server sets from request.user)
+
+Mounted from: ElectionListView.vue dialog "New Election"
+  → electionApi.create(payload) → POST /api/v1/elections/
+
+There is NO dedicated route /elections/create — creation is a modal on the list.
+
+
+1.5 Required vs optional (create)
+---------------------------------
+Frontend-enforced:
+  REQUIRED: title, start_date, end_date, end > start
+  REQUIRED when scope_type=faculty: scope_faculty_uuid
+  REQUIRED when scope_type=department: scope_department_uuid
+  REQUIRED when scope_type=level: scope_level_uuid
+  OPTIONAL: description, election_type (defaults), channels, allow_ussd
+
+Backend serializer (ElectionCreateUpdateSerializer):
+  REQUIRED: title (model)
+  OPTIONAL: description, dates, channels, election_type, status
+  CONDITIONAL: scope FKs based on scope_type
+  created_by: set in perform_create, not client-supplied
+
+
+================================================================================
+2. VOTERS & REGISTERS (CURRENT STATE)
+================================================================================
+
+2.1 VoterEligibility model
+--------------------------
+File: backend/elections/models.py (class VoterEligibility, ~lines 143–158)
+
+Fields:
+  uuid                 UUID PK
+  election             FK Election (CASCADE, related_name='eligibilities')
+  user                 FK User (CASCADE)
+  is_eligible          BooleanField default=True
+  eligibility_reason   TextField blank=True
+  verified_by          FK User (SET_NULL, null) related_name='verified_eligibilities'
+  verified_at          DateTimeField null
+  created_at / updated_at
+
+Constraint: unique_together = ('election', 'user')
+
+Meaning: Per-election allow-list of users who may vote (if also matching scope).
+
+
+2.2 Is there a "Voter Register" or "Category"?
+---------------------------------------------
+NO dedicated VoterRegister / VoterCategory / RegisterCategory model exists.
+
+Closest concepts today:
+  - VoterEligibility = flat per-election voter list
+  - User.faculty / User.department / User.level = academic profile
+  - Election.scope_* = election-wide academic filter
+
+There is NO:
+  - Named voter register entity
+  - Category / ward / college / hostel grouping for eligibility
+  - Position-linked voter category
+
+
+2.3 How voters are imported
+---------------------------
+Backend: backend/elections/api/eligibility_views.py → EligibilityBulkImportView
+Frontend: frontend/src/components/elections/VoterManager.vue (Import dialog)
+API: POST /api/v1/elections/<election_uuid>/eligibility/import/
+Permission: IsAdmin
+
+CSV columns:
+  REQUIRED:
+    index_number  (or "identifier")
+    faculty_code  (or "faculty") — unless user already has faculty+department
+    department_code (or "department")
+  OPTIONAL:
+    first_name, last_name
+    level / level_name
+
+Example (from VoterManager UI):
+  index_number,faculty_code,department_code,level
+  SC/2021/PL/001,ENG,PL,Level 400
+
+Behavior:
+  - Resolves/creates student by index via resolve_or_create_voter()
+  - Applies academic placement via apply_student_academic_placement()
+  - Creates VoterEligibility(is_eligible=True, verified_by=request.user)
+  - Skips duplicates; collects per-row errors
+  - Rejects email-style identifiers
+
+
+2.4 Manual add
+--------------
+POST /api/v1/elections/<election_uuid>/eligibility/
+Serializer: VoterEligibilitySerializer
+Requires: user_identifier (index) OR user_uuid
+Requires: faculty_uuid + department_uuid
+Optional: level_uuid
+Sets verified_by on create
+
+
+2.5 Grouping beyond faculty/department/level?
+---------------------------------------------
+NO. Grouping is only:
+  User academic FKs + election scope + flat eligibility list.
+eligibility_reason exists on the model but is not meaningfully used in UI flows.
+
+
+================================================================================
+3. POSITIONS (CURRENT STATE)
+================================================================================
+
+3.1 Position model
+------------------
+File: backend/elections/models.py (class Position, ~lines 125–141)
+
+Fields:
+  uuid               UUID PK
+  election           FK Election (CASCADE, related_name='positions')
+  title              CharField(150)
+  description        TextField blank
+  max_votes_allowed  SmallIntegerField default=1
+  display_order      IntegerField default=0
+  is_active          BooleanField default=True   → visible on ballot if True
+  is_votable         BooleanField default=True   → accepted at submit if True
+  created_at / updated_at
+
+Constraint: unique_together = ('election', 'title')
+
+
+3.2 Can positions be restricted to specific voter groups?
+---------------------------------------------------------
+NO. There is no FK or M2M from Position → faculty/department/level/category/
+eligibility group.
+
+BallotView returns ALL active+votable positions for the election to every
+eligible voter who reached the ballot. Restriction is election-level only
+(VoterEligibility + scope).
+
+
+3.3 Position API surface
+------------------------
+  GET/POST  /api/v1/elections/<uuid>/positions/
+  View: PositionListCreateView
+  GET: IsElectionViewer | POST: IsAdminOrSuperAdmin
+  Serializer: PositionSerializer
+    fields: uuid, title, description, max_votes_allowed, display_order,
+            is_active, is_votable, candidates (nested read-only)
+
+MISSING:
+  - No Position detail/update/delete endpoint
+  - Frontend create form does not expose is_votable or description
+  - Frontend create defaults is_active=true; is_votable stays model default true
+
+
+================================================================================
+4. CANDIDATES (CURRENT STATE)
+================================================================================
+
+4.1 Candidate model
+-------------------
+File: backend/candidates/models.py
+
+Fields:
+  uuid                 UUID PK
+  election             FK Election (CASCADE)
+  position             FK Position (CASCADE)
+  user                 FK User (SET_NULL, null) — optional link to account
+  full_name            CharField(255)
+  faculty              FK Faculty (SET_NULL, null) — structured academic
+  academic_department  FK Department (SET_NULL, null) — structured academic
+  department           CharField(150, blank) — denormalized string label
+  photo                ImageField upload_to='candidate_photos/'
+  manifesto            TextField blank
+  status               pending | approved | rejected | withdrawn  (default pending)
+  ballot_number        IntegerField null
+  created_at / updated_at
+
+
+4.2 Where department is used
+----------------------------
+  Candidate.department (string) — filled from academic_department.name on save
+  Candidate.academic_department (FK) — preferred structured link
+  BallotView: candidate_department_label() prefers academic_department.name
+  Results generation: uses candidate.department string in standings
+  CandidateManager.vue: FacultyDepartmentSelect required on create
+  CandidateSerializer: faculty_uuid / department_uuid write fields
+
+NOT used for:
+  - Restricting who may vote for that candidate
+  - Filtering ballot by voter faculty
+
+
+4.3 Candidate API
+-----------------
+Mounted at: /api/v1/elections/<election_uuid>/candidates/
+  GET/POST     ''
+  GET/PUT/PATCH/DELETE  <candidate_uuid>/
+  POST         <candidate_uuid>/approve/
+  POST         <candidate_uuid>/reject/
+
+Permissions:
+  GET: IsAuditor (admin/auditor/super_admin via IsAuditor class)
+  Mutations: IsAdmin
+  Approve/Reject: IsAdmin
+
+Frontend: CandidateManager.vue (embedded in ElectionDetailView Candidates tab)
+  - Create with photo upload
+  - Approve / reject actions
+  - Edit exists via CandidateDetailView API; UI primarily add + status actions
+
+Locking: NO candidate "lock after open" / "freeze ballot" field or status.
+Strongroom has election lock semantics separately (strongroom), not candidate lock.
+
+
+================================================================================
+5. VOTING FLOW (CURRENT STATE)
+================================================================================
+
+5.1 Student journey (routes)
+----------------------------
+  /vote/:uuid                 VoteEntryView.vue      — request/validate SVT
+  /vote/:uuid/presence        PresenceCaptureView.vue — pre-vote selfie
+  /vote/:uuid/ballot          BallotWizardView.vue    — position-by-position ballot
+  /vote/:uuid/confirmation    ConfirmationView.vue    — confirmation code
+
+All under StudentLayout, roles: student | candidate
+
+
+5.2 BallotWizardView.vue
+------------------------
+File: frontend/src/views/voting/BallotWizardView.vue
+
+Behavior:
+  - Loads ballot via voting API GET .../ballot/
+  - Steps through positions (max_votes_allowed per position)
+  - Seals each position before continue
+  - Review then submit with selections + SVT + client_context
+  - Ceremony / ballot-box UI elements present
+
+
+5.3 Checks before ballot is shown (backend BallotView)
+------------------------------------------------------
+File: backend/voting/api/views.py class BallotView
+
+  1) election.status == 'open'
+  2) user has not already voted (user_has_voted)
+  3) active validated SVT exists
+  4) PreVotePresenceCapture image exists for that SVT/election
+  5) Then returns positions where is_active=True AND is_votable=True
+     with candidates status='approved' ordered by ballot_number
+
+Earlier gate (EligibleElectionsView / SVTRequest):
+  student_can_access_election → eligibility + onboarding + scope
+
+
+5.4 Vote model
+--------------
+File: backend/voting/models.py
+
+Vote:
+  vote_id       UUID PK
+  election      FK Election PROTECT
+  position      FK Position PROTECT
+  candidate     FK Candidate PROTECT
+  user          FK User PROTECT
+  channel       FK VotingChannel PROTECT
+  svt           FK SVTToken PROTECT null
+  vote_hash     CharField(128) SHA-256
+  timestamp     auto_now_add
+
+unique_together = ('user', 'position', 'candidate')
+
+Also: PreVotePresenceCapture (user, election, svt, image, channel, captured_at)
+
+
+5.5 SubmitVoteView checks
+-------------------------
+  - Validated SVT (optional code match)
+  - Election open
+  - Not already voted
+  - Presence captured
+  - Position is_votable
+  - len(candidate_uuids) <= max_votes_allowed
+  - Candidates approved for that position
+  - Creates Vote rows, marks SVT used
+  - record_vote_cast_audit(...) — device/IP/location/fingerprint for VOTER audit
+  - Returns confirmation_code
+
+
+5.6 Preview / dummy voting?
+---------------------------
+NO dedicated dummy/preview ballot for EC testing.
+
+Related but different:
+  - results PreviewResultsView = auditor preview of GENERATED results (not a test vote)
+  - Election.demo_seed flag exists for seed data, not a live preview mode
+  - ClearStudentVoteView allows admin to clear a student's votes (revote support)
+
+
+================================================================================
+6. RESULTS & CERTIFICATION (CURRENT STATE)
+================================================================================
+
+6.1 ElectionResult model
+------------------------
+File: backend/results/models.py
+
+STATUS_CHOICES:
+  generated | pending_certification | certified | published | archived
+
+Fields:
+  uuid
+  election           OneToOneField Election
+  status             default='generated'
+  standings          JSONField  { positions: [{ title, candidates: [...] }] }
+  integrity_report   JSONField
+  result_hash        CharField(128)
+  turnout_percentage Decimal
+  certified_by       FK User null
+  certified_at       DateTime null
+  published_at       DateTime null
+  created_at / updated_at
+
+
+6.2 Certification process
+-------------------------
+Flow:
+  1) Election closed
+  2) POST /results/elections/<uuid>/generate/  (IsAdmin)
+       → creates ElectionResult status=generated
+  3) POST /results/elections/<uuid>/certify/   (IsAdmin)
+       → status=certified, sets certified_by + certified_at
+  4) POST /results/elections/<uuid>/publish/   (IsAdmin)
+       → status=published, sets published_at
+
+Frontend:
+  ElectionDetailView: Generate results button when closed
+  ResultsListView / ResultDetailView: Certify + Publish buttons
+
+pending_certification status exists in choices but generate() writes 'generated'
+directly; certify accepts generated OR pending_certification.
+
+
+6.3 EC verification step (photo / location / IP / fingerprint / signature)?
+---------------------------------------------------------------------------
+For RESULT CERTIFICATION: NO.
+  CertifyResultsView only sets status + certified_by + certified_at.
+  No photo, GPS, IP, device fingerprint, or digital signature captured on certify.
+
+For VOTER vote-cast: YES (separate concern).
+  security/services/vote_audit.py record_vote_cast_audit stores:
+    device fingerprint, device_type, OS, IP, geo location, presence photo link
+  This is voter audit trail, NOT EC certification of results.
+
+
+================================================================================
+7. FRONTEND ROUTES & COMPONENTS
+================================================================================
+
+7.1 Election-related routes (frontend/src/router/index.js)
+---------------------------------------------------------
+Staff (AdminLayout):
+  /elections                 ElectionListView.vue
+  /elections/:uuid           ElectionDetailView.vue
+                             (tabs INSIDE: positions | candidates | voters | overview/charts)
+  /results                   ResultsListView.vue
+  /results/:uuid             ResultDetailView.vue
+  /monitor/:uuid             ElectionMonitorRoom.vue
+  /elections/:uuid/monitor   redirect → /monitor/:uuid
+
+Student (StudentLayout):
+  /student                   StudentDashboardView.vue
+  /student/results/:uuid     StudentResultDetailView.vue
+  /vote/:uuid                VoteEntryView.vue
+  /vote/:uuid/presence       PresenceCaptureView.vue
+  /vote/:uuid/ballot         BallotWizardView.vue
+  /vote/:uuid/confirmation   ConfirmationView.vue
+
+NOT PRESENT as separate routes:
+  /elections/create
+  /elections/:uuid/positions
+  /elections/:uuid/candidates
+  /elections/:uuid/voters
+→ Those are TABS inside ElectionDetailView, not distinct URLs.
+
+
+7.2 Key components
+------------------
+  frontend/src/components/elections/CreateElectionForm.vue
+  frontend/src/components/elections/CandidateManager.vue
+  frontend/src/components/elections/VoterManager.vue
+  frontend/src/views/elections/ElectionListView.vue
+  frontend/src/views/elections/ElectionDetailView.vue
+  frontend/src/views/admin/ElectionMonitorRoom.vue
+  frontend/src/components/student/StudentElectionsView.vue
+  frontend/src/components/student/ElectionCountdown.vue
+  frontend/src/components/academic/FacultyDepartmentSelect.vue
+
+Voting views:
+  frontend/src/views/voting/VoteEntryView.vue
+  frontend/src/views/voting/PresenceCaptureView.vue
+  frontend/src/views/voting/BallotWizardView.vue
+  frontend/src/views/voting/ConfirmationView.vue
+  frontend/src/components/voting/BallotBoxCeremony.vue (ceremony UX)
+
+API clients:
+  frontend/src/api/elections.js
+  frontend/src/api/eligibility.js
+  frontend/src/api/candidates.js
+  frontend/src/api/voting.js
+  frontend/src/api/results.js
+
+
+7.3 Preview components?
+-----------------------
+No EC "dummy ballot preview" component.
+"Preview" usages elsewhere:
+  - Presence camera photo preview
+  - Results auditor preview endpoint (PreviewResultsView)
+  - Settings dashboard theme mini-previews
+
+
+================================================================================
+8. BACKEND API ENDPOINTS (ELECTION-RELATED)
+================================================================================
+
+Base prefix: /api/v1/
+Mounted in: backend/config/urls.py
+
+8.1 Elections + academic + eligibility
+--------------------------------------
+File: backend/elections/api/urls.py
+
+  GET/POST  elections/
+            GET: IsElectionViewer | POST: IsAdminOrSuperAdmin
+
+  GET/PUT/PATCH/DELETE  elections/<uuid>/
+            GET: IsElectionViewer | mutations: IsAdminOrSuperAdmin
+
+  GET/POST  elections/<uuid>/positions/
+            GET: IsElectionViewer | POST: IsAdminOrSuperAdmin
+
+  POST      elections/<uuid>/open/          IsAdmin
+  POST      elections/<uuid>/close/         IsAdmin
+  GET       elections/<uuid>/monitor/       IsElectionMonitorViewer
+
+  GET/POST  elections/<election_uuid>/eligibility/
+            GET: IsElectionViewer | POST: IsAdmin
+  DELETE    elections/<election_uuid>/eligibility/<uuid>/   IsAdmin
+  POST      elections/<election_uuid>/eligibility/import/   IsAdmin
+
+  GET       elections/faculties/            (list; create separate)
+  POST      elections/faculties/create/
+  GET       elections/departments/
+  POST      elections/departments/create/
+  GET       elections/levels/
+  POST      elections/levels/create/
+
+
+8.2 Candidates
+--------------
+  GET/POST  elections/<election_uuid>/candidates/
+  GET/PUT/PATCH/DELETE  .../candidates/<candidate_uuid>/
+  POST      .../candidates/<candidate_uuid>/approve/
+  POST      .../candidates/<candidate_uuid>/reject/
+
+
+8.3 Voting
+----------
+File: backend/voting/api/urls.py
+
+  GET   voting/eligible/
+  POST  voting/elections/<uuid>/svt/request/
+  POST  voting/elections/<uuid>/svt/validate/
+  GET   voting/elections/<uuid>/svt/session/
+  POST  voting/elections/<uuid>/presence/
+  GET   voting/elections/<uuid>/ballot/
+  POST  voting/elections/<uuid>/submit/
+  POST  voting/elections/<uuid>/voters/<user_uuid>/clear/   IsAdminOrSuperAdmin
+
+
+8.4 Results
+-----------
+File: backend/results/api/urls.py
+
+  GET   results/elections/                         IsAuditor
+  GET   results/certification-queue/               IsAdmin
+  GET   results/elections/<uuid>/live/             IsElectionMonitorViewer
+  POST  results/elections/<uuid>/generate/         IsAdmin
+  GET   results/elections/<uuid>/preview/          IsAuditor
+  POST  results/elections/<uuid>/certify/          IsAdmin
+  POST  results/elections/<uuid>/publish/          IsAdmin
+  GET   results/published/                         AllowAny
+  GET   results/published/<uuid>/                  AllowAny
+
+
+================================================================================
+9. DELIVERABLES SUMMARY
+================================================================================
+
+9.1 Current Election model (all fields)
+---------------------------------------
+See section 1.1. File: backend/elections/models.py
+
+
+9.2 Current VoterEligibility model
+----------------------------------
+See section 2.1. File: backend/elections/models.py
+
+
+9.3 Current Position model
+--------------------------
+See section 3.1. File: backend/elections/models.py
+
+
+9.4 Current Candidate model
+---------------------------
+See section 4.1. File: backend/candidates/models.py
+
+
+9.5 Current Vote model
+----------------------
+See section 5.4. File: backend/voting/models.py
+
+
+9.6 Current ElectionResult model
+--------------------------------
+See section 6.1. File: backend/results/models.py
+
+
+9.7 All election-related API endpoints
+--------------------------------------
+See section 8.
+
+
+9.8 All election-related frontend components
+--------------------------------------------
+See section 7.2.
+
+
+9.9 Implemented vs missing (restructuring targets)
+--------------------------------------------------
+
+A) Voter registers with categories
+   IMPLEMENTED:
+     - Flat VoterEligibility list per election
+     - CSV import + manual add
+     - Academic faculty/department/level on User
+     - Election-level scope filter
+   MISSING:
+     - VoterRegister entity
+     - Category / multi-register concept
+     - Assigning voters to named categories
+     - Reusable registers across elections
+
+B) Position-level voter restrictions
+   IMPLEMENTED:
+     - Position is_active / is_votable / max_votes_allowed / display_order
+   MISSING:
+     - Restrict position to faculty/department/level/category
+     - Per-position eligibility lists
+     - Ballot filtering by voter group
+
+C) Candidate editing / locking
+   IMPLEMENTED:
+     - Create, list, approve, reject
+     - Update/delete API exists (CandidateDetailView)
+     - Photo, manifesto, ballot_number, faculty/department
+   MISSING:
+     - Explicit "locked" / freeze-after-open
+     - UI-complete edit workflow emphasized as primary path
+     - Withdrawal workflow fully surfaced in EC UI (status exists)
+
+D) Dummy preview testing
+   IMPLEMENTED:
+     - Results preview for auditors (generated results)
+     - Clear student vote (admin)
+     - demo_seed flag for seeded elections
+   MISSING:
+     - EC dummy vote / dry-run ballot
+     - Preview mode that does not write real Vote rows
+     - Sandbox election mode for testing UX end-to-end without SVT/presence
+
+E) EC certification with photo / location / IP / fingerprint / signature
+   IMPLEMENTED:
+     - Simple certify: certified_by + certified_at
+     - Publish gate after certified
+     - Voter-side presence photo + device/IP/location audit on vote cast
+   MISSING:
+     - EC certify ceremony capturing photo
+     - EC certify capturing location / IP / fingerprint
+     - Digital signature / multi-officer co-certification
+     - pending_certification workflow as a distinct mandatory step
+     - Binding certification evidence into ElectionResult integrity_report
+
+
+================================================================================
+10. CURRENT ELECTION CREATION → VOTE → RESULTS CODE PATH (MAP)
+================================================================================
+
+CREATE
+  ElectionListView "New Election"
+    → CreateElectionForm.vue
+    → POST /api/v1/elections/
+    → ElectionListCreateView.perform_create(created_by=user)
+    → status=draft
+
+CONFIGURE (tabs on ElectionDetailView)
+  Positions → POST .../positions/
+  Candidates → POST .../candidates/ (+ approve)
+  Voters → POST .../eligibility/ or .../eligibility/import/
+
+LIFECYCLE
+  draft → Schedule (status update) → scheduled
+  scheduled → POST .../open/ → open
+  open/paused → POST .../close/ → closed
+
+VOTE (student)
+  eligible list → SVT request/validate → presence photo → ballot → submit
+  gates: eligibility + scope + SVT + presence + open status
+
+RESULTS
+  closed → generate → certify → publish
+  live monitor available while open/paused/closed/scheduled via monitor APIs
+
+
+================================================================================
+11. GAPS / TECH NOTES RELEVANT TO RESTRUCTURE
+================================================================================
+
+1. election_type is cosmetic; do not assume it drives eligibility.
+2. Scope + eligibility are AND-gated for students.
+3. Positions cannot target subsets of the voter list.
+4. No Position update/delete API — only list/create.
+5. No /elections/create route — modal-only create UX.
+6. Positions/candidates/voters are tabs, not nested routes.
+7. Certification is a one-click admin action, not an evidence ceremony.
+8. is_votable is in the model/API but not in the Add Position UI.
+9. Token refresh endpoint was previously missing (auth 401s) — separate from
+   election domain but affects EC ability to create positions while working.
+
+
+================================================================================
+END OF AUDIT
+================================================================================

@@ -1,0 +1,989 @@
+================================================================================
+  VOTERB / VOTEBRIDGE — COMPLETE SYSTEM ARCHITECTURE
+  Generated for full-system understanding before making changes
+  Date: 2026-07-14
+================================================================================
+
+Product names in UI:
+  - Student / landing: "VoteBridge"
+  - Admin / HTML title: "VoterB"
+
+Stack overview:
+  Frontend: Vue 3 + Vite 8 + Pinia + Vue Router 4 + Axios + PrimeVue 4 + Tailwind 4
+  Backend:  Django 5 + Django REST Framework + SimpleJWT + SQLite (default)
+  Realtime: Channels installed but UNUSED — live data is HTTP polling
+  API root: /api/v1/
+
+
+================================================================================
+1. REPOSITORY LAYOUT
+================================================================================
+
+voterb/
+├── backend/                 # Django project
+│   ├── config/              # settings, urls, wsgi/asgi
+│   ├── accounts/            # Users, roles, OTP, JWT sessions
+│   ├── elections/           # Elections, positions, eligibility, academic, monitor
+│   ├── candidates/          # Candidate nominations
+│   ├── voting/              # SVT, presence, ballot, vote cast
+│   ├── security/            # SVT tokens, audit/device/location logs
+│   ├── results/             # Generate / certify / publish results
+│   ├── strongroom/          # Seals, custody, vault step-up
+│   ├── fraud/               # Security alerts & fraud cases
+│   ├── notifications/       # In-app notifications
+│   ├── ussd/                # USSD session oversight (admin)
+│   ├── system/              # Institution, settings, flags, theme, maintenance
+│   ├── operations/          # Ops center health/metrics
+│   ├── audit/               # Combined audit history API
+│   └── dashboard/           # Admin + super-admin dashboards (routed; not always in INSTALLED_APPS)
+├── frontend/                # Vue SPA
+│   └── src/
+│       ├── api/             # Axios modules
+│       ├── components/      # UI by domain
+│       ├── composables/
+│       ├── router/
+│       ├── stores/          # auth, theme
+│       ├── utils/
+│       └── views/
+├── media/                   # Uploaded media (candidate photos, etc.)
+├── scripts/                 # e.g. lan-dev.sh
+└── SYSTEM_ARCHITECTURE.txt  # This file
+
+
+================================================================================
+2. HIGH-LEVEL SYSTEM FLOW
+================================================================================
+
+                    ┌─────────────┐
+                    │   Public    │
+                    │ Home/Login  │
+                    └──────┬──────┘
+                           │ identifier (+ password for staff)
+                           ▼
+                    ┌─────────────┐
+                    │  OTP Verify │──► JWT access + refresh
+                    └──────┬──────┘
+                           │
+          ┌────────────────┼────────────────┐
+          ▼                ▼                ▼
+   ┌────────────┐   ┌────────────┐   ┌────────────────┐
+   │  Student / │   │ Admin (EC) │   │  Super Admin   │
+   │  Candidate │   │ + Auditor  │   │  (platform)    │
+   └─────┬──────┘   └─────┬──────┘   └────────┬───────┘
+         │                │                   │
+         ▼                ▼                   ▼
+   Vote flow         Elections,          Users, Academic,
+   My Elections      Results,            Settings, Ops,
+   Receipts          Strongroom,         Audit (shared)
+                     Monitor, Fraud,
+                     USSD, Audit
+
+Dependency map (backend apps):
+
+  accounts ──► elections ──► candidates
+      │             │
+      │             ├──► voting ──► results
+      │             │         │
+      │             │         └──► strongroom
+      │             └──► security (SVT / audit)
+      ├──► system (settings)
+      ├──► fraud, notifications, audit, dashboard, operations, ussd
+
+
+================================================================================
+3. USER ROLES & PRIVILEGES
+================================================================================
+
+3.1 Role catalog
+----------------
+Role name      Seeded by          Purpose
+-----------    ---------------    --------------------------------------------
+student        seed_roles         Vote; view own eligible elections / receipts
+candidate      seed_roles         Treated like student in frontend routes;
+                                  rare dedicated API use
+admin          seed_roles         Election Committee (EC) — full election ops
+super_admin    seed_roles         Platform governance — users, settings, academic
+auditor        seed_voting_test   View-only EC tools (NOT in seed_roles by default)
+               _data only
+
+Django flags still matter:
+  - is_superuser  → resolved as super_admin
+  - is_staff      → falls back to admin if no role
+  - index_number  → falls back to student if no role
+
+
+3.2 Role resolution (backend + frontend — same idea)
+----------------------------------------------------
+Order:
+  1. is_superuser → super_admin
+  2. user.role.name if set
+  3. is_staff → admin
+  4. index_number → student
+
+Backend:  accounts/permissions.py  → get_role_name()
+Frontend: stores/auth.js           → resolveRoleName()
+
+
+3.3 Backend DRF permission classes
+----------------------------------
+File: backend/accounts/permissions.py
+
+Class                      Allows
+-------------------------  --------------------------------------------------
+IsAdmin                    ONLY role == "admin"
+                           *** Does NOT include super_admin ***
+IsSuperAdmin               super_admin OR is_superuser
+IsAdminOrSuperAdmin        admin, super_admin, or is_superuser
+IsAuditor                  auditor, admin, super_admin, or is_superuser
+IsStudentOrCandidate       student, candidate  (DEFINED but unused on views)
+IsElectionViewer           admin, auditor
+IsElectionMonitorViewer    admin, auditor
+IsStrongroomViewer         admin, auditor
+
+Default DRF policy: IsAuthenticated unless overridden.
+
+
+3.4 Privilege matrix (who can do what)
+--------------------------------------
+
+Feature / action                    student  candidate  admin(EC)  auditor  super_admin
+----------------------------------  -------  ---------  ---------  -------  -----------
+Login with index / email            ✓        ✓          ✓          ✓        ✓
+OTP after login                     ✓        ✓          ✓          ✓        ✓
+Staff password before OTP           —        —          ✓          ✓        ✓
+Student onboarding                  ✓        ✓          —          —        —
+View eligible elections & vote      ✓        ✓          —          —        —
+View published own result detail    ✓        ✓          —          —        —
+Dashboard (staff)                   —        —          ✓          ✓        ✓
+List / view elections               —        —          ✓          ✓        —
+Create / edit / open / close elect. —        —          ✓          —        —
+Manage positions / candidates       —        —          ✓          — (RO)   —
+Manage voter eligibility / import   —        —          ✓          — (RO)   —
+Clear student vote (test helper)    —        —          ✓          —        ✓
+Live election monitor               —        —          ✓          ✓        —
+Results preview / list              —        —          ✓          ✓        —
+Generate / certify / publish        —        —          ✓          —        —
+Strongroom vault + seals            —        —          ✓          ✓        —
+Strongroom lock election            —        —          ✓          —        —
+Fraud alerts / cases                —        —          ✓          —        —
+USSD monitor                        —        —          ✓          —        —
+Audit logs                          —        —          ✓          ✓        ✓
+User CRUD / roles / passwords       —        —          —          —        ✓
+Academic structure (fac/dept/lvl) write —    —          —          —        ✓
+Academic structure GET              any authenticated user
+System settings / feature flags     —        —          —          —        ✓
+Institution profile / logo          —        —          —          —        ✓
+Maintenance mode                    —        —          —          —        ✓
+UI theme GET                        public; PATCH → SuperAdmin
+Operations center                   —        —          —          —        ✓
+Public published results API        AllowAny
+Public seal hash verify             AllowAny
+
+CRITICAL ARCHITECTURAL QUIRK:
+  Pure super_admin (without admin role) CANNOT run EC workflows on the API
+  because mutations use strict IsAdmin. Super-admin sidebar also omits
+  Elections / Results / Strongroom. To act as EC, the user needs role=admin.
+  Platform tools (users, settings, academic, ops) are SuperAdmin-only.
+
+
+3.5 Frontend route role gates
+-----------------------------
+File: frontend/src/router/index.js
+
+Constant                 Roles
+-----------------------  -----------------------------
+ecRoles                  admin
+electionViewerRoles      admin, auditor
+staffDashboardRoles      auditor, admin, super_admin
+studentRoles             student, candidate
+
+Route path                         Roles / access
+---------------------------------  -----------------------------
+/ , /login, /otp                   public
+/onboarding                        student, candidate
+/student , /student/results/:uuid  student, candidate
+/vote/:uuid/*                      student, candidate
+/dashboard                         staffDashboardRoles
+/elections , /elections/:uuid      electionViewerRoles
+/results , /results/:uuid          electionViewerRoles
+/strongroom , /strongroom/:uuid    electionViewerRoles
+/monitor/:uuid                     electionViewerRoles (no AdminLayout)
+/fraud                             admin only
+/ussd , /ussd/:uuid                admin only
+/audit                             staffDashboardRoles
+/users                             super_admin
+/operations                        super_admin
+/settings                          super_admin
+/academic                          super_admin
+/verify                            redirects → /strongroom
+
+
+3.6 Sidebar menus by role
+-------------------------
+File: frontend/src/components/layouts/Sidebar.vue
+
+student:
+  - My Elections → /student
+
+admin (Election Committee):
+  - Dashboard, Elections, Results, Strongroom, Fraud, USSD, Audit
+
+auditor:
+  - Dashboard, Elections, Results, Strongroom, Audit
+  (readonly on election managers; canManageElections = role === admin only)
+
+super_admin:
+  - Dashboard, Users, Academic, Audit, Operations
+  - Footer: Settings
+  (NO Elections / Results / Strongroom in nav)
+
+
+================================================================================
+4. AUTHENTICATION & SESSIONS
+================================================================================
+
+4.1 Login flow
+--------------
+API: POST /api/v1/accounts/auth/login/   (AllowAny)
+
+1. Client sends { identifier, password? }
+   - Identifier = email OR index number (normalized)
+2. If eligible index has no User → auto-create student account
+3. If staff (is_staff / is_superuser / role in admin|super_admin|auditor):
+   - Password required first (response may say requires_password)
+4. OTP always issued via OTPService
+5. Response returns otp_session_id (OTP may print to console in dig)
+
+Frontend: LoginView → authStore.login() → navigate /otp?sessionId=
+
+
+4.2 OTP verify → JWT
+--------------------
+API: POST /api/v1/accounts/auth/otp/verify/
+
+Returns access + refresh tokens via SessionService (SimpleJWT).
+Frontend stores in localStorage:
+  access_token, refresh_token, user_uuid, session_uuid, user_role,
+  requires_onboarding, is_new_user
+
+JWT config (backend settings):
+  Access:  ~15 minutes
+  Refresh: ~7 days
+  Claim uses user uuid
+
+Axios clients attach Bearer; on 401 try refresh at
+  POST /api/v1/accounts/auth/token/refresh/
+  Fail → clear tokens → login
+
+
+4.3 Logout
+----------
+POST /api/v1/accounts/auth/logout/
+Revokes custom Session by JTI; attempts token.blacklist()
+NOTE: token_blacklist app may not be installed — blacklist call may be partial.
+
+
+4.4 Student onboarding
+----------------------
+Gate: onboarding_completed == false for student/candidate
+Forced route: /onboarding
+API:
+  GET  /api/v1/accounts/onboarding/options/  → faculties, depts, levels
+  POST /api/v1/accounts/onboarding/          → profile + academic FKs
+
+Blocks voting until completed + scope eligibility checks pass.
+
+
+4.5 Current user
+----------------
+GET /api/v1/accounts/auth/me/
+
+
+4.6 Models (accounts)
+---------------------
+Role          — uuid PK, name, description, is_active
+User          — email, index_number, student_id, username, phone,
+                name fields, programme, year_of_study,
+                faculty / department / level FKs,
+                role FK, onboarding_completed, is_active, is_staff,
+                is_verified, demo_seed, is_superuser
+                USERNAME_FIELD = email
+OTPRequest    — hashed OTP, purpose login|mfa, channel sms|email,
+                expiry, attempts/max_attempts
+Session       — refresh jti, IP, UA, active/revoked
+MFALog        — auth event trail (login_otp_sent, otp_verified, …)
+
+
+================================================================================
+5. ACADEMIC STRUCTURE & ELECTION SCOPE
+================================================================================
+
+Models (elections):
+  Faculty, Department (FK faculty), Level
+
+Managed by SuperAdmin (write). Any authenticated user can GET.
+
+Election scopes:
+  school      — all onboarded students (with eligibility still required)
+  faculty     — user.faculty must match scope_faculty
+  department  — user.department must match
+  level       — user.level must match
+
+Scope checked in:
+  Election.user_matches_scope()
+  elections/services/scope_eligibility.py
+  Voting eligibility APIs
+
+Frontend Academic UI:
+  /academic → AcademicStructureView (super_admin)
+
+
+================================================================================
+6. ELECTIONS DOMAIN (CORE)
+================================================================================
+
+6.1 Models
+----------
+Election
+  status: draft | scheduled | open | paused | closed | archived
+  type:   general | student_union | faculty | departmental | special
+  scope:  school | faculty | department | level (+ scope FKs)
+  channels: allow_web_voting, allow_ussd_voting, allow_sms_notifications
+  start_date, end_date, created_by, demo_seed
+
+Position
+  per election; max_votes_allowed, display_order, is_votable, is_active
+  unique (election, title)
+
+VoterEligibility
+  unique (election, user); is_eligible; verified_by / verified_at
+
+VotingChannel
+  web | ussd | sms
+
+
+6.2 API (prefix /api/v1/)
+-------------------------
+Faculties / departments / levels
+  GET any auth; write SuperAdmin
+
+Elections
+  GET list/detail     IsElectionViewer (admin, auditor)
+  POST create         IsAdmin
+  PUT/PATCH/DELETE    IsAdmin
+  POST …/open/        IsAdmin
+  POST …/close/       IsAdmin
+  GET  …/monitor/     IsElectionMonitorViewer
+
+Positions nested under election
+  GET viewer; POST Admin
+
+Eligibility
+  GET viewer; POST/DELETE/import Admin
+  CSV import can auto-create student users
+
+
+6.3 Frontend
+------------
+/elections              ElectionListView — list/create
+/elections/:uuid        ElectionDetailView — tabs:
+                          Positions | Candidates | Voters
+                          Actions: open / close / generate results / open monitor
+Components:
+  CreateElectionForm.vue
+  CandidateManager.vue
+  VoterManager.vue  (add by index, CSV import, remove, clear vote)
+
+
+6.4 Election lifecycle (typical EC flow)
+----------------------------------------
+draft → scheduled → open → (optional paused) → closed → archived
+
+While open:
+  Students vote; Monitor Room polls live turnout/standings
+
+After close:
+  Generate results → certify → publish
+  Strongroom seals / custody
+
+
+================================================================================
+7. CANDIDATES
+================================================================================
+
+Model Candidate:
+  election + position, optional user link,
+  academic dept/faculty, photo, manifesto,
+  status: pending | approved | rejected | withdrawn,
+  ballot_number
+
+API nested: /api/v1/elections/<election_uuid>/candidates/
+  GET viewer; mutate / approve / reject → Admin
+
+Only approved candidates appear on the ballot.
+
+
+================================================================================
+8. VOTING DOMAIN (STUDENT CORE FLOW)
+================================================================================
+
+8.1 End-to-end student journey
+------------------------------
+1. Login (index) → OTP → JWT
+2. Onboarding if required
+3. /student — list eligible open elections (and already-voted)
+4. Enter vote → /vote/:uuid
+5. Request & validate SVT (Secure Voting Token) format v-xxx-####
+6. /vote/:uuid/presence — capture presence selfie
+7. /vote/:uuid/ballot — position wizard + BallotBoxCeremony animation
+8. Submit votes → confirmation code
+9. /vote/:uuid/confirmation — receipt
+
+Step guards (client): already voted → confirmation; SVT invalid → entry;
+presence incomplete → presence page.
+
+
+8.2 Backend voting APIs (/api/v1/voting/)
+----------------------------------------
+GET  eligible/
+POST elections/<uuid>/svt/request/
+POST elections/<uuid>/svt/validate/
+GET  elections/<uuid>/svt/session/
+GET/POST elections/<uuid>/presence/
+GET  elections/<uuid>/ballot/          (requires validated SVT + presence)
+POST elections/<uuid>/submit/
+POST elections/<uuid>/voters/<user_uuid>/clear/   AdminOrSuperAdmin (test)
+
+All vote path views: IsAuthenticated + business rules in view.
+
+
+8.3 Business rules on submit
+----------------------------
+Prerequisite chain:
+  - Authenticated student
+  - Onboarding completed
+  - On VoterEligibility list
+  - Matches election academic scope
+  - Election status open; web voting allowed
+  - SVT validated (then marked used on submit)
+  - Presence capture exists for (user, election, svt)
+  - Candidates must be approved; respect max_votes_allowed per position
+
+On success:
+  - Create Vote rows (user + election + position + candidate + channel + SVT)
+  - Per-vote vote_hash (SHA-256)
+  - Unique constraint (user, position, candidate)
+  - Mark SVT used
+  - Write vote_cast AuditLog WITHOUT ballot choices (privacy sanitize)
+  - Return confirmation code
+
+NOTE: Votes retain user FK — DB is NOT cryptographically anonymous.
+      Ballot secrecy is for audit metadata, not full anonymization.
+
+
+8.4 SVT (security app)
+----------------------
+Model SVTToken:
+  hashed token, status issued|validated|used|expired|revoked,
+  attempt counters
+
+Settings-driven (system/settings_utils.py):
+  svt_max_requests_per_hour
+  svt_resend_cooldown_seconds
+  svt_max_validation_attempts
+  (svt_expiry_minutes deprecated — lives until election end / use)
+
+Client caches SVT state: sessionStorage key svt:{electionUuid}
+
+
+8.5 Presence
+------------
+Model PreVotePresenceCapture — selfie before ballot
+Linked on AuditLog via presence_capture_id (not joined to vote choices)
+
+
+8.6 Vote model
+--------------
+Vote: user, election, position, candidate, channel, optional SVT,
+      vote_hash, timestamps
+Unique (user, position, candidate)
+
+
+8.7 Frontend voting components
+------------------------------
+VoteEntryView, PresenceCaptureView, BallotWizardView, ConfirmationView
+BallotBoxCeremony.vue — animated ballot drop between positions
+ElectionCountdown.vue — closes-in timer on student dashboard
+utils/svtSession.js, utils/deviceAudit.js (optional client fingerprint)
+
+
+================================================================================
+9. RESULTS DOMAIN
+================================================================================
+
+Model ElectionResult:
+  standings JSON, integrity_report, result_hash (SHA-256 of snapshot),
+  status lifecycle, certification fields
+
+API /api/v1/results/
+  GET  elections/                    IsElectionViewer
+  GET  certification-queue/          IsAdmin
+  GET  elections/<uuid>/live/        IsElectionMonitorViewer
+  POST …/generate/ | certify | publish   IsAdmin
+  GET  …/preview/                    viewer
+  GET  published/ (+ detail)         AllowAny (public)
+
+Pipeline:
+  Aggregate votes → standings + integrity stub + result_hash
+  → certify → publish
+  Notifications helper can fan out "results published"
+
+Frontend:
+  /results , /results/:uuid
+  Student: /student/results/:uuid (published breakdown)
+  (StudentResultsView.vue exists but is NOT wired in router)
+
+
+================================================================================
+10. STRONGROOM (SEALED VAULT)
+================================================================================
+
+Purpose: Chain-of-custody and seal integrity after voting/closing.
+
+Models (strongroom):
+  BallotSeal, ElectionSeal          seal_hash
+  CustodyRecord                     chain-of-custody actions
+  IntegrityVerification
+  StrongroomCommittee / Member      chair | custodian | observer
+  VaultAccessRequest / VaultSession / VaultEvidence
+  StrongroomAccessSession           step-up gate (hashed token, ~30 min TTL)
+
+Access:
+  IsStrongroomViewer (admin, auditor) + vault token header X-Vault-Token
+  Lock election: IsAdmin
+  Public verify seal hash: AllowAny
+
+API highlights /api/v1/strongroom/:
+  vault/authenticate | session/status | session/close
+  elections/ (+ detail) — sealed list (needs vault)
+  …/access/ , …/reveal-seal/ , …/lock/
+  public/verify/
+
+Frontend flow:
+  StrongroomVaultGate → password unlock → token in sessionStorage
+  useStrongroomVault.js timed session
+  /strongroom list + hash verify
+  /strongroom/:uuid reveal seals (audited), lock
+
+Old public /verify page redirects into staff strongroom flow.
+
+
+================================================================================
+11. ELECTION MONITOR ROOM
+================================================================================
+
+Route: /monitor/:uuid  (fullscreen, no AdminLayout)
+Access: admin, auditor
+
+Backend: elections/monitor_service.py
+  Turnout, hourly throughput, per-position standings
+
+Frontend: ElectionMonitorRoom.vue
+  Polls GET election monitor every ~5 seconds
+  Countdown; charts; optional monokai theme (useMonitorTheme)
+  Entered from election detail (redirect from /elections/:uuid/monitor)
+
+NO WebSockets — Channels package is installed/configured but unused
+(config/asgi.py is plain Django ASGI; no consumers).
+
+
+================================================================================
+12. FRAUD & SECURITY ALERTS
+================================================================================
+
+Models:
+  SecurityAlert, FraudCase (1:1 alert)
+
+API /api/v1/fraud/ — IsAdmin (EC only)
+Frontend /fraud — FraudDashboardView
+
+Automated continuous detection appears incomplete — APIs are largely CRUD/
+oversight over alert/case records rather than a live detector pipeline.
+
+
+================================================================================
+13. USSD
+================================================================================
+
+Models: USSDSession, USSDRequestLog
+API /api/v1/ussd/ — IsAdmin oversight (stats, sessions, logs)
+Frontend /ussd , /ussd/:uuid
+
+No public USSD webhook view found under ussd/api — oversight UI exists;
+end-to-end USSD voting channel is model/flag level more than fully wired public ingress.
+
+
+================================================================================
+14. NOTIFICATIONS
+================================================================================
+
+Model: InAppNotification
+API /api/v1/notifications/ — IsAuthenticated (own inbox)
+Frontend: Header notification UI + api/notifications.js
+Helpers (notifications/services.py): election opened/closed,
+  results published, fraud alerts — bulk in-app creates
+
+
+================================================================================
+15. AUDIT
+================================================================================
+
+Sources:
+  accounts.MFALog
+  security.AuditLog (+ DeviceLog, LocationLog)
+
+API /api/v1/audit/ — IsAuditor (includes admin/super_admin)
+Frontend /audit — AuditLogsView (combined trail)
+
+Vote audit privacy:
+  security/services/vote_audit.py
+  sanitize_audit_metadata strips candidate/selection keys from logs
+  Presence linked by UUID, not ballot choices
+
+
+================================================================================
+16. DASHBOARDS & OPERATIONS
+================================================================================
+
+/api/v1/dashboard/
+  admin/         IsAuditor (admins + auditors + super_admins via class)
+  super-admin/   IsSuperAdmin
+
+Frontend DashboardView.vue switches:
+  student → redirect /student
+  super_admin → SuperAdminDashboardView
+  else → AdminDashboardView
+
+Admin dashboard layouts (theme store): atelier | operations | lumen
+Super-admin dashboard: platform stats, user growth, role mix,
+  maintenance/flags, quick links
+
+Operations center (/operations, super_admin):
+  /api/v1/operations/ — health, infrastructure, queues, logs
+  IsAdminOrSuperAdmin on API; UI gated to super_admin
+
+
+================================================================================
+17. SYSTEM SETTINGS & FEATURE FLAGS
+================================================================================
+
+Models:
+  InstitutionProfile — name, short_name, logo, colors, contacts
+  SystemSetting      — key/value, category, is_encrypted flag
+  FeatureFlag        — key, enabled, category
+  SettingRevision    — change history
+  MaintenanceState   — maintenance mode + message
+
+API /api/v1/system/ (mostly IsSuperAdmin):
+  feature-flags/ , feature-flags/<key>/
+  institution/
+  maintenance/
+  theme/                 GET AllowAny; PATCH SuperAdmin
+  settings/ , settings/<key>/
+
+Runtime defaults (system/settings_utils.py):
+  otp_length, otp_expiry_minutes
+  svt_* rate/cooldown/attempts
+  session_timeout_minutes
+  max_login_attempts   (seeded; NOT enforced in LoginView path)
+
+Setting categories (from seeds):
+  general      — site_name, tagline, ui_theme, ui_dashboard
+  security     — OTP / SVT / session knobs
+  integrations — SMS (Arkesel/Moolre/Twilio), SMTP, USSD codes/keys
+  governance / operations — registration, biometric, USSD voting flags
+
+Feature flag examples:
+  ussd_voting, web_voting, biometric_auth,
+  sms_notifications, email_notifications,
+  student_registration, results_auto_generate,
+  strongroom_enabled, fraud_detection, audit_logging,
+  maintenance_mode
+
+UI themes: classic | pulse | amber
+Dashboard layouts: atelier | operations | lumen
+Frontend store: stores/theme.js (localStorage + /system/theme/)
+
+Settings UI: /settings — SettingsView (super_admin)
+  Theme + dashboard layout, feature flags, security numbers,
+  maintenance, institution name/logo
+
+
+================================================================================
+18. USER MANAGEMENT (SUPER ADMIN)
+================================================================================
+
+API /api/v1/accounts/users/ (+ detail)
+  activate / deactivate / reset-password
+  GET roles/
+Gate: IsAdminOrSuperAdmin
+
+Frontend: /users → UserManagementView
+  CRUD, role assignment, activate/deactivate, password reset
+
+
+================================================================================
+19. FRONTEND STRUCTURE (UI ARCHITECTURE)
+================================================================================
+
+19.1 Tech
+---------
+Vue 3 Composition API (<script setup>)
+Vite (proxy /api, /ws, /media → backend; LAN/HTTPS modes)
+Pinia stores: auth, theme
+PrimeVue 4 + Lara + PrimeIcons + Font Awesome
+Chart.js wrappers under components/charts/
+Tailwind 4 + themes.css CSS variables
+Font: Plus Jakarta Sans
+
+
+19.2 Layouts
+------------
+AdminLayout  — Sidebar + Header + router-view (all staff shell routes)
+StudentLayout — brand bar + StudentProfileMenu; vote transition animations
+No layout   — Home, Login, OTP, Onboarding, Monitor Room
+
+
+19.3 Views inventory
+--------------------
+Public:
+  HomeView, auth/LoginView, auth/OTPView
+
+Auth:
+  auth/StudentOnboardingView
+
+Student:
+  student/StudentDashboardView
+  student/StudentResultDetailView
+  (unrouted: StudentResultsView, StudentElectionsView)
+
+Voting:
+  voting/VoteEntryView
+  voting/PresenceCaptureView
+  voting/BallotWizardView
+  voting/ConfirmationView
+
+Staff hub:
+  DashboardView → AdminDashboardView | SuperAdminDashboardView
+
+EC / auditor:
+  elections/ElectionListView, ElectionDetailView
+  results/ResultsListView, ResultDetailView
+  admin/StrongroomView, StrongroomDetailView
+  admin/ElectionMonitorRoom
+  admin/AuditLogsView
+
+Admin only:
+  admin/FraudDashboardView
+  admin/USSDMonitorView, USSDSessionDetailView
+
+Super admin:
+  admin/UserManagementView
+  admin/AcademicStructureView
+  admin/OperationsCenterView
+  admin/SettingsView
+
+
+19.4 API modules (frontend/src/api/)
+------------------------------------
+client.js, uploadClient.js
+elections.js, candidates.js, eligibility.js, voting.js
+results.js, strongroom.js, dashboard.js, users.js
+academic.js, fraud.js, ussd.js, audit.js
+operations.js, system.js, notifications.js
+
+
+19.5 Important composables / utils
+----------------------------------
+useFriendlyLoad, useCountdown, usePagination, useChart,
+useMonitorTheme, useStrongroomVault
+utils: apiError, deviceAudit, friendlyFeedback, media,
+       svtSession, uploadQueue, user
+
+
+19.6 Orphan / legacy (not live routes)
+--------------------------------------
+views/LoginView.vue (old — use auth/LoginView)
+StudentResultsView, StudentElectionsView (unrouted)
+components/HelloWorld.vue
+settings/FeatureFlags.vue, IntegrationsSettings.vue (Settings inlines instead)
+Old PublicVerifyView deleted; /verify → /strongroom
+
+
+================================================================================
+20. SECURITY MODEL (SUMMARY)
+================================================================================
+
+Layer                    Mechanism
+-----------------------  -----------------------------------------------------
+Transport                HTTPS optional via vite LAN/HTTPS scripts
+Auth                     JWT Bearer (SimpleJWT)
+Staff gate               Password then OTP
+Student gate             Index + OTP (auto-provision if eligible)
+OTP at rest              SHA-256 hashed
+SVT at rest              SHA-256 hashed; rate limits; attempt revoke
+Vote integrity           per-vote SHA-256 vote_hash
+Result integrity         result_hash of standings snapshot
+Audit ballot secrecy     metadata sanitization (no choices in audit)
+Strongroom               password step-up → vault token TTL
+Public verify            seal hash existence check
+Device context           optional DeviceLog fingerprint from client
+DRF throttle             anon 100/hour, user 1000/hour (defaults)
+CORS                     allow-all typical in dig
+Settings secrets         is_encrypted flag (masking; not full cipher vault)
+
+Known gaps / caveats:
+  - Votes store user FK (not anonymous ballots)
+  - OTP/SVT plaintext may print in dig console
+  - max_login_attempts / OTP attempt counters under-enforced
+  - JWT blacklist without blacklist app installed
+  - IsAdmin excludes super_admin from EC APIs
+  - Fraud detection not a continuous automated pipeline
+  - USSD public ingress incomplete relative to models
+  - Channels installed but unused
+
+
+================================================================================
+21. MANAGEMENT COMMANDS (SEED / OPS)
+================================================================================
+
+Command                        App        Purpose
+-----------------------------  ---------  ------------------------------------
+seed_roles                     accounts   student, candidate, admin, super_admin
+seed_academic_structure        elections  levels + faculties/depts from CSV
+sync_election_academic_refs    elections  Relink candidate academic FKs
+seed_voting_test_data          elections  Demo users/election/votes (+ auditor)
+seed_election_live_data        elections  Rich live demo with photos/CSV votes
+seed_system_defaults           system     Institution + core settings/flags
+seed_settings                  system     SMS/USSD/email/theme extras
+
+
+================================================================================
+22. API MOUNT MAP (COMPLETE)
+================================================================================
+
+From backend/config/urls.py — all under /api/v1/:
+
+  accounts/       auth, onboarding, users, roles
+  elections/      faculties, departments, levels, elections, positions,
+                  eligibility, monitor
+  elections/<uuid>/candidates/
+  voting/         eligible, svt, presence, ballot, submit, clear
+  results/        generate/certify/publish/live/published
+  strongroom/     vault, seals, custody, public verify
+  fraud/
+  notifications/
+  system/         flags, settings, institution, maintenance, theme
+  dashboard/      admin, super-admin
+  ussd/
+  audit/
+  operations/
+
+Django admin still at /admin/ (separate from EC UI).
+
+
+================================================================================
+23. END-TO-END SCENARIOS (HOW THE SYSTEM WORKS)
+================================================================================
+
+A) Fresh student votes
+----------------------
+1. SuperAdmin ensures academic structure + settings + web_voting flag
+2. Admin creates election (scope), positions, candidates (approve),
+   imports/adds eligibility
+3. Admin opens election
+4. Student logs in with index → OTP → completes onboarding if needed
+5. Student sees election on /student → SVT → presence → ballot → confirm
+6. Monitor shows live turnout (admin/auditor)
+7. Admin closes election → generates → certifies → publishes results
+8. Strongroom seals available for custody/reveal
+9. Student can open published result detail
+
+B) Auditor oversight
+--------------------
+Same as admin for viewing elections, results, strongroom, monitor, audit
+Cannot create/manage/open/close, certify, fraud, or USSD
+
+C) Super admin platform change
+------------------------------
+Users, academic tree, theme, feature flags, security OTP/SVT knobs,
+maintenance mode, institution branding, operations health
+Does NOT drive election day ops unless also given admin role
+
+D) Strongroom custody
+---------------------
+Admin/auditor unlock vault with password → timed token
+Access sealed elections → reveal seal hashes (logged evidence)
+Optionally lock; anyone can verify a seal hash publicly via API
+
+
+================================================================================
+24. KEY FILES CHEAT SHEET (WHERE TO CHANGE WHAT)
+================================================================================
+
+Concern                        Path
+-----------------------------  -----------------------------------------------
+API mounts                     backend/config/urls.py
+Django/JWT/throttle settings   backend/config/settings.py
+Role gates                     backend/accounts/permissions.py
+Auth login/OTP/sessions        backend/accounts/api/views.py
+                               backend/accounts/services.py
+User model                     backend/accounts/models.py
+Election models & scope        backend/elections/models.py
+Scope eligibility              backend/elections/services/scope_eligibility.py
+Monitor aggregates             backend/elections/monitor_service.py
+Voting APIs                    backend/voting/api/views.py
+Vote privacy audit             backend/security/services/vote_audit.py
+Results pipeline               backend/results/api/views.py
+Strongroom                     backend/strongroom/api/views.py
+                               backend/strongroom/services.py
+System knobs                   backend/system/settings_utils.py
+                               backend/system/api/views.py
+Frontend routes/guards         frontend/src/router/index.js
+Auth store / home routing      frontend/src/stores/auth.js
+Sidebar privileges             frontend/src/components/layouts/Sidebar.vue
+Theme store                    frontend/src/stores/theme.js
+Axios + refresh                frontend/src/api/client.js
+Voting UX                      frontend/src/views/voting/*
+Election EC UX                 frontend/src/views/elections/*
+Strongroom UX                  frontend/src/views/admin/Strongroom*.vue
+Settings UX                    frontend/src/views/admin/SettingsView.vue
+LAN dev script                 scripts/lan-dev.sh
+
+
+================================================================================
+25. MENTAL MODEL FOR CHANGES
+================================================================================
+
+Ask first: which ROLE is affected?
+  student/candidate → voting + student routes + eligibility/scope
+  admin (EC)        → elections/candidates/voters/results/fraud/ussd/monitor
+  auditor           → same views, readonly; permission classes viewer/*
+  super_admin       → users/academic/settings/ops/theme — NOT IsAdmin APIs
+
+Then ask: which LAYER?
+  Privilege gate → accounts/permissions.py AND frontend router + Sidebar
+  Business rule  → domain services / api/views.py
+  UI flow        → views + components under frontend/src
+  Config knob    → SystemSetting / FeatureFlag + settings_utils
+
+Remember split:
+  Platform governance ≠ Election Committee
+  Frontend role menus and backend IsAdmin / IsSuperAdmin must stay aligned
+  When adding a feature, update: model → serializer → view permissions →
+  urls → frontend api module → route meta → sidebar (if nav) → views
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================

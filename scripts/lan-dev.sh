@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Start VoterB for access from other devices on the same Wi‑Fi / LAN.
+# Serves the frontend over plain HTTP (no TLS certificate warnings).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,17 +21,21 @@ export LAN_ORIGIN
 export ALLOWED_HOSTS="localhost,127.0.0.1,${LAN_IP}"
 export VITE_BACKEND_URL="http://127.0.0.1:8000"
 export LAN_HOST=1
+# Plain HTTP for LAN. Do not force Vite TLS.
+unset VITE_HTTPS || true
+export VITE_HTTPS=0
 
 echo ""
 echo "=============================================="
-echo "  VoterB — local network mode"
+echo "  VoterB — local network mode (HTTP)"
 echo "=============================================="
 echo "  Your IP:     ${LAN_IP}"
 echo "  On this Mac: http://localhost:5173"
 echo "  On LAN:      ${LAN_ORIGIN}"
 echo ""
-echo "  Other phones/laptops on the same Wi‑Fi can"
-echo "  open the LAN URL above in their browser."
+echo "  Note: browsers may block camera access on"
+echo "  non-HTTPS LAN IPs. Login and admin UI work"
+echo "  normally over HTTP."
 echo "=============================================="
 echo ""
 
