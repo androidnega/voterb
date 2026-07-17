@@ -254,10 +254,17 @@ router.beforeEach(async (to) => {
         return true
       }
     }
+    const hasStoredTokens = !!(
+      localStorage.getItem('access_token') || localStorage.getItem('refresh_token')
+    )
     const home = authStore.homeRoute
     if (home === '/login') {
-      authStore.clearLocalStorage()
-      return '/login'
+      if (!hasStoredTokens) {
+        authStore.clearLocalStorage()
+        return '/login'
+      }
+      // Tokens exist but role is not hydrated yet — allow navigation instead of forcing logout.
+      return true
     }
     return to.path === home ? true : home
   }

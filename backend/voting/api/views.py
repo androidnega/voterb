@@ -926,7 +926,10 @@ class SubmitVoteView(APIView):
                 ).hexdigest()
                 from elections.models import VotingChannel
 
-                web_channel = VotingChannel.objects.get(channel_name='web')
+                web_channel, _ = VotingChannel.objects.get_or_create(
+                    channel_name='web',
+                    defaults={'is_active': True},
+                )
                 vote = Vote.objects.create(
                     user=user,
                     election=election,

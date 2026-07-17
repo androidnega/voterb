@@ -56,7 +56,10 @@ async function bootstrap() {
 
   const current = window.location.pathname
   const publicPaths = ['/', '/login', '/otp']
-  if (!authStore.isAuthenticated && !publicPaths.includes(current)) {
+  const hasStoredTokens = !!(
+    localStorage.getItem('access_token') || localStorage.getItem('refresh_token')
+  )
+  if (!authStore.isAuthenticated && !hasStoredTokens && !publicPaths.includes(current)) {
     await router.replace('/login')
   } else if (authStore.isAuthenticated && current === '/login') {
     const home = authStore.homeRoute

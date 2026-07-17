@@ -227,6 +227,24 @@ export const useAuthStore = defineStore('auth', {
       this.initialized = true
     },
 
+    restoreCachedSession() {
+      const accessToken = localStorage.getItem('access_token')
+      const refreshToken = localStorage.getItem('refresh_token')
+      if (!accessToken && !refreshToken) {
+        return false
+      }
+
+      const cachedRole = localStorage.getItem('user_role') || ''
+      this.user = {
+        uuid: localStorage.getItem('user_uuid') || null,
+        role_name: cachedRole || null,
+        role: cachedRole ? { name: cachedRole } : null,
+      }
+      this.isAuthenticated = true
+      this.resolveRoles()
+      return true
+    },
+
     async initialize() {
       if (this.initialized) return
       if (this.bootstrapping) {
@@ -240,35 +258,36 @@ export const useAuthStore = defineStore('auth', {
 
       this.bootstrapping = true
       try {
-        const token = localStorage.getItem('access_token')
-        if (!token) {
+        const hasStoredSession = this.restoreCachedSession()
+        if (!hasStoredSession) {
           this.initialized = true
           return
         }
+
         try {
           await Promise.race([
             this.fetchMe(),
             new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Auth bootstrap timeout')), 7000),
+              setTimeout(() => reject(new Error('Auth bootstrap timeout')), 12000),
             ),
           ])
           this.isNewUser = localStorage.getItem('is_new_user') === 'true'
           this.syncOnboardingFlag()
         } catch (error) {
           const status = error?.response?.status
-          if (status === 401 || status === 403) {
-            // Only a definitive auth rejection should end the local session.
+          const stillHasTokens = !!(
+            localStorage.getItem('access_token') || localStorage.getItem('refresh_token')
+          )
+          if ((status === 401 || status === 403) && !stillHasTokens) {
             this.clearLocalStorage()
-          } else {
-            // Keep valid tokens during timeouts, offline periods, deploys, and 5xx errors.
-            const cachedRole = localStorage.getItem('user_role') || ''
-            this.user = {
-              uuid: localStorage.getItem('user_uuid') || null,
-              role_name: cachedRole || null,
-              role: cachedRole ? { name: cachedRole } : null,
+          } else if (status === 401 || status === 403) {
+            // Refresh interceptor may have already cleared invalid tokens.
+            if (!localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) {
+              this.clearLocalStorage()
+            } else {
+              console.warn('Session hydration rejected; keeping cached login until next API call:', error)
             }
-            this.isAuthenticated = true
-            this.resolveRoles()
+          } else {
             console.warn('Session hydration deferred; keeping cached login:', error)
           }
         }

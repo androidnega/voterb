@@ -88,9 +88,12 @@ export function useSessionTimeout() {
       if (authed) {
         checkStoredIdle()
         bind()
-      } else {
-        if (timer) clearTimeout(timer)
-        unbind()
+        return
+      }
+      if (timer) clearTimeout(timer)
+      unbind()
+      // Do not wipe activity timestamps during initial bootstrap before tokens hydrate.
+      if (!authStore.bootstrapping && authStore.initialized) {
         localStorage.removeItem(LAST_ACTIVITY_KEY)
       }
     },
