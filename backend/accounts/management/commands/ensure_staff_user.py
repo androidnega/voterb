@@ -2,6 +2,7 @@
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Q
 
 from accounts.models import ECMembership, Role, User
 from accounts.org import get_or_create_main_ec_unit
@@ -23,7 +24,28 @@ class Command(BaseCommand):
         parser.add_argument(
             '--institution-code',
             default='',
-            help='Optional institution code (e.g. TTU). Links Main EC to that institution.',
+            help='Institution code/short name (e.g. TTU). Required for Main EC linking.',
+        )
+
+    def _list_institutions(self):
+        rows = list(
+            InstitutionProfile.objects.order_by('name').values_list('code', 'short_name', 'name')[:30]
+        )
+        if not rows:
+            return '  (none — run: python manage.py bootstrap_institution --code TTU)'
+        lines = []
+        for code, short_name, name in rows:
+            lines.append(f'  code={code or "(empty)"}  short={short_name or "-"}  name={name}')
+        return '\n'.join(lines)
+
+    def _resolve_institution(self, raw: str):
+        key = (raw or '').strip()
+        if not key:
+            return None
+        return (
+            InstitutionProfile.objects.filter(
+                Q(code__iexact=key) | Q(short_name__iexact=key) | Q(name__iexact=key)
+            ).first()
         )
 
     @transaction.atomic
@@ -35,6 +57,19 @@ class Command(BaseCommand):
             raise CommandError('Provide a valid --email')
         if len(password) < 8:
             raise CommandError('Password must be at least 8 characters')
+        if password in {'YOUR_PASSWORD_HERE', 'password', 'Password1', 'changeme'}:
+            raise CommandError('Choose a real password (not the placeholder).')
+
+        institution = None
+        code = (options['institution_code'] or '').strip()
+        if code:
+            institution = self._resolve_institution(code)
+            if not institution:
+                raise CommandError(
+                    f'Institution {code!r} not found.\n'
+                    f'Existing institutions:\n{self._list_institutions()}\n'
+                    f'Create one with: python manage.py bootstrap_institution --code TTU'
+                )
 
         role, _ = Role.objects.get_or_create(
             name=role_name,
@@ -69,11 +104,7 @@ class Command(BaseCommand):
             user.save()
             self.stdout.write(self.style.WARNING(f'Updated existing user {email} ({role_name})'))
 
-        code = (options['institution_code'] or '').strip()
-        if code and role_name == 'admin':
-            institution = InstitutionProfile.objects.filter(code__iexact=code).first()
-            if not institution:
-                raise CommandError(f'Institution with code {code!r} not found')
+        if institution and role_name == 'admin':
             user.institution = institution
             user.save(update_fields=['institution', 'updated_at'])
             main_unit = get_or_create_main_ec_unit(institution)
@@ -85,6 +116,13 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS(
                     f'Linked Main EC to institution {institution.short_name or institution.name}'
+                )
+            )
+        elif role_name == 'admin' and not institution:
+            self.stdout.write(
+                self.style.WARNING(
+                    'No --institution-code given. User can log in, but Main EC '
+                    'governance needs an institution link. Re-run with --institution-code.'
                 )
             )
 
