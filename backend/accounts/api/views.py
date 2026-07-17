@@ -372,7 +372,9 @@ class StudentOnboardingView(APIView):
 
 class UserListView(generics.ListCreateAPIView):
     permission_classes = [IsSuperAdmin]
-    queryset = User.objects.all().order_by('-created_at')
+    queryset = User.objects.select_related(
+        'role', 'institution', 'faculty', 'department',
+    ).all().order_by('-created_at')
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -402,7 +404,9 @@ class UserListView(generics.ListCreateAPIView):
 
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsSuperAdmin]
-    queryset = User.objects.all()
+    queryset = User.objects.select_related(
+        'role', 'institution', 'faculty', 'department',
+    ).all()
     lookup_field = 'uuid'
 
     def get_serializer_class(self):

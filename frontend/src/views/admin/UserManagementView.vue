@@ -38,7 +38,7 @@
       </div>
       <select v-model="filters.role" class="filter-select" @change="applyFilters">
         <option value="">All roles</option>
-        <option v-for="role in roles" :key="role.uuid" :value="role.name">{{ role.name }}</option>
+        <option v-for="role in roles" :key="role.uuid" :value="role.name">{{ roleLabel(role.name) }}</option>
       </select>
       <select v-model="filters.is_active" class="filter-select" @change="applyFilters">
         <option v-for="opt in statusOptions" :key="opt.label" :value="opt.value">{{ opt.label }}</option>
@@ -54,6 +54,7 @@
               <th>User</th>
               <th>Email</th>
               <th>Role</th>
+              <th>Institution</th>
               <th>Status</th>
               <th>Created</th>
               <th class="text-center">Actions</th>
@@ -71,7 +72,8 @@
                 </div>
               </td>
               <td>{{ user.email }}</td>
-              <td><span class="admin-badge" :class="roleBadge(user.role_name)">{{ user.role_name || 'none' }}</span></td>
+              <td><span class="admin-badge" :class="roleBadge(user.role_name)">{{ roleLabel(user.role_name) }}</span></td>
+              <td class="text-muted">{{ user.institution_name || '—' }}</td>
               <td><span class="admin-badge" :class="user.is_active ? 'success' : 'danger'">{{ user.is_active ? 'Active' : 'Inactive' }}</span></td>
               <td class="text-muted">{{ formatDate(user.created_at) }}</td>
               <td>
@@ -85,7 +87,7 @@
               </td>
             </tr>
             <tr v-if="!loading && users.length === 0">
-              <td colspan="6"><EmptyState icon="fas fa-users" title="No users found" message="Try adjusting your search or add a new user." /></td>
+              <td colspan="7"><EmptyState icon="fas fa-users" title="No users found" message="Try adjusting your search or add a new user." /></td>
             </tr>
           </tbody>
         </table>
@@ -104,35 +106,99 @@
       </div>
     </section>
 
-    <Dialog v-model:visible="showDialog" :header="isEditing ? 'Edit User' : 'Add User'" :modal="true" class="w-full max-w-lg">
+    <Dialog
+      v-model:visible="showDialog"
+      :header="isEditing ? 'Edit User' : 'Add User'"
+      :modal="true"
+      class="user-dialog"
+      :style="{ width: 'min(640px, 96vw)' }"
+    >
       <form @submit.prevent="submitUser" class="dialog-form">
         <div class="form-grid">
-          <div><label>First Name</label><InputText v-model="form.first_name" class="w-full" /></div>
-          <div><label>Last Name</label><InputText v-model="form.last_name" class="w-full" /></div>
+          <div>
+            <label>First name</label>
+            <InputText v-model="form.first_name" class="w-full" required />
+          </div>
+          <div>
+            <label>Last name</label>
+            <InputText v-model="form.last_name" class="w-full" required />
+          </div>
         </div>
-        <div><label>Email</label><InputText v-model="form.email" type="email" class="w-full" required /></div>
+
+        <div>
+          <label>Email</label>
+          <InputText v-model="form.email" type="email" class="w-full" required />
+        </div>
+
         <div class="form-grid">
-          <div><label>Index Number</label><InputText v-model="form.index_number" class="w-full" /></div>
-          <div><label>Phone</label><InputText v-model="form.phone_number" class="w-full" /></div>
+          <div>
+            <label>Phone number</label>
+            <InputText v-model="form.phone_number" class="w-full" placeholder="024…" />
+          </div>
+          <div>
+            <label>Index number</label>
+            <InputText v-model="form.index_number" class="w-full" placeholder="Optional for staff" />
+          </div>
         </div>
-        <div><label>Role</label><Dropdown v-model="form.role_uuid" :options="roles" optionLabel="name" optionValue="uuid" placeholder="Select role" class="w-full" required /></div>
+
+        <div class="form-grid">
+          <div>
+            <label>Role</label>
+            <Dropdown
+              v-model="form.role_uuid"
+              :options="roleOptions"
+              optionLabel="label"
+              optionValue="uuid"
+              placeholder="Select role"
+              class="w-full"
+            ></Dropdown>
+          </div>
+          <div>
+            <label>Institution</label>
+            <Dropdown
+              v-model="form.institution_uuid"
+              :options="institutions"
+              optionLabel="label"
+              optionValue="uuid"
+              placeholder="Select institution"
+              class="w-full"
+              showClear
+            ></Dropdown>
+          </div>
+        </div>
+
+        <p v-if="isAdminRole" class="field-hint">
+          Role <strong>admin</strong> is Main EC. Choosing an institution attaches this user to that institution’s Main EC unit.
+        </p>
+        <p v-else-if="isSuperAdminRole" class="field-hint">
+          Super Admin is platform-wide. Institution is optional.
+        </p>
+
         <template v-if="isStudentRole">
           <FacultyDepartmentSelect
             v-model:faculty-uuid="form.faculty_uuid"
             v-model:department-uuid="form.department_uuid"
+            grid
           />
         </template>
-        <div v-if="!isEditing"><label>Password</label><InputText v-model="form.password" type="password" class="w-full" required /></div>
+
+        <div v-if="!isEditing">
+          <label>Password</label>
+          <InputText v-model="form.password" type="password" class="w-full" required minlength="8" />
+          <p class="field-hint">Minimum 8 characters.</p>
+        </div>
+
         <div v-if="isEditing">
-          <label>Reset Password</label>
+          <label>Reset password</label>
           <div class="reset-row">
             <InputText v-model="form.new_password" type="password" class="flex-1" placeholder="New password…" />
-            <Button label="Reset" severity="warning" @click="resetPassword" />
+            <Button label="Reset" severity="warning" type="button" @click="resetPassword" />
           </div>
         </div>
+
         <div class="dialog-actions">
-          <Button label="Cancel" severity="secondary" @click="closeDialog" />
-          <Button label="Save" type="submit" :loading="submitting" />
+          <Button label="Cancel" severity="secondary" type="button" @click="closeDialog" />
+          <Button :label="isEditing ? 'Save changes' : 'Create user'" type="submit" :loading="submitting" />
         </div>
       </form>
     </Dialog>
@@ -142,6 +208,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { usersApi } from '@/api/users'
+import { institutionApi } from '@/api/institutions'
 import { formatIndexDisplay } from '@/utils/index'
 import { usePagination } from '@/composables/usePagination'
 import PageHeader from '@/components/admin/PageHeader.vue'
@@ -153,8 +220,18 @@ import InputText from 'primevue/inputtext'
 import Dropdown from 'primevue/dropdown'
 import FacultyDepartmentSelect from '@/components/academic/FacultyDepartmentSelect.vue'
 
+const ROLE_LABELS = {
+  student: 'Student',
+  candidate: 'Candidate',
+  admin: 'Main EC (admin)',
+  sub_ec: 'Sub EC',
+  auditor: 'Auditor',
+  super_admin: 'Super Admin',
+}
+
 const users = ref([])
 const roles = ref([])
+const institutions = ref([])
 const loading = ref(false)
 const submitting = ref(false)
 const showDialog = ref(false)
@@ -178,6 +255,7 @@ const emptyForm = () => ({
   index_number: '',
   phone_number: '',
   role_uuid: null,
+  institution_uuid: null,
   password: '',
   new_password: '',
   faculty_uuid: null,
@@ -186,20 +264,37 @@ const emptyForm = () => ({
 
 const form = ref(emptyForm())
 
-const isStudentRole = computed(() => {
-  const role = roles.value.find((r) => r.uuid === form.value.role_uuid)
-  return role?.name === 'student'
-})
+const selectedRole = computed(() => roles.value.find((r) => r.uuid === form.value.role_uuid) || null)
+const isStudentRole = computed(() => selectedRole.value?.name === 'student')
+const isAdminRole = computed(() => selectedRole.value?.name === 'admin')
+const isSuperAdminRole = computed(() => selectedRole.value?.name === 'super_admin')
+const needsInstitution = computed(() => ['admin', 'sub_ec', 'auditor'].includes(selectedRole.value?.name))
+
+const roleOptions = computed(() =>
+  roles.value.map((role) => ({
+    uuid: role.uuid,
+    name: role.name,
+    label: ROLE_LABELS[role.name] || role.name,
+  })),
+)
 
 const stats = computed(() => {
-  const total = users.value.length
+  const totalCount = users.value.length
   const active = users.value.filter((u) => u.is_active).length
   const students = users.value.filter((u) => u.role_name === 'student').length
-  const admins = users.value.filter((u) => ['admin', 'super_admin', 'auditor'].includes(u.role_name)).length
-  return { total, active, students, admins }
+  const admins = users.value.filter((u) => ['admin', 'super_admin', 'auditor', 'sub_ec'].includes(u.role_name)).length
+  return { total: totalCount, active, students, admins }
 })
 
-const roleBadge = (role) => ({ student: 'info', candidate: 'info', admin: 'warning', super_admin: 'danger', auditor: 'neutral' }[role] || 'neutral')
+const roleLabel = (role) => ROLE_LABELS[role] || role || 'none'
+const roleBadge = (role) => ({
+  student: 'info',
+  candidate: 'info',
+  admin: 'warning',
+  sub_ec: 'warning',
+  super_admin: 'danger',
+  auditor: 'neutral',
+}[role] || 'neutral')
 
 const fetchUsers = async () => {
   loading.value = true
@@ -227,6 +322,21 @@ const fetchRoles = async () => {
   }
 }
 
+const fetchInstitutions = async () => {
+  try {
+    const response = await institutionApi.list()
+    const rows = Array.isArray(response.data) ? response.data : (response.data?.results || [])
+    institutions.value = rows.map((row) => ({
+      uuid: row.uuid,
+      name: row.name,
+      label: row.short_name ? `${row.name} (${row.short_name})` : row.name,
+    }))
+  } catch (error) {
+    console.error('Failed to fetch institutions:', error)
+    institutions.value = []
+  }
+}
+
 const applyFilters = () => fetchUsers()
 const clearFilters = () => { filters.value = { search: '', role: '', is_active: '' }; fetchUsers() }
 
@@ -236,12 +346,17 @@ const getInitials = (user) => {
   return (first + last).toUpperCase() || 'U'
 }
 
-const formatDate = (date) => date ? new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+const formatDate = (date) => date
+  ? new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+  : '—'
 
 const openCreateDialog = () => {
   isEditing.value = false
   editingUser.value = null
   form.value = emptyForm()
+  // Default institution to TTU when present
+  const ttu = institutions.value.find((i) => /ttu|takoradi/i.test(i.label))
+  if (ttu) form.value.institution_uuid = ttu.uuid
   showDialog.value = true
 }
 
@@ -255,9 +370,10 @@ const editUser = (user) => {
     last_name: user.last_name || '',
     index_number: user.index_number || '',
     phone_number: user.phone_number || '',
-    role_uuid: user.role?.uuid || null,
-    faculty_uuid: user.faculty?.uuid || null,
-    department_uuid: user.department?.uuid || null,
+    role_uuid: user.role_uuid || user.role?.uuid || user.role || null,
+    institution_uuid: user.institution_uuid || null,
+    faculty_uuid: user.faculty_uuid || null,
+    department_uuid: user.department_uuid || null,
   }
   showDialog.value = true
 }
@@ -269,15 +385,29 @@ const closeDialog = () => {
 }
 
 const submitUser = async () => {
+  if (!form.value.role_uuid) {
+    alert('Please select a role.')
+    return
+  }
+  if (needsInstitution.value && !form.value.institution_uuid) {
+    alert('Please select an institution for this role.')
+    return
+  }
+  if (!isEditing.value && (!form.value.password || form.value.password.length < 8)) {
+    alert('Password must be at least 8 characters.')
+    return
+  }
+
   submitting.value = true
   try {
     const data = {
       email: form.value.email,
       first_name: form.value.first_name,
       last_name: form.value.last_name,
-      index_number: form.value.index_number,
-      phone_number: form.value.phone_number,
+      index_number: form.value.index_number || '',
+      phone_number: form.value.phone_number || '',
       role_uuid: form.value.role_uuid,
+      institution_uuid: form.value.institution_uuid || null,
     }
     if (isStudentRole.value) {
       data.faculty_uuid = form.value.faculty_uuid
@@ -293,7 +423,11 @@ const submitUser = async () => {
     await fetchUsers()
   } catch (error) {
     console.error('Failed to save user:', error)
-    alert('Failed to save user. Please check the form.')
+    const detail = error?.response?.data
+    const message = typeof detail === 'string'
+      ? detail
+      : detail?.detail || detail?.email?.[0] || 'Failed to save user. Please check the form.'
+    alert(message)
   } finally {
     submitting.value = false
   }
@@ -301,7 +435,7 @@ const submitUser = async () => {
 
 const resetPassword = async () => {
   if (!editingUser.value || !form.value.new_password) return
-  if (form.value.new_password.length < 6) { alert('Password must be at least 6 characters.'); return }
+  if (form.value.new_password.length < 8) { alert('Password must be at least 8 characters.'); return }
   if (!confirm(`Reset password for ${editingUser.value.email}?`)) return
   try {
     await usersApi.resetPassword(editingUser.value.uuid, form.value.new_password)
@@ -337,6 +471,63 @@ const deleteUser = async (uuid) => {
   }
 }
 
-onMounted(() => { fetchUsers(); fetchRoles() })
+onMounted(() => {
+  fetchUsers()
+  fetchRoles()
+  fetchInstitutions()
+})
 </script>
 
+<style scoped>
+.user-dialog :deep(.p-dialog-content) {
+  padding-top: 0.25rem;
+}
+
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.dialog-form label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+
+.field-hint {
+  margin: -0.35rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-muted, #64748b);
+}
+
+.reset-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);
+}
+
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
