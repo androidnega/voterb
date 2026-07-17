@@ -162,25 +162,55 @@ class LoginView(APIView):
         otp = OTPService.create_otp(user, purpose='login', channel='sms')
         MFALog.objects.create(user=user, event_type='login_otp_sent', ip_address=request.META.get('REMOTE_ADDR'))
 
-        otp_phone = resolve_otp_phone(user)
+        otp_phone = getattr(otp, '_otp_phone', None) or resolve_otp_phone(user)
+        sms_result = getattr(otp, '_sms_result', None) or {}
+        # Keep student profile phone in sync with the register row used for SMS.
+        if otp_phone and not (user.phone_number or '').strip():
+            user.phone_number = otp_phone
+            user.save(update_fields=['phone_number'])
+
         masked_phone = ''
         if otp_phone:
             digits = ''.join(ch for ch in str(otp_phone) if ch.isdigit())
             masked_phone = f'***{digits[-4:]}' if len(digits) >= 4 else '***'
 
+        sms_ok = bool(sms_result.get('ok')) if sms_result else False
         if is_staff_otp_user(user):
-            message = (
-                f'OTP sent to phone ending {masked_phone}. '
-                'You can also enter the staff master code.'
-                if masked_phone
-                else 'OTP generated. Enter the SMS code or the staff master code.'
-            )
+            if sms_ok and masked_phone:
+                message = (
+                    f'OTP sent to phone ending {masked_phone}. '
+                    'You can also enter the staff master code.'
+                )
+            elif masked_phone:
+                message = (
+                    f'Could not deliver SMS to phone ending {masked_phone}. '
+                    'Enter the staff master code from Settings, or tap Resend OTP.'
+                )
+            else:
+                message = 'OTP generated. Enter the staff master code from Settings.'
         else:
-            message = (
-                f'OTP sent to your phone ending {masked_phone}.'
-                if masked_phone
-                else 'OTP generated. Enter the code to continue.'
-            )
+            if not otp_phone:
+                return Response(
+                    {
+                        'error': (
+                            'No phone number is on your voter register. '
+                            'Contact your electoral commission to add one, then try again.'
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not sms_ok:
+                return Response(
+                    {
+                        'error': (
+                            'Could not send the login SMS right now. '
+                            'Please try again in a moment, or contact your electoral commission.'
+                        ),
+                        'phone_hint': masked_phone,
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            message = f'OTP sent to your phone ending {masked_phone}.'
 
         return Response({
             'requires_otp': True,
@@ -190,6 +220,7 @@ class LoginView(APIView):
             'onboarding_completed': bool(user.onboarding_completed) if not is_staff_user else True,
             'phone_hint': masked_phone,
             'message': message,
+            'sms_delivered': sms_ok if not is_staff_otp_user(user) else sms_ok,
         })
 
 class OTPVerifyView(APIView):
@@ -209,10 +240,17 @@ class OTPVerifyView(APIView):
 
         user = OTPService.verify_otp(otp_session_id, code)
         if not user:
-            return Response(
-                {'error': 'Invalid or expired OTP. Staff may use the master code from Settings.'},
-                status=status.HTTP_400_BAD_REQUEST,
+            try:
+                otp_row = OTPRequest.objects.select_related('user', 'user__role').get(uuid=otp_session_id)
+                staffish = is_staff_otp_user(otp_row.user)
+            except OTPRequest.DoesNotExist:
+                staffish = False
+            detail = (
+                'Invalid or expired OTP. Staff may use the master code from Settings.'
+                if staffish
+                else 'Invalid or expired OTP. Check the SMS code, or tap Resend OTP.'
             )
+            return Response({'error': detail}, status=status.HTTP_400_BAD_REQUEST)
 
         tokens = SessionService.create_session(user, request)
         MFALog.objects.create(user=user, event_type='otp_verified', ip_address=request.META.get('REMOTE_ADDR'))

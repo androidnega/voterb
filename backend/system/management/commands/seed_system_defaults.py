@@ -53,7 +53,7 @@ class Command(BaseCommand):
             {'key': 'sms_arkesel_url', 'value': 'https://sms.arkesel.com/api/v2/sms/send', 'category': 'integrations', 'description': 'Arkesel SMS API URL'},
             {'key': 'sms_moolre_api_key', 'value': '', 'category': 'integrations', 'description': 'Moolre API key', 'is_encrypted': True},
             {'key': 'sms_moolre_sender_id', 'value': 'VoteBridge', 'category': 'integrations', 'description': 'Moolre sender ID'},
-            {'key': 'sms_moolre_url', 'value': 'https://api.moolre.com/v1/sms/send', 'category': 'integrations', 'description': 'Moolre SMS API URL'},
+            {'key': 'sms_moolre_url', 'value': 'https://api.moolre.com/open/sms/send', 'category': 'integrations', 'description': 'Moolre SMS API URL'},
             {'key': 'sms_api_key', 'value': '', 'category': 'integrations', 'description': 'Legacy SMS API key alias', 'is_encrypted': True},
             {'key': 'sms_sender_id', 'value': 'VoteBridge', 'category': 'integrations', 'description': 'Legacy SMS sender ID'},
 
@@ -104,6 +104,10 @@ class Command(BaseCommand):
                     changed = True
                 # Fill empty callback / service code with live defaults
                 if setting['key'] in ('ussd_callback_url', 'ussd_service_code') and not (obj.value or '').strip():
+                    obj.value = setting['value']
+                    changed = True
+                # Rewrite legacy Moolre endpoint so OTP fallback works.
+                if setting['key'] == 'sms_moolre_url' and '/v1/sms/send' in (obj.value or ''):
                     obj.value = setting['value']
                     changed = True
                 if changed:

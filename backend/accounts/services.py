@@ -84,16 +84,43 @@ def resolve_otp_phone(user):
         shared = get_staff_otp_phone()
         if shared:
             return shared
-    return (getattr(user, 'phone_number', None) or '').strip()
+    phone = (getattr(user, 'phone_number', None) or '').strip()
+    if phone:
+        return phone
+    # Students often keep the live phone on the approved register row.
+    try:
+        from elections.models import VoterRegister, VoterRegisterEntry
+
+        entry = (
+            VoterRegisterEntry.objects
+            .filter(
+                user=user,
+                register__approval_status=VoterRegister.APPROVAL_APPROVED,
+                register__replace_of__isnull=True,
+            )
+            .exclude(phone_number__isnull=True)
+            .exclude(phone_number='')
+            .order_by('-created_at')
+            .only('phone_number')
+            .first()
+        )
+        if entry and entry.phone_number:
+            return entry.phone_number.strip()
+    except Exception:
+        pass
+    return ''
 
 
 class OTPService:
     @staticmethod
     def create_otp(user, purpose='login', channel='sms'):
         """Generate OTP, hash it, store in DB, optionally SMS it, and return the OTP request."""
+        from system.settings_utils import get_setting_int
+
         code = f"{random.randint(100000, 999999)}"
         hashed = hashlib.sha256(code.encode()).hexdigest()
-        expires_at = timezone.now() + timedelta(minutes=5)
+        expiry_minutes = max(1, get_setting_int('otp_expiry_minutes', 5))
+        expires_at = timezone.now() + timedelta(minutes=expiry_minutes)
         otp = OTPRequest.objects.create(
             user=user,
             purpose=purpose,
@@ -108,20 +135,30 @@ class OTPService:
                 print(f"🔑 Staff OTP SMS target: {get_staff_otp_phone() or '(none)'}")
 
         phone = resolve_otp_phone(user)
+        sms_result = None
         if channel == 'sms' and phone:
             try:
                 from notifications.tasks import dispatch_sms
-                # Never block login on SMS/Celery — staff can use master OTP from Settings.
-                dispatch_sms(
+                # Login OTP must actually send: wait briefly, then sync-send with
+                # Arkesel → Moolre fallback if workers are down/slow.
+                sms_result = dispatch_sms(
                     phone=phone,
                     message=(
                         f'Your VoteBridge login code is {code}. '
-                        'It expires in 5 minutes. Do not share this code.'
+                        f'It expires in {expiry_minutes} minutes. Do not share this code.'
                     ),
-                    realtime=False,
+                    realtime=True,
                 )
+                if not sms_result.get('ok'):
+                    print(
+                        f"⚠️ OTP SMS not delivered for {user.index_number or user.email}: "
+                        f"{sms_result.get('error') or sms_result}"
+                    )
             except Exception as exc:
                 print(f'⚠️ OTP SMS failed for {user.index_number or user.email}: {exc}')
+                sms_result = {'ok': False, 'error': str(exc)}
+        otp._sms_result = sms_result  # transient attribute for login response
+        otp._otp_phone = phone
         return otp
 
     @staticmethod

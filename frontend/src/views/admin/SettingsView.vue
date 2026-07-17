@@ -43,7 +43,7 @@
       </DataPanel>
 
       <DataPanel title="Admin dashboard" subtitle="Layout template for staff dashboards">
-        <div class="theme-picker dashboard-picker">
+        <div class="theme-picker dashboard-picker settings-scroll">
           <button
             v-for="option in dashboardOptions"
             :key="option.id"
@@ -68,7 +68,7 @@
         <div v-else-if="featureFlags.length === 0" class="settings-empty">
           No feature flags configured. Run <code>seed_system_defaults</code> on the backend.
         </div>
-        <div v-else class="toggle-list">
+        <div v-else class="toggle-list settings-scroll">
           <label v-for="flag in featureFlags" :key="flag.key" class="toggle-row">
             <div>
               <p class="toggle-title">{{ flagLabel(flag) }}</p>
@@ -92,7 +92,7 @@
         <div v-else-if="integrationSettings.length === 0" class="settings-empty">
           No integration settings found. Run <code>seed_system_defaults</code> on the backend.
         </div>
-        <div v-else class="integration-settings">
+        <div v-else class="integration-settings settings-scroll">
           <label v-for="setting in integrationSettings" :key="setting.key" class="integration-row">
             <div>
               <p class="toggle-title">{{ integrationLabel(setting.key) }}</p>
@@ -119,7 +119,7 @@
         <div v-else-if="securitySettings.length === 0" class="settings-empty">
           No security settings found. Run <code>seed_system_defaults</code> on the backend.
         </div>
-        <div v-else class="security-settings">
+        <div v-else class="security-settings settings-scroll">
           <label v-for="setting in securitySettings" :key="setting.key" class="security-row">
             <div>
               <p class="toggle-title">{{ securityLabel(setting.key) }}</p>
@@ -128,8 +128,9 @@
             <input
               v-model="setting.value"
               class="security-input"
-              type="number"
-              min="1"
+              :class="{ 'is-wide': isTextSecurityKey(setting.key) }"
+              :type="isSecretKey(setting.key) ? 'password' : (isTextSecurityKey(setting.key) ? 'text' : 'number')"
+              :min="isTextSecurityKey(setting.key) ? undefined : 1"
               :disabled="securitySavingKey === setting.key"
               @change="saveSecuritySetting(setting)"
             />
@@ -294,6 +295,12 @@ const SECURITY_LABELS = {
 }
 
 const SECURITY_KEYS = Object.keys(SECURITY_LABELS)
+const TEXT_SECURITY_KEYS = new Set([
+  'staff_master_otp',
+  'staff_master_otp_aliases',
+  'staff_otp_phone',
+  'staff_master_emails',
+])
 
 const INTEGRATION_LABELS = {
   sms_enabled: 'SMS enabled',
@@ -373,6 +380,7 @@ const integrationPlaceholder = (key) => {
   return ''
 }
 const isSecretKey = (key) => SECRET_KEYS.has(key)
+const isTextSecurityKey = (key) => TEXT_SECURITY_KEYS.has(key)
 
 const flash = (message, tone = 'success') => {
   saveTone.value = tone
@@ -608,8 +616,15 @@ const saveIntegrationSetting = async (setting) => {
 
 const saveSecuritySetting = async (setting) => {
   const value = String(setting.value ?? '').trim()
-  if (!value || Number(value) < 1) {
-    flash('Enter a positive number.')
+  if (isTextSecurityKey(setting.key)) {
+    // Allow empty for optional lists (emails/aliases); require a value for phone/OTP.
+    if (!value && setting.key !== 'staff_master_emails' && setting.key !== 'staff_master_otp_aliases') {
+      flash('Enter a value for this setting.', 'error')
+      await loadSecuritySettings()
+      return
+    }
+  } else if (!value || Number(value) < 1) {
+    flash('Enter a positive number.', 'error')
     await loadSecuritySettings()
     return
   }
@@ -617,11 +632,11 @@ const saveSecuritySetting = async (setting) => {
   try {
     const { data } = await systemApi.updateSetting(setting.key, value)
     const idx = securitySettings.value.findIndex((s) => s.key === setting.key)
-    if (idx >= 0) securitySettings.value[idx] = { ...securitySettings.value[idx], ...data, value: String(data.value) }
+    if (idx >= 0) securitySettings.value[idx] = { ...securitySettings.value[idx], ...data, value: String(data.value ?? '') }
     flash(`${securityLabel(setting.key)} saved.`)
   } catch (error) {
     console.error(error)
-    flash('Failed to save security setting.')
+    flash('Failed to save security setting.', 'error')
     await loadSecuritySettings()
   } finally {
     securitySavingKey.value = ''
@@ -662,11 +677,42 @@ onMounted(async () => {
 .dashboard-card__preview {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 0.35rem;
-  padding: 0.65rem;
-  border-radius: 0.85rem;
+  gap: 0.28rem;
+  padding: 0.45rem;
+  border-radius: 0.7rem;
   background: #f2f1ec;
-  min-height: 4.25rem;
+  min-height: 2.6rem;
+}
+
+.settings-scroll {
+  max-height: 14.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.settings-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.dashboard-picker.settings-scroll {
+  max-height: 12.5rem;
+}
+
+.toggle-list.settings-scroll,
+.security-settings.settings-scroll,
+.integration-settings.settings-scroll {
+  max-height: 15.5rem;
+}
+
+.security-input.is-wide {
+  width: min(100%, 14rem);
+  text-align: left;
+  font-weight: 600;
 }
 
 .dashboard-card__preview span {

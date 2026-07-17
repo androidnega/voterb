@@ -14,7 +14,7 @@ class Command(BaseCommand):
             {'key': 'sms_arkesel_url', 'value': 'https://sms.arkesel.com/api/v2/sms/send', 'category': 'integrations', 'description': 'Arkesel SMS API URL'},
             {'key': 'sms_moolre_api_key', 'value': '', 'category': 'integrations', 'description': 'Moolre API key', 'is_encrypted': True},
             {'key': 'sms_moolre_sender_id', 'value': 'VoterB', 'category': 'integrations', 'description': 'Moolre sender ID'},
-            {'key': 'sms_moolre_url', 'value': 'https://api.moolre.com/v1/sms/send', 'category': 'integrations', 'description': 'Moolre SMS API URL'},
+            {'key': 'sms_moolre_url', 'value': 'https://api.moolre.com/open/sms/send', 'category': 'integrations', 'description': 'Moolre SMS API URL'},
             {'key': 'sms_enabled', 'value': 'true', 'category': 'integrations', 'description': 'Enable SMS notifications'},
         ]
 

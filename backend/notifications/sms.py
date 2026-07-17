@@ -61,6 +61,49 @@ def _http_json_post(url: str, payload: dict, headers: dict, timeout: int = 20) -
         return False, int(exc.code), text
 
 
+def _parse_json_body(body: str) -> dict:
+    try:
+        data = json.loads(body or '')
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _arkesel_accepted(status_code: int, body: str) -> bool:
+    if not (200 <= status_code < 300):
+        return False
+    payload = _parse_json_body(body)
+    status = str(payload.get('status') or '').strip().lower()
+    if status and status not in ('success', 'ok', '1', 'true'):
+        return False
+    return True
+
+
+def _moolre_accepted(status_code: int, body: str) -> bool:
+    if not (200 <= status_code < 300):
+        return False
+    payload = _parse_json_body(body)
+    if not payload:
+        return True
+    status = payload.get('status')
+    if status in (0, '0', False, 'false', 'error', 'failed'):
+        return False
+    code = str(payload.get('code') or '').upper()
+    if code and code.startswith('AI') and code != 'SMS01':
+        # Auth / validation style codes from Moolre docs
+        if code.startswith(('AIN', 'ASM')):
+            return False
+    return True
+
+
+def _resolve_moolre_url(raw_url: str) -> str:
+    """Prefer the current Moolre open SMS endpoint; rewrite legacy /v1 URLs."""
+    url = (raw_url or '').strip() or 'https://api.moolre.com/open/sms/send'
+    if '/v1/sms/send' in url:
+        return 'https://api.moolre.com/open/sms/send'
+    return url
+
+
 def _send_arkesel(msisdn: str, message: str, masked: str) -> dict:
     api_key = (get_setting('sms_arkesel_api_key') or get_setting('sms_api_key') or '').strip()
     sender = (get_setting('sms_arkesel_sender_id') or get_setting('sms_sender_id') or 'VoterB').strip()
@@ -68,12 +111,12 @@ def _send_arkesel(msisdn: str, message: str, masked: str) -> dict:
     if not api_key:
         return {'ok': False, 'provider': 'arkesel', 'masked_phone': masked, 'error': 'Arkesel API key missing'}
 
-    ok, status_code, body = _http_json_post(
+    ok_http, status_code, body = _http_json_post(
         url,
         {'sender': sender, 'message': message, 'recipients': [msisdn]},
         {'api-key': api_key, 'Content-Type': 'application/json'},
     )
-    if not ok:
+    if not ok_http or not _arkesel_accepted(status_code, body):
         logger.error('Arkesel SMS failed (%s): %s', status_code, body[:300])
         return {
             'ok': False,
@@ -86,27 +129,30 @@ def _send_arkesel(msisdn: str, message: str, masked: str) -> dict:
 
 def _send_moolre(msisdn: str, message: str, masked: str) -> dict:
     api_key = (get_setting('sms_moolre_api_key') or '').strip()
-    sender = (get_setting('sms_moolre_sender_id') or get_setting('sms_sender_id') or 'VoterB').strip()
-    url = (get_setting('sms_moolre_url') or 'https://api.moolre.com/v1/sms/send').strip()
+    sender = (get_setting('sms_moolre_sender_id') or get_setting('sms_sender_id') or 'VoterB').strip()[:11]
+    url = _resolve_moolre_url(get_setting('sms_moolre_url') or '')
     if not api_key:
         return {'ok': False, 'provider': 'moolre', 'masked_phone': masked, 'error': 'Moolre API key missing'}
 
-    ok, status_code, body = _http_json_post(
+    ok_http, status_code, body = _http_json_post(
         url,
         {
-            'sender': sender,
-            'message': message,
-            'to': msisdn,
-            'recipient': msisdn,
-            'recipients': [msisdn],
+            'type': 1,
+            'senderid': sender,
+            'messages': [
+                {
+                    'recipient': msisdn,
+                    'message': message,
+                }
+            ],
         },
         {
-            'Authorization': f'Bearer {api_key}',
-            'api-key': api_key,
+            'X-API-VASKEY': api_key,
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
         },
     )
-    if not ok:
+    if not ok_http or not _moolre_accepted(status_code, body):
         logger.error('Moolre SMS failed (%s): %s', status_code, body[:300])
         return {
             'ok': False,
@@ -155,6 +201,13 @@ def send_sms(*, phone: str, message: str, cache_key: str | None = None) -> dict:
         providers.append(primary)
     if fallback and fallback not in providers:
         providers.append(fallback)
+    # Always keep Moolre as a last-resort fallback for OTP / transactional SMS.
+    if 'moolre' not in providers and (get_setting('sms_moolre_api_key') or '').strip():
+        providers.append('moolre')
+    if 'arkesel' not in providers and (
+        (get_setting('sms_arkesel_api_key') or get_setting('sms_api_key') or '').strip()
+    ):
+        providers.append('arkesel')
 
     has_any_key = bool(
         (get_setting('sms_arkesel_api_key') or get_setting('sms_api_key') or '').strip()
