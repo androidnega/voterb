@@ -85,6 +85,7 @@
                   <p v-if="currentPosition.description" class="ballot-card__desc">{{ currentPosition.description }}</p>
                   <p class="ballot-card__hint">
                     Select up to {{ currentPosition.max_votes_allowed }} candidate{{ currentPosition.max_votes_allowed === 1 ? '' : 's' }}.
+                    Optional — you can skip this position.
                   </p>
                 </div>
                 <span v-if="isCurrentSealed" class="ballot-sealed-pill">
@@ -165,7 +166,7 @@
       <div class="review-list">
         <div v-for="pos in positions" :key="pos.uuid" class="review-item">
           <p class="review-item__pos">{{ pos.title }}</p>
-          <div v-if="getSelections(pos.uuid).length === 0" class="review-item__empty">No selection</div>
+          <div v-if="getSelections(pos.uuid).length === 0" class="review-item__empty">Skipped</div>
           <div v-else class="review-picks">
             <div v-for="candidate in getSelections(pos.uuid)" :key="candidate.uuid" class="review-pick">
               <img
@@ -263,16 +264,16 @@ function setStep(idx) {
   stepDirection.value = next > current ? 1 : -1
   activeStep.value = String(next)
 }
-const canSealCurrent = computed(() => {
-  if (phase.value !== 'select') return false
-  if (isCurrentSealed.value) return true
-  return (selections.value[currentPosition.value?.uuid] || []).length > 0
-})
+const canSealCurrent = computed(() => phase.value === 'select')
 const primaryActionLabel = computed(() => {
   if (isCurrentSealed.value) {
     return activeStepIndex.value === positions.value.length - 1 ? 'Review & submit' : 'Continue'
   }
-  return activeStepIndex.value === positions.value.length - 1 ? 'Seal & review' : 'Seal ballot'
+  const hasPicks = (selections.value[currentPosition.value?.uuid] || []).length > 0
+  if (activeStepIndex.value === positions.value.length - 1) {
+    return hasPicks ? 'Seal & review' : 'Skip & review'
+  }
+  return hasPicks ? 'Seal ballot' : 'Skip'
 })
 
 function initials(name) {
@@ -463,12 +464,7 @@ function sealCurrentPosition() {
     return
   }
 
-  const picks = getSelections(pos.uuid)
-  if (!picks.length) {
-    submitError.value = 'Select at least one candidate before sealing this ballot.'
-    return
-  }
-
+  // Selections are optional per position — empty means abstain/skip.
   submitError.value = ''
   const nextIdx = activeStepIndex.value + 1
   const isLast = nextIdx >= positions.value.length
@@ -496,10 +492,9 @@ function finishCeremony() {
 }
 
 function openReviewIfReady() {
-  const allSelected = positions.value.every((pos) => selections.value[pos.uuid]?.length > 0)
   const allSealed = positions.value.every((pos) => sealedIds.value.has(pos.uuid))
-  if (!allSelected || !allSealed) {
-    submitError.value = 'Please seal every position before submitting.'
+  if (!allSealed) {
+    submitError.value = 'Please confirm each position (you can skip any you do not want to vote for).'
     const missing = positions.value.findIndex((pos) => !sealedIds.value.has(pos.uuid))
     if (missing >= 0) setStep(missing)
     return

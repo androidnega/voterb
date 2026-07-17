@@ -279,20 +279,24 @@
       </article>
     </div>
   </div>
+
+  <GovernanceSubmittedModal
+    v-model:visible="showGovernanceModal"
+    :message="governanceMessage"
+  />
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import InputText from 'primevue/inputtext'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import DataPanel from '@/components/admin/DataPanel.vue'
+import GovernanceSubmittedModal from '@/components/admin/GovernanceSubmittedModal.vue'
 import { governanceApi } from '@/api/governance'
 import { academicApi } from '@/api/academic'
 import { parseApiError } from '@/utils/apiError'
 import { usePageHeading } from '@/composables/usePageHeading'
 
-const router = useRouter()
 const { setPageHeading } = usePageHeading()
 setPageHeading({
   title: 'Sub ECs',
@@ -308,6 +312,8 @@ const showForm = ref(false)
 const formError = ref('')
 const pickFaculty = ref('')
 const pickDepartment = ref('')
+const showGovernanceModal = ref(false)
+const governanceMessage = ref('')
 
 const emptyForm = () => ({
   unit_name: '',
@@ -464,8 +470,8 @@ const submitProposal = async () => {
       ;({ data } = await governanceApi.proposeSubEC(payload))
     }
     closeForm()
-    alert(data.message || 'Submitted for dual Main EC approval.')
-    router.push('/approvals')
+    governanceMessage.value = data.message || 'Submitted for dual Main EC approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'
+    showGovernanceModal.value = true
   } catch (error) {
     formError.value = parseApiError(error) || 'Could not submit for approval.'
   } finally {

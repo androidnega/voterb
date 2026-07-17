@@ -22,16 +22,7 @@
             Monitor
           </button>
           <button
-            v-if="canManageElections && election.status === 'draft'"
-            type="button"
-            class="btn btn-ghost"
-            @click="updateStatus('scheduled')"
-          >
-            <i class="fas fa-calendar-plus"></i>
-            Schedule
-          </button>
-          <button
-            v-if="canManageElections && election.status === 'scheduled'"
+            v-if="canManageElections && ['draft', 'scheduled'].includes(election.status)"
             type="button"
             class="btn btn-primary"
             @click="openElection"
@@ -81,6 +72,14 @@
       </span>
     </div>
 
+    <ElectionCountdown
+      v-if="['open', 'paused'].includes(election.status) && election.end_date"
+      :election="election"
+      label="Voting ends in"
+      :beep="false"
+      class="page-section election-end-countdown"
+    />
+
     <section
       v-if="canManageElections && election.status === 'draft'"
       class="setup-strip page-section"
@@ -106,11 +105,11 @@
           <p>Link an approved register</p>
         </div>
       </div>
-      <div class="setup-strip__step is-optional">
-        <span class="setup-strip__num">✓</span>
+      <div class="setup-strip__step">
+        <span class="setup-strip__num">4</span>
         <div>
-          <strong>Dry-run <em>(optional)</em></strong>
-          <p>Test the ballot flow — skip anytime</p>
+          <strong>Start election</strong>
+          <p>Confirm when ready to open voting</p>
         </div>
       </div>
     </section>
@@ -118,45 +117,21 @@
     <section
       v-if="canManageElections && ['draft', 'scheduled'].includes(election.status)"
       class="launch-card page-section"
-      :class="{ 'is-spotlight': launchSpotlight }"
     >
       <div class="launch-card__copy">
-        <h3>{{ election.status === 'scheduled' ? 'Start this election' : 'Ready when you are' }}</h3>
+        <h3>Start this election</h3>
         <p>
-          <template v-if="election.status === 'draft'">
-            Dry-run is optional. Schedule the election when positions, candidates, and voters are ready.
-          </template>
-          <template v-else>
-            Dry-run is optional. Open voting now to let eligible students cast ballots.
-          </template>
+          When positions, candidates, and voters are ready, confirm to open voting for eligible students on this election’s register.
         </p>
       </div>
       <div class="launch-card__actions">
         <button
-          v-if="election.status === 'draft'"
-          type="button"
-          class="btn btn-primary"
-          @click="updateStatus('scheduled')"
-        >
-          <i class="fas fa-calendar-plus"></i>
-          Schedule election
-        </button>
-        <button
-          v-else
           type="button"
           class="btn btn-primary"
           @click="openElection"
         >
           <i class="fas fa-play"></i>
           Start election
-        </button>
-        <button
-          v-if="election.status === 'draft'"
-          type="button"
-          class="btn btn-ghost"
-          @click="activeTab = 'preview'"
-        >
-          Optional dry-run
         </button>
       </div>
     </section>
@@ -221,7 +196,7 @@
       :no-padding="activeTab !== 'positions'"
       class="election-section-panel"
     >
-      <template v-if="canManageElections && activeTab === 'positions'" #header>
+      <template v-if="canEditElection && activeTab === 'positions'" #header>
         <button type="button" class="btn btn-primary" @click="openPositionDialog">
           <i class="fas fa-plus"></i>
           Add position
@@ -295,7 +270,7 @@
         <CandidateManager
           :election-uuid="route.params.uuid"
           :election-status="election.status"
-          :readonly="!canManageElections"
+          :readonly="!canEditElection"
           @updated="candidateCount = $event"
         />
       </div>
@@ -304,18 +279,10 @@
       <div v-else-if="activeTab === 'voters'" class="tab-panel-body">
         <VoterManager
           :election-uuid="route.params.uuid"
-          :readonly="!canManageElections || isSubEC"
+          :readonly="!canEditElection || isSubEC"
           :initial-register-uuid="registerDeepLink"
           :open-create-register="openCreateRegister"
           @deep-link-consumed="clearRegisterDeepLink"
-        />
-      </div>
-
-      <!-- Dummy preview (draft / scheduled only) -->
-      <div v-else-if="activeTab === 'preview'" class="tab-panel-body">
-        <DummyPreview
-          :election-uuid="route.params.uuid"
-          @completed="onDummyPreviewCompleted"
         />
       </div>
     </DataPanel>
@@ -439,6 +406,11 @@
       <p>Loading election…</p>
     </div>
   </div>
+
+  <GovernanceSubmittedModal
+    v-model:visible="showGovernanceModal"
+    :message="governanceMessage"
+  />
 </template>
 
 <script setup>
@@ -457,9 +429,10 @@ import PageHeader from '@/components/admin/PageHeader.vue'
 import DataPanel from '@/components/admin/DataPanel.vue'
 import TabNav from '@/components/admin/TabNav.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
+import GovernanceSubmittedModal from '@/components/admin/GovernanceSubmittedModal.vue'
 import CandidateManager from '@/components/elections/CandidateManager.vue'
 import VoterManager from '@/components/elections/VoterManager.vue'
-import DummyPreview from '@/components/elections/DummyPreview.vue'
+import ElectionCountdown from '@/components/student/ElectionCountdown.vue'
 import { registerApi } from '@/api/registers'
 import BarChart from '@/components/charts/BarChart.vue'
 import DonutChart from '@/components/charts/DonutChart.vue'
@@ -470,6 +443,9 @@ const router = useRouter()
 const authStore = useAuthStore()
 const { setPageHeading } = usePageHeading()
 const canManageElections = computed(() => !!election.value?.can_manage)
+const canEditElection = computed(
+  () => canManageElections.value && ['draft', 'scheduled'].includes(election.value?.status),
+)
 const canCreateElections = computed(() => authStore.isElectionManager)
 const isSubEC = computed(() => authStore.isSubEC && !authStore.isMainEC)
 
@@ -504,12 +480,12 @@ const isGenerating = ref(false)
 const monitorData = ref(null)
 const registerDeepLink = ref('')
 const openCreateRegister = ref(false)
-const launchSpotlight = ref(false)
-let launchSpotlightTimer = null
+const showGovernanceModal = ref(false)
+const governanceMessage = ref('')
 
 const applyVotersQuery = () => {
   const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
-  if (['positions', 'candidates', 'voters', 'preview'].includes(tab)) {
+  if (['positions', 'candidates', 'voters'].includes(tab)) {
     activeTab.value = tab
   }
   const voters = route.query.voters
@@ -636,14 +612,6 @@ const tabItems = computed(() => {
       tone: 'teal',
     },
   ]
-  if (['draft', 'scheduled'].includes(election.value?.status)) {
-    tabs.push({
-      key: 'preview',
-      label: 'Dry-run',
-      icon: 'fas fa-flask',
-      tone: 'slate',
-    })
-  }
   return tabs
 })
 
@@ -652,10 +620,6 @@ const activePanel = computed(() => {
     positions: { title: 'Positions', subtitle: 'Ballot positions and vote limits' },
     candidates: { title: 'Candidates', subtitle: 'Approved and pending candidates' },
     voters: { title: '', subtitle: '' },
-    preview: {
-      title: 'Dry-run (optional)',
-      subtitle: 'Optional ballot-flow check — skip it and schedule or start whenever you are ready',
-    },
   }
   return map[activeTab.value] || map.positions
 })
@@ -738,50 +702,31 @@ const handleGovernanceResponse = (response, fallbackMessage) => {
   const data = response?.data
   const status = response?.status
   if (status === 202 || data?.status === 'pending') {
-    alert(
+    governanceMessage.value =
       data?.message
-        || 'Submitted for dual Main EC approval. Both institutional EC members must approve before enrollment.',
-    )
-    router.push('/approvals')
+      || fallbackMessage
+      || 'Submitted for dual Main EC approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'
+    showGovernanceModal.value = true
     return true
   }
   return false
 }
 
-const updateStatus = async (newStatus) => {
-  try {
-    const response = await electionApi.update(election.value.uuid, { status: newStatus })
-    if (handleGovernanceResponse(response)) return
-    await fetchElection()
-  } catch (error) {
-    console.error('Failed to update status:', error)
-    alert(error.response?.data?.detail || 'Failed to update status. Please try again.')
-  }
-}
-
 const openElection = async () => {
+  if (!confirm('Start this election now? Eligible voters will be able to cast ballots.')) return
   try {
     const response = await electionApi.open(election.value.uuid)
     if (handleGovernanceResponse(response)) return
     await fetchElection()
   } catch (error) {
     console.error('Failed to open election:', error)
-    alert(error.response?.data?.detail || 'Failed to open election. Please check readiness.')
-  }
-}
-
-const onDummyPreviewCompleted = () => {
-  // Dry-run is optional and never required — spotlight Start/Schedule afterward.
-  activeTab.value = 'positions'
-  launchSpotlight.value = true
-  if (launchSpotlightTimer) clearTimeout(launchSpotlightTimer)
-  launchSpotlightTimer = setTimeout(() => {
-    launchSpotlight.value = false
-  }, 6000)
-  try {
-    document.querySelector('.launch-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  } catch {
-    /* ignore */
+    const data = error.response?.data
+    alert(
+      data?.error ||
+      data?.detail ||
+      data?.title?.[0] ||
+      'Failed to open election. Please check readiness.',
+    )
   }
 }
 
@@ -904,23 +849,6 @@ watch(
   color: #fff;
 }
 
-.setup-strip__step.is-optional {
-  border-style: dashed;
-  opacity: 0.92;
-}
-
-.setup-strip__step.is-optional .setup-strip__num {
-  background: #f1f5f9;
-  color: #64748b;
-  font-size: 0.72rem;
-}
-
-.setup-strip__step em {
-  font-style: normal;
-  font-weight: 650;
-  color: #64748b;
-}
-
 .launch-card {
   display: flex;
   flex-wrap: wrap;
@@ -933,13 +861,6 @@ watch(
     linear-gradient(135deg, rgba(61, 79, 68, 0.08), rgba(163, 177, 138, 0.12)),
     #fff;
   border: 1px solid rgba(61, 79, 68, 0.18);
-  transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
-}
-
-.launch-card.is-spotlight {
-  border-color: rgba(61, 79, 68, 0.4);
-  box-shadow: 0 0 0 4px rgba(61, 79, 68, 0.12), 0 14px 32px rgba(28, 28, 28, 0.08);
-  transform: translateY(-1px);
 }
 
 .launch-card__copy {

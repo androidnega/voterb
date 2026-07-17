@@ -16,9 +16,9 @@ export const electionApi = {
     return api.post('/elections/', data)
   },
   
-  // Update election
+  // Update election (partial — avoids requiring every field on status changes)
   update(uuid, data) {
-    return api.put(`/elections/${uuid}/`, data)
+    return api.patch(`/elections/${uuid}/`, data)
   },
   
   // Delete election

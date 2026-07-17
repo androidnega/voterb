@@ -28,6 +28,18 @@ def _manage_or_403(user, election):
         )
 
 
+def _locked_after_start(election):
+    if election.status in ('open', 'paused', 'closed', 'archived'):
+        return Response(
+            {
+                'detail': 'This election has started. Candidate changes are locked.',
+                'code': 'election_locked',
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    return None
+
+
 class CandidateListCreateView(generics.ListCreateAPIView):
     """GET: election viewers. POST: Main/Sub EC who can manage the election."""
     serializer_class = CandidateSerializer
@@ -45,6 +57,9 @@ class CandidateListCreateView(generics.ListCreateAPIView):
 
     def create(self, request, *args, **kwargs):
         election = _election_for_viewer(request, self.kwargs['election_uuid'])
+        locked = _locked_after_start(election)
+        if locked:
+            return locked
         blocked = _manage_or_403(request.user, election)
         if blocked:
             return blocked
@@ -72,6 +87,9 @@ class CandidateDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def update(self, request, *args, **kwargs):
         election = _election_for_viewer(request, self.kwargs['election_uuid'])
+        locked = _locked_after_start(election)
+        if locked:
+            return locked
         blocked = _manage_or_403(request.user, election)
         if blocked:
             return blocked
@@ -79,6 +97,9 @@ class CandidateDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         election = _election_for_viewer(request, self.kwargs['election_uuid'])
+        locked = _locked_after_start(election)
+        if locked:
+            return locked
         blocked = _manage_or_403(request.user, election)
         if blocked:
             return blocked
@@ -90,6 +111,9 @@ class CandidateApproveView(APIView):
 
     def post(self, request, election_uuid, candidate_uuid):
         election = _election_for_viewer(request, election_uuid)
+        locked = _locked_after_start(election)
+        if locked:
+            return locked
         blocked = _manage_or_403(request.user, election)
         if blocked:
             return blocked
@@ -104,6 +128,9 @@ class CandidateRejectView(APIView):
 
     def post(self, request, election_uuid, candidate_uuid):
         election = _election_for_viewer(request, election_uuid)
+        locked = _locked_after_start(election)
+        if locked:
+            return locked
         blocked = _manage_or_403(request.user, election)
         if blocked:
             return blocked

@@ -24,6 +24,7 @@ export function parseCountdown(targetDate, now = Date.now()) {
 export function getElectionTiming(election, now = Date.now()) {
   const startMs = election?.start_date ? new Date(election.start_date).getTime() : 0
   const endMs = election?.end_date ? new Date(election.end_date).getTime() : 0
+  const status = election?.status
 
   if (!startMs || !endMs) {
     return {
@@ -31,6 +32,33 @@ export function getElectionTiming(election, now = Date.now()) {
       label: 'Schedule',
       target: null,
       ...parseCountdown(null, now),
+    }
+  }
+
+  // Once voting is explicitly started, always count toward the closing time,
+  // even if an administrator opened it before its originally scheduled start.
+  if (['open', 'paused'].includes(status) && now < endMs) {
+    return {
+      phase: 'open',
+      label: 'Closes in',
+      target: election.end_date,
+      absoluteLabel: 'Closes',
+      ...parseCountdown(election.end_date, now),
+    }
+  }
+
+  if (['closed', 'archived'].includes(status)) {
+    return {
+      phase: 'closed',
+      label: 'Voting ended',
+      target: election.end_date,
+      absoluteLabel: 'Closed',
+      expired: true,
+      days: 0,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+      totalMs: 0,
     }
   }
 

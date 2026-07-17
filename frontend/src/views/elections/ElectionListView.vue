@@ -130,6 +130,13 @@
               </div>
             </div>
 
+            <ElectionCountdown
+              v-if="['open', 'paused'].includes(election.status) && election.end_date"
+              :election="election"
+              label="Voting ends in"
+              :beep="false"
+            />
+
             <footer class="election-card__foot" @click.stop>
               <button type="button" class="card-link" @click="viewElection(election.uuid)">
                 Open
@@ -145,7 +152,7 @@
                   <i class="fas fa-tv"></i>
                 </router-link>
                 <button
-                  v-if="canManageElection(election)"
+                  v-if="canEditElection(election)"
                   type="button"
                   class="tool-btn"
                   title="Edit"
@@ -154,7 +161,7 @@
                   <i class="fas fa-pen"></i>
                 </button>
                 <button
-                  v-if="canManageElection(election)"
+                  v-if="canEditElection(election)"
                   type="button"
                   class="tool-btn is-danger"
                   title="Delete"
@@ -192,6 +199,11 @@
           @cancel="showCreateDialog = false"
         />
       </Dialog>
+
+      <GovernanceSubmittedModal
+        v-model:visible="showGovernanceModal"
+        :message="governanceMessage"
+      />
     </div>
   </Transition>
 </template>
@@ -204,19 +216,25 @@ import { electionApi } from '@/api/elections'
 import Dialog from 'primevue/dialog'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
+import GovernanceSubmittedModal from '@/components/admin/GovernanceSubmittedModal.vue'
 import CreateElectionForm from '@/components/elections/CreateElectionForm.vue'
+import ElectionCountdown from '@/components/student/ElectionCountdown.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const canCreateElections = computed(() => authStore.isElectionManager)
 const canManageElection = (election) => !!election?.can_manage
+const canEditElection = (election) =>
+  canManageElection(election) && ['draft', 'scheduled'].includes(election?.status)
 const canManageElections = canCreateElections
 
 const elections = ref([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
 const statusFilter = ref('')
+const showGovernanceModal = ref(false)
+const governanceMessage = ref('')
 
 const statusOptions = [
   { value: 'open', label: 'Open' },
@@ -358,11 +376,10 @@ const onElectionCreated = (election) => {
 
 const onElectionPendingApproval = (decision) => {
   showCreateDialog.value = false
-  alert(
+  governanceMessage.value =
     decision?.message
-      || 'Submitted for dual Main EC approval. Both institutional EC members must approve before the election is created.',
-  )
-  router.push('/approvals')
+    || 'Submitted for dual Main EC approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'
+  showGovernanceModal.value = true
 }
 
 onMounted(() => {

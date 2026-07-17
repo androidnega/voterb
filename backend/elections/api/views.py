@@ -45,6 +45,19 @@ def _manage_or_403(user, election):
         )
 
 
+def _locked_after_start(election):
+    """Return a response when ballot configuration can no longer be changed."""
+    if election.status in ('open', 'paused', 'closed', 'archived'):
+        return Response(
+            {
+                'detail': 'This election has started. Editing and deletion are locked.',
+                'code': 'election_locked',
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    return None
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ELECTION CRUD
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -124,6 +137,9 @@ class ElectionDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
+        locked = _locked_after_start(instance)
+        if locked:
+            return locked
         blocked = _manage_or_403(request.user, instance)
         if blocked:
             return blocked
@@ -158,6 +174,9 @@ class ElectionDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        locked = _locked_after_start(instance)
+        if locked:
+            return locked
         blocked = _manage_or_403(request.user, instance)
         if blocked:
             return blocked
@@ -213,6 +232,9 @@ class PositionListCreateView(generics.ListCreateAPIView):
 
     def create(self, request, *args, **kwargs):
         election = self._election()
+        locked = _locked_after_start(election)
+        if locked:
+            return locked
         blocked = _manage_or_403(request.user, election)
         if blocked:
             return blocked
@@ -250,13 +272,21 @@ class PositionDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
     def update(self, request, *args, **kwargs):
-        blocked = _manage_or_403(request.user, self._election())
+        election = self._election()
+        locked = _locked_after_start(election)
+        if locked:
+            return locked
+        blocked = _manage_or_403(request.user, election)
         if blocked:
             return blocked
         return super().update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
-        blocked = _manage_or_403(request.user, self._election())
+        election = self._election()
+        locked = _locked_after_start(election)
+        if locked:
+            return locked
+        blocked = _manage_or_403(request.user, election)
         if blocked:
             return blocked
         return super().destroy(request, *args, **kwargs)
@@ -275,8 +305,16 @@ class OpenElectionView(APIView):
         if blocked:
             return blocked
 
-        if election.status != 'scheduled':
-            return Response({'error': 'Election must be scheduled before opening'}, status=status.HTTP_400_BAD_REQUEST)
+        if election.status not in ('draft', 'scheduled'):
+            return Response(
+                {'error': 'Election must be draft or scheduled before opening'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Draft → scheduled is an internal step so admins can Start in one confirm.
+        if election.status == 'draft':
+            election.status = 'scheduled'
+            election.save(update_fields=['status', 'updated_at'])
 
         if (
             user_is_main_ec(request.user)

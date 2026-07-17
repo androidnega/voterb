@@ -338,6 +338,11 @@ def _execute_decision(decision: MainECDecision) -> str:
 
     if decision.decision_type == MainECDecision.TYPE_ELECTION_UPDATE:
         election = get_object_or_404(Election, uuid=payload['election_uuid'])
+        if election.status in ('open', 'paused', 'closed', 'archived'):
+            raise GovernanceBlocked(
+                'This election has started. Editing is locked.',
+                code='election_locked',
+            )
         serializer = ElectionCreateUpdateSerializer(election, data=payload.get('election', {}), partial=True)
         serializer.is_valid(raise_exception=True)
         election = serializer.save()
@@ -345,8 +350,14 @@ def _execute_decision(decision: MainECDecision) -> str:
 
     if decision.decision_type == MainECDecision.TYPE_ELECTION_OPEN:
         election = get_object_or_404(Election, uuid=payload['election_uuid'])
-        if election.status != 'scheduled':
-            raise GovernanceBlocked('Election must be scheduled before opening.', code='invalid_state')
+        if election.status not in ('draft', 'scheduled'):
+            raise GovernanceBlocked(
+                'Election must be draft or scheduled before opening.',
+                code='invalid_state',
+            )
+        if election.status == 'draft':
+            election.status = 'scheduled'
+            election.save(update_fields=['status', 'updated_at'])
         sync_eligibility_from_registers(election, verified_by=proposer)
         election.status = 'open'
         election.save(update_fields=['status', 'updated_at'])
@@ -362,6 +373,11 @@ def _execute_decision(decision: MainECDecision) -> str:
 
     if decision.decision_type == MainECDecision.TYPE_ELECTION_DELETE:
         election = get_object_or_404(Election, uuid=payload['election_uuid'])
+        if election.status in ('open', 'paused', 'closed', 'archived'):
+            raise GovernanceBlocked(
+                'This election has started. Deletion is locked.',
+                code='election_locked',
+            )
         election_uuid = str(election.uuid)
         delete_election(election)
         return election_uuid
