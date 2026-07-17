@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import random
 from datetime import timedelta
 
@@ -7,6 +8,8 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import OTPRequest, Session, MFALog, User
+
+logger = logging.getLogger(__name__)
 
 STAFF_OTP_ROLES = frozenset({'admin', 'super_admin', 'sub_ec', 'auditor'})
 
@@ -91,19 +94,17 @@ def resolve_otp_phone(user):
     try:
         from elections.models import VoterRegister, VoterRegisterEntry
 
-        entry = (
-            VoterRegisterEntry.objects
-            .filter(
-                user=user,
-                register__approval_status=VoterRegister.APPROVAL_APPROVED,
-                register__replace_of__isnull=True,
-            )
-            .exclude(phone_number__isnull=True)
-            .exclude(phone_number='')
-            .order_by('-created_at')
-            .only('phone_number')
-            .first()
-        )
+        index = (getattr(user, 'index_number', None) or '').strip()
+        entry_qs = VoterRegisterEntry.objects.filter(
+            register__approval_status=VoterRegister.APPROVAL_APPROVED,
+            register__replace_of__isnull=True,
+        ).exclude(phone_number__isnull=True).exclude(phone_number='')
+
+        entry = None
+        if user.pk:
+            entry = entry_qs.filter(user=user).order_by('-created_at').only('phone_number').first()
+        if not entry and index:
+            entry = entry_qs.filter(voter_id__iexact=index).order_by('-created_at').only('phone_number').first()
         if entry and entry.phone_number:
             return entry.phone_number.strip()
     except Exception:
@@ -138,24 +139,25 @@ class OTPService:
         sms_result = None
         if channel == 'sms' and phone:
             try:
-                from notifications.tasks import dispatch_sms
-                # Login OTP must actually send: wait briefly, then sync-send with
-                # Arkesel → Moolre fallback if workers are down/slow.
-                sms_result = dispatch_sms(
+                from notifications.sms import send_sms
+
+                # Login OTP must send immediately in-process (Arkesel → Moolre fallback).
+                sms_result = send_sms(
                     phone=phone,
                     message=(
                         f'Your VoteBridge login code is {code}. '
                         f'It expires in {expiry_minutes} minutes. Do not share this code.'
                     ),
-                    realtime=True,
                 )
                 if not sms_result.get('ok'):
-                    print(
-                        f"⚠️ OTP SMS not delivered for {user.index_number or user.email}: "
-                        f"{sms_result.get('error') or sms_result}"
+                    logger.warning(
+                        'OTP SMS not delivered for %s (%s): %s',
+                        user.index_number or user.email,
+                        sms_result.get('provider'),
+                        sms_result.get('error') or sms_result,
                     )
             except Exception as exc:
-                print(f'⚠️ OTP SMS failed for {user.index_number or user.email}: {exc}')
+                logger.exception('OTP SMS failed for %s: %s', user.index_number or user.email, exc)
                 sms_result = {'ok': False, 'error': str(exc)}
         otp._sms_result = sms_result  # transient attribute for login response
         otp._otp_phone = phone

@@ -200,6 +200,12 @@ class LoginView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if not sms_ok:
+                logger.warning(
+                    'Login OTP SMS failed for %s to %s: %s',
+                    user.index_number or user.email,
+                    masked_phone,
+                    sms_result.get('error') or sms_result,
+                )
                 return Response(
                     {
                         'error': (
@@ -207,6 +213,7 @@ class LoginView(APIView):
                             'Please try again in a moment, or contact your electoral commission.'
                         ),
                         'phone_hint': masked_phone,
+                        'sms_error': sms_result.get('error'),
                     },
                     status=status.HTTP_503_SERVICE_UNAVAILABLE,
                 )

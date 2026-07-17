@@ -95,7 +95,19 @@ def dispatch_sms(*, phone: str, message: str, cache_key: str | None = None, real
         if isinstance(result, dict):
             result['queued'] = True
             result['task_id'] = async_result.id
-            return result
+            if result.get('ok'):
+                return result
+            # Worker reported failure — retry once in-process with full provider fallback.
+            logger.warning(
+                'Celery SMS task failed (%s) — retrying in-process',
+                result.get('error') or result,
+            )
+            from notifications.sms import send_sms
+
+            sync_result = send_sms(phone=phone, message=message, cache_key=cache_key)
+            sync_result['celery_fallback'] = True
+            sync_result['celery_error'] = result.get('error')
+            return sync_result
         return {'ok': True, 'queued': True, 'task_id': async_result.id, 'result': result}
     except Exception as exc:
         logger.warning('Celery SMS dispatch failed (%s) — sending in-process', exc)

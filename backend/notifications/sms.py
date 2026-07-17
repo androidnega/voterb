@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from django.core.cache import cache
@@ -59,6 +60,45 @@ def _http_json_post(url: str, payload: dict, headers: dict, timeout: int = 20) -
     except urllib.error.HTTPError as exc:
         text = exc.read().decode('utf-8', errors='replace') if exc.fp else ''
         return False, int(exc.code), text
+    except Exception as exc:
+        logger.warning('HTTP POST failed for %s: %s', url, exc)
+        return False, 0, str(exc)
+
+
+def _http_get(url: str, headers: dict | None = None, timeout: int = 20) -> tuple[bool, int, str]:
+    req = urllib.request.Request(url, headers=headers or {}, method='GET')
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            status_code = int(getattr(response, 'status', 200))
+            text = response.read().decode('utf-8', errors='replace')
+            return 200 <= status_code < 300, status_code, text
+    except urllib.error.HTTPError as exc:
+        text = exc.read().decode('utf-8', errors='replace') if exc.fp else ''
+        return False, int(exc.code), text
+    except Exception as exc:
+        logger.warning('HTTP GET failed for %s: %s', url, exc)
+        return False, 0, str(exc)
+
+
+def _provider_detail(body: str, fallback: str) -> str:
+    payload = _parse_json_body(body)
+    for key in ('message', 'error', 'detail'):
+        val = payload.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    text = (body or '').strip()
+    if text and len(text) <= 240:
+        return text
+    return fallback
+
+
+def _local_gh_phone(msisdn: str) -> str:
+    digits = re.sub(r'\D', '', msisdn or '')
+    if digits.startswith('233') and len(digits) >= 12:
+        return f'0{digits[3:]}'
+    if digits.startswith('0'):
+        return digits
+    return digits
 
 
 def _parse_json_body(body: str) -> dict:
@@ -117,14 +157,44 @@ def _send_arkesel(msisdn: str, message: str, masked: str) -> dict:
         {'api-key': api_key, 'Content-Type': 'application/json'},
     )
     if not ok_http or not _arkesel_accepted(status_code, body):
+        detail = _provider_detail(body, 'Arkesel rejected the message')
         logger.error('Arkesel SMS failed (%s): %s', status_code, body[:300])
         return {
             'ok': False,
             'provider': 'arkesel',
             'masked_phone': masked,
-            'error': 'Arkesel rejected the message',
+            'error': detail,
+            'status_code': status_code,
+            'response': body[:500],
         }
     return {'ok': True, 'provider': 'arkesel', 'masked_phone': masked}
+
+
+def _send_moolre_get(msisdn: str, message: str, masked: str, api_key: str, sender: str) -> dict:
+    base = _resolve_moolre_url('')
+    params = urllib.parse.urlencode({
+        'type': 1,
+        'senderid': sender,
+        'recipient': _local_gh_phone(msisdn) or msisdn,
+        'message': message,
+    })
+    url = f'{base}?{params}'
+    ok_http, status_code, body = _http_get(
+        url,
+        headers={'X-API-VASKEY': api_key, 'Accept': 'application/json'},
+    )
+    if ok_http and _moolre_accepted(status_code, body):
+        return {'ok': True, 'provider': 'moolre', 'masked_phone': masked, 'transport': 'get'}
+    detail = _provider_detail(body, 'Moolre GET rejected the message')
+    logger.error('Moolre GET SMS failed (%s): %s', status_code, body[:300])
+    return {
+        'ok': False,
+        'provider': 'moolre',
+        'masked_phone': masked,
+        'error': detail,
+        'status_code': status_code,
+        'response': body[:500],
+    }
 
 
 def _send_moolre(msisdn: str, message: str, masked: str) -> dict:
@@ -141,7 +211,7 @@ def _send_moolre(msisdn: str, message: str, masked: str) -> dict:
             'senderid': sender,
             'messages': [
                 {
-                    'recipient': msisdn,
+                    'recipient': _local_gh_phone(msisdn) or msisdn,
                     'message': message,
                 }
             ],
@@ -152,15 +222,25 @@ def _send_moolre(msisdn: str, message: str, masked: str) -> dict:
             'Accept': 'application/json',
         },
     )
-    if not ok_http or not _moolre_accepted(status_code, body):
-        logger.error('Moolre SMS failed (%s): %s', status_code, body[:300])
-        return {
-            'ok': False,
-            'provider': 'moolre',
-            'masked_phone': masked,
-            'error': 'Moolre rejected the message',
-        }
-    return {'ok': True, 'provider': 'moolre', 'masked_phone': masked}
+    if ok_http and _moolre_accepted(status_code, body):
+        return {'ok': True, 'provider': 'moolre', 'masked_phone': masked, 'transport': 'post'}
+
+    post_detail = _provider_detail(body, 'Moolre POST rejected the message')
+    logger.warning('Moolre POST SMS failed (%s): %s — trying GET fallback', status_code, body[:300])
+    get_result = _send_moolre_get(msisdn, message, masked, api_key, sender)
+    if get_result.get('ok'):
+        get_result['fallback_used'] = True
+        get_result['post_error'] = post_detail
+        return get_result
+
+    return {
+        'ok': False,
+        'provider': 'moolre',
+        'masked_phone': masked,
+        'error': get_result.get('error') or post_detail,
+        'status_code': status_code,
+        'response': body[:500],
+    }
 
 
 def send_sms(*, phone: str, message: str, cache_key: str | None = None) -> dict:
