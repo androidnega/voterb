@@ -125,46 +125,86 @@ def dispatch_svt_sms(
     election_title: str,
     election_uuid: str | None = None,
     user_uuid: str | None = None,
+    wait: bool = False,
+    wait_timeout: float = 8,
 ) -> dict:
-    """Realtime SVT delivery through workers with sync fallback."""
+    """
+    Deliver SVT SMS via Celery when available.
+
+    wait=False (web): queue immediately and return so the API stays under the
+    browser timeout. SMS continues in the worker / a background thread.
+    wait=True (USSD): briefly wait for delivery confirmation, then sync fallback.
+    """
+    import threading
+
     from django.conf import settings
+    from notifications.sms import mask_phone, send_svt_sms
+
+    masked = mask_phone(phone)
+    kwargs = {
+        'phone': phone,
+        'code': code,
+        'election_title': election_title,
+        'election_uuid': election_uuid,
+        'user_uuid': user_uuid,
+    }
 
     if getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False):
-        return send_svt_sms_task(
-            phone=phone,
-            code=code,
-            election_title=election_title,
-            election_uuid=election_uuid,
-            user_uuid=user_uuid,
-        )
+        return send_svt_sms_task(**kwargs)
+
+    def _send_in_process() -> dict:
+        result = send_svt_sms(**kwargs)
+        result['celery_fallback'] = True
+        return result
+
+    def _send_in_background() -> None:
+        try:
+            result = _send_in_process()
+            if not result.get('ok'):
+                logger.warning(
+                    'Background SVT SMS failed for %s (%s): %s',
+                    masked,
+                    result.get('provider'),
+                    result.get('error') or result,
+                )
+        except Exception as exc:
+            logger.exception('Background SVT SMS failed for %s: %s', masked, exc)
 
     try:
         async_result = send_svt_sms_task.apply_async(
-            kwargs={
-                'phone': phone,
-                'code': code,
-                'election_title': election_title,
-                'election_uuid': election_uuid,
-                'user_uuid': user_uuid,
-            },
+            kwargs=kwargs,
             queue=getattr(settings, 'CELERY_TASK_DEFAULT_QUEUE', 'votebridge'),
         )
-        result = async_result.get(timeout=20)
+        if not wait:
+            return {
+                'ok': True,
+                'queued': True,
+                'task_id': async_result.id,
+                'masked_phone': masked,
+                'provider': 'celery',
+            }
+
+        result = async_result.get(timeout=max(1.0, float(wait_timeout)))
         if isinstance(result, dict):
             result['queued'] = True
             result['task_id'] = async_result.id
-            return result
-        return {'ok': bool(result), 'queued': True, 'task_id': async_result.id}
+            if result.get('ok'):
+                return result
+            logger.warning(
+                'Celery SVT task failed (%s) — retrying in-process',
+                result.get('error') or result,
+            )
+            return _send_in_process()
+        return {'ok': bool(result), 'queued': True, 'task_id': async_result.id, 'masked_phone': masked}
     except Exception as exc:
-        logger.warning('Celery SVT SMS failed (%s) — sending in-process', exc)
-        from notifications.sms import send_svt_sms
-
-        result = send_svt_sms(
-            phone=phone,
-            code=code,
-            election_title=election_title,
-            election_uuid=election_uuid,
-            user_uuid=user_uuid,
-        )
-        result['celery_fallback'] = True
-        return result
+        logger.warning('Celery SVT SMS dispatch failed (%s)', exc)
+        if not wait:
+            threading.Thread(target=_send_in_background, daemon=True).start()
+            return {
+                'ok': True,
+                'queued': True,
+                'masked_phone': masked,
+                'provider': 'thread',
+                'celery_fallback': True,
+            }
+        return _send_in_process()

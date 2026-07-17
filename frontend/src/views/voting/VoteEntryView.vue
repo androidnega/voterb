@@ -64,9 +64,9 @@
           </p>
           <button type="button" class="svt-btn svt-btn--primary" :disabled="requesting" @click="requestSVT">
             <i v-if="requesting" class="fas fa-spinner fa-spin" aria-hidden="true"></i>
-            <span>{{ requesting ? (actionSlow ? 'Still sending…' : 'Sending SVT…') : 'Send SVT to my phone' }}</span>
+            <span>{{ requesting ? (actionSlow ? 'Almost there…' : 'Sending SVT…') : 'Send SVT to my phone' }}</span>
           </button>
-          <p v-if="actionSlow && requesting" class="svt-soft">{{ slowHint }}</p>
+          <p v-if="actionSlow && requesting" class="svt-soft">SMS is on its way — this usually finishes in a few seconds.</p>
           <p v-if="errorMessage" class="svt-error">{{ errorMessage }}</p>
         </div>
 
@@ -142,7 +142,9 @@
               {{ requesting ? 'Sending…' : 'Resend' }}
             </button>
           </div>
-          <p v-if="actionSlow && (validating || requesting)" class="svt-soft">{{ slowHint }}</p>
+          <p v-if="actionSlow && (validating || requesting)" class="svt-soft">
+            {{ requesting ? 'SMS is on its way — hang tight.' : 'Still checking your token…' }}
+          </p>
           <p v-if="errorMessage" class="svt-error">{{ errorMessage }}</p>
         </div>
 
@@ -277,7 +279,14 @@ function markActionPending() {
   clearActionSlow()
   actionSlowTimer = setTimeout(() => {
     actionSlow.value = true
-  }, 3500)
+  }, 4500)
+}
+
+function svtRequestError(error) {
+  if (!error?.response && (error?.code === 'ECONNABORTED' || /timeout/i.test(error?.message || ''))) {
+    return 'The request timed out before we could confirm SMS delivery. If no code arrives, tap Resend.'
+  }
+  return friendlyActionError(error, 'We couldn’t send your token. Please try again.')
 }
 
 function onLetterInput(index, event) {
@@ -483,7 +492,7 @@ const requestSVT = async () => {
       alreadyVoted.value = true
       return
     }
-    errorMessage.value = friendlyActionError(error, 'We couldn’t send your token. Please try again.')
+    errorMessage.value = svtRequestError(error)
   } finally {
     clearActionSlow()
     requesting.value = false
@@ -542,7 +551,7 @@ const resendSVT = async () => {
       alreadyVoted.value = true
       return
     }
-    errorMessage.value = friendlyActionError(error, 'We couldn’t resend your token. Please try again.')
+    errorMessage.value = svtRequestError(error)
   } finally {
     clearActionSlow()
     requesting.value = false

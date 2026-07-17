@@ -451,8 +451,9 @@ class SVTRequestView(APIView):
             election_title=election.title,
             election_uuid=str(election.uuid),
             user_uuid=str(user.uuid),
+            wait=False,
         )
-        if not sms_result.get('ok'):
+        if not sms_result.get('ok') and not sms_result.get('queued'):
             # Keep token issued so a retry can still validate if SMS eventually lands,
             # but surface the delivery issue clearly.
             return Response(
@@ -478,17 +479,18 @@ class SVTRequestView(APIView):
 
         return Response({
             'message': (
-                f'SVT sent to {sms_result.get("masked_phone") or mask_phone(phone)}. '
+                f'SVT is being sent to {sms_result.get("masked_phone") or mask_phone(phone)}. '
                 f'Valid for {max(1, int((expires_at - timezone.now()).total_seconds() // 60))} minutes. One use only.'
                 if not force_resend
                 else (
-                    f'A new SVT was sent to {sms_result.get("masked_phone") or mask_phone(phone)}. '
+                    f'A new SVT is being sent to {sms_result.get("masked_phone") or mask_phone(phone)}. '
                     'Previous tokens are no longer valid.'
                 )
             ),
             'svt_id': svt.svt_id,
             'already_issued': False,
             'resent': force_resend,
+            'sms_queued': bool(sms_result.get('queued')),
             'expires_at': expires_at,
             'expires_in_seconds': max(0, int((expires_at - timezone.now()).total_seconds())),
             'requests_remaining': max(0, max_requests - (used_requests + 1)),

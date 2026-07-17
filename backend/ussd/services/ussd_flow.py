@@ -312,6 +312,8 @@ def _issue_svt_for_ussd(user, election: Election, dialing_msisdn: str | None = N
         election_title=election.title,
         election_uuid=str(election.uuid),
         user_uuid=str(user.uuid),
+        wait=True,
+        wait_timeout=8,
     )
     if not sms.get('ok'):
         # Do not leave a usable token when SMS never left the platform.

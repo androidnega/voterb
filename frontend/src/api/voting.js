@@ -6,7 +6,11 @@ export const votingApi = {
     return api.get('/voting/eligible/')
   },
   requestSVT(electionUuid, options = {}) {
-    return api.post(`/voting/elections/${electionUuid}/svt/request/`, options)
+    // SVT mint is fast; SMS is queued in the background. Keep a generous
+    // timeout only as a safety net for slow mobile networks.
+    return api.post(`/voting/elections/${electionUuid}/svt/request/`, options, {
+      timeout: 30000,
+    })
   },
   validateSVT(electionUuid, svtCode) {
     return api.post(`/voting/elections/${electionUuid}/svt/validate/`, { svt_code: svtCode })

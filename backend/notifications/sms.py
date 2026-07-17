@@ -376,7 +376,7 @@ def send_svt_sms(*, phone: str, code: str, election_title: str, election_uuid: s
         if isinstance(cached, dict) and cached.get('template'):
             message = str(cached['template']).format(code=code, title=title, minutes=minutes)
 
-    return send_sms(phone=phone, message=message, cache_key=None)
+    return send_sms(phone=phone, message=message, cache_key=None, http_timeout=8)
 
 
 def prewarm_election_sms_payloads(election, *, hours_ahead: int = 5) -> dict:
