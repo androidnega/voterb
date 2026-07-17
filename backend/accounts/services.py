@@ -183,6 +183,46 @@ class OTPService:
 
 class SessionService:
     @staticmethod
+    def timeout_minutes():
+        from system.settings_utils import get_setting_int
+
+        return max(1, get_setting_int('session_timeout_minutes', 20))
+
+    @staticmethod
+    def get_active_session(user, session_uuid=None):
+        qs = Session.objects.filter(user=user, is_active=True)
+        if session_uuid:
+            session = qs.filter(uuid=session_uuid).first()
+            if session:
+                return session
+        return qs.order_by('-last_activity_at').first()
+
+    @staticmethod
+    def is_idle_expired(session):
+        if not session or not session.is_active:
+            return True
+        cutoff = timezone.now() - timedelta(minutes=SessionService.timeout_minutes())
+        return session.last_activity_at < cutoff
+
+    @staticmethod
+    def touch_session(session):
+        if session and session.is_active:
+            Session.objects.filter(pk=session.pk).update(last_activity_at=timezone.now())
+
+    @staticmethod
+    def validate_and_touch(user, session_uuid=None):
+        session = SessionService.get_active_session(user, session_uuid)
+        if not session:
+            return None
+        if SessionService.is_idle_expired(session):
+            session.is_active = False
+            session.revoked_at = timezone.now()
+            session.save(update_fields=['is_active', 'revoked_at'])
+            return 'expired'
+        SessionService.touch_session(session)
+        return session
+
+    @staticmethod
     def create_session(user, request):
         refresh = RefreshToken.for_user(user)
         expires_at = timezone.now() + timedelta(days=30)

@@ -45,6 +45,7 @@ export const useAuthStore = defineStore('auth', {
     institution: null,
     ecMemberships: [],
     governance: null,
+    sessionTimeoutMinutes: 20,
   }),
 
   getters: {
@@ -135,6 +136,7 @@ export const useAuthStore = defineStore('auth', {
 
       this.isAuthenticated = true
       this.pendingOtp = null
+      localStorage.setItem('session_last_activity', String(Date.now()))
 
       // OTP returns role as a plain string — normalize before resolveRoles()
       this.user = {
@@ -155,6 +157,10 @@ export const useAuthStore = defineStore('auth', {
       const response = await api.get('/accounts/auth/me/')
       this.user = response.data
       this.isAuthenticated = true
+      if (response.data?.session_timeout_minutes) {
+        this.sessionTimeoutMinutes = Math.max(1, Number(response.data.session_timeout_minutes) || 20)
+      }
+      localStorage.setItem('session_last_activity', String(Date.now()))
       this.resolveRoles()
       this.syncOnboardingFlag()
       return this.user
@@ -196,6 +202,7 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('is_new_user')
       localStorage.removeItem('needs_onboarding')
       localStorage.removeItem('requires_onboarding')
+      localStorage.removeItem('session_last_activity')
       this.isAuthenticated = false
       this.user = null
       this.pendingOtp = null

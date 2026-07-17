@@ -283,6 +283,15 @@ class MeView(APIView):
     def get(self, request):
         from accounts.org import serialize_membership, user_ec_memberships, user_is_main_ec, user_is_sub_ec
         from accounts.governance import institution_governance_status, resolve_user_institution
+        from system.settings_utils import get_setting_int
+
+        session_uuid = request.headers.get('X-Session-UUID') or request.headers.get('X-Session-Uuid')
+        session_state = SessionService.validate_and_touch(request.user, session_uuid)
+        if session_state == 'expired':
+            return Response(
+                {'detail': 'Session expired due to inactivity. Sign in again.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
         serializer = UserSerializer(request.user)
         data = serializer.data
@@ -311,6 +320,7 @@ class MeView(APIView):
         data['ec_memberships'] = [
             serialize_membership(m) for m in user_ec_memberships(request.user)
         ]
+        data['session_timeout_minutes'] = max(1, get_setting_int('session_timeout_minutes', 20))
         return Response(data)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

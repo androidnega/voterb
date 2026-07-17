@@ -14,7 +14,7 @@ DEFAULTS = {
     'svt_resend_cooldown_seconds': 60,
     'svt_max_validation_attempts': 5,
     'svt_cross_user_block_minutes': 60,
-    'session_timeout_minutes': 30,
+    'session_timeout_minutes': 20,
     'max_login_attempts': 5,
     'ussd_enabled': 'true',
     'ussd_service_code': '*928*013#',

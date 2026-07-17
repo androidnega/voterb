@@ -29,7 +29,7 @@ class Command(BaseCommand):
             {'key': 'ui_dashboard', 'value': 'atelier', 'category': 'general', 'description': 'Admin dashboard layout template'},
 
             # Security
-            {'key': 'session_timeout_minutes', 'value': '30', 'category': 'security', 'description': 'Session timeout in minutes'},
+            {'key': 'session_timeout_minutes', 'value': '20', 'category': 'security', 'description': 'Session timeout in minutes'},
             {'key': 'max_login_attempts', 'value': '5', 'category': 'security', 'description': 'Maximum failed login attempts before lockout'},
             {'key': 'otp_length', 'value': '6', 'category': 'security', 'description': 'Number of digits in the login OTP'},
             {'key': 'otp_expiry_minutes', 'value': '5', 'category': 'security', 'description': 'OTP expiry time in minutes'},

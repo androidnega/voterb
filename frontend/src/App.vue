@@ -12,10 +12,13 @@
 import { onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Toast from 'primevue/toast'
+import { useSessionTimeout } from '@/composables/useSessionTimeout'
 
 const router = useRouter()
 const navigating = ref(false)
 let navTimer = null
+
+useSessionTimeout()
 
 const toastPt = {
   root: { class: 'vb-toast-root' },

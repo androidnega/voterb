@@ -41,6 +41,10 @@ api.interceptors.request.use((config) => {
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    const sessionUuid = localStorage.getItem('session_uuid')
+    if (sessionUuid) {
+      config.headers['X-Session-UUID'] = sessionUuid
+    }
   } else if (config.headers) {
     delete config.headers.Authorization
   }

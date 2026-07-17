@@ -31,13 +31,6 @@
         <i class="fas fa-eye"></i>
         <span>View-only — you can monitor elections but cannot create or modify them.</span>
       </div>
-      <div v-else-if="authStore.isMainEC" class="access-notice page-section is-info">
-        <i class="fas fa-info-circle"></i>
-        <span>
-          You manage institutional elections. Sub EC category elections are visible here but
-          read-only.
-        </span>
-      </div>
       <div v-else-if="authStore.isSubEC" class="access-notice page-section is-info">
         <i class="fas fa-info-circle"></i>
         <span>
