@@ -96,19 +96,19 @@
           <label v-for="setting in integrationSettings" :key="setting.key" class="integration-row">
             <div>
               <p class="toggle-title">{{ integrationLabel(setting.key) }}</p>
-              <p class="toggle-desc">{{ setting.description || setting.key }}</p>
+              <p class="toggle-desc">{{ integrationHelp(setting) }}</p>
             </div>
             <input
               v-model="setting.value"
               class="integration-input"
               :type="isSecretKey(setting.key) ? 'password' : 'text'"
-              :placeholder="isSecretKey(setting.key) ? 'Enter API key…' : ''"
+              :placeholder="integrationPlaceholder(setting.key)"
               :disabled="integrationSavingKey === setting.key"
               @change="saveIntegrationSetting(setting)"
             />
           </label>
           <p class="integration-hint">
-            USSD Arkesel endpoint:
+            Paste this exact callback in Arkesel (no API key header — leave webhook key blank):
             <code>https://votebridge.online/api/v1/ussd/callback/</code>
           </p>
         </div>
@@ -304,7 +304,7 @@ const INTEGRATION_LABELS = {
   ussd_enabled: 'USSD enabled',
   ussd_service_code: 'USSD service code',
   ussd_callback_url: 'USSD callback URL',
-  ussd_api_key: 'USSD webhook API key',
+  ussd_api_key: 'USSD webhook API key (leave blank)',
   ussd_session_timeout: 'USSD session timeout (seconds)',
   ussd_svt_resume_seconds: 'USSD SVT resume window (seconds)',
   ussd_retry_attempts: 'USSD retry attempts',
@@ -315,6 +315,14 @@ const INTEGRATION_LABELS = {
   email_smtp_port: 'SMTP port',
   email_smtp_username: 'SMTP username',
   email_smtp_password: 'SMTP password',
+}
+
+const INTEGRATION_HELP = {
+  sms_arkesel_api_key: 'Your Arkesel dashboard API key — used only to send SMS/OTP, not for USSD callbacks.',
+  ussd_api_key: 'Leave empty for Arkesel. Arkesel does not send an API key on USSD callbacks; filling this will block dialing.',
+  ussd_callback_url: 'Must match the callback URL configured in the Arkesel USSD dashboard.',
+  ussd_service_code: 'Short code users dial, e.g. *928*013#',
+  ussd_enabled: 'Master switch for USSD voting flows.',
 }
 
 const INTEGRATION_KEYS = Object.keys(INTEGRATION_LABELS)
@@ -353,6 +361,12 @@ const dashboardOptions = computed(() => (
 const flagLabel = (flag) => FLAG_LABELS[flag.key] || flag.key.replaceAll('_', ' ')
 const securityLabel = (key) => SECURITY_LABELS[key] || key.replaceAll('_', ' ')
 const integrationLabel = (key) => INTEGRATION_LABELS[key] || key.replaceAll('_', ' ')
+const integrationHelp = (setting) => INTEGRATION_HELP[setting.key] || setting.description || setting.key
+const integrationPlaceholder = (key) => {
+  if (key === 'ussd_api_key') return 'Leave blank for Arkesel'
+  if (isSecretKey(key)) return 'Enter API key…'
+  return ''
+}
 const isSecretKey = (key) => SECRET_KEYS.has(key)
 
 const flash = (message, tone = 'success') => {

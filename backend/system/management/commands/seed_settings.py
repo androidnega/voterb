@@ -27,7 +27,7 @@ class Command(BaseCommand):
             {'key': 'ussd_svt_resume_seconds', 'value': '7200', 'category': 'integrations', 'description': 'How long an SVT wait session can be resumed after hang-up (seconds)'},
             {'key': 'ussd_retry_attempts', 'value': '3', 'category': 'integrations', 'description': 'USSD retry attempts per session'},
             {'key': 'ussd_rate_limit_per_minute', 'value': '10', 'category': 'integrations', 'description': 'Max USSD callback requests per MSISDN per minute'},
-            {'key': 'ussd_api_key', 'value': '', 'category': 'integrations', 'description': 'USSD API key for webhook authentication', 'is_encrypted': True},
+            {'key': 'ussd_api_key', 'value': '', 'category': 'integrations', 'description': 'Leave blank for Arkesel (they do not send X-API-Key on USSD callbacks)', 'is_encrypted': True},
         ]
 
         # Additional Settings
