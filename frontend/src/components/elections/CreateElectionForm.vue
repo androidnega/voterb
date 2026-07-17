@@ -151,7 +151,7 @@
             v-for="channel in channelOptions"
             :key="channel.key"
             class="channel-check"
-            :class="{ 'is-disabled': channel.disabled }"
+            :class="{ 'is-selected': form[channel.key], 'is-disabled': channel.disabled }"
           >
             <input
               type="checkbox"
@@ -162,7 +162,13 @@
             <span class="channel-check__box" aria-hidden="true">
               <i class="fas fa-check"></i>
             </span>
-            <span class="channel-check__label">{{ channel.label }}</span>
+            <span class="channel-check__icon" aria-hidden="true">
+              <i :class="channel.icon"></i>
+            </span>
+            <span class="channel-check__copy">
+              <span class="channel-check__label">{{ channel.label }}</span>
+              <small>{{ channel.hint }}</small>
+            </span>
           </label>
         </div>
       </div>
@@ -221,16 +227,22 @@ const channelOptions = computed(() => [
   {
     key: 'allow_web_voting',
     label: 'Web',
+    hint: 'Browser ballot',
+    icon: 'fas fa-globe',
     disabled: false,
   },
   {
     key: 'allow_ussd_voting',
     label: 'USSD',
+    hint: 'Dial short code',
+    icon: 'fas fa-mobile-alt',
     disabled: false,
   },
   {
     key: 'allow_sms_notifications',
     label: 'SMS',
+    hint: smsEnabled.value ? 'Alerts and tokens' : 'Disabled in Settings',
+    icon: 'fas fa-message',
     disabled: !smsEnabled.value,
   },
 ])
@@ -542,20 +554,43 @@ onMounted(() => {
 }
 
 .channel-checks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem 1.1rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+@media (max-width: 520px) {
+  .channel-checks {
+    grid-template-columns: 1fr;
+  }
 }
 
 .channel-check {
-  display: inline-flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
+  min-height: 3.2rem;
+  padding: 0.62rem 0.7rem;
+  border: 1px solid var(--vb-line, #ebeae4);
+  border-radius: 0.8rem;
+  background: #fff;
   cursor: pointer;
   user-select: none;
-  font-size: 0.84rem;
-  font-weight: 650;
   color: var(--vb-ink, #1c1c1c);
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.channel-check:hover:not(.is-disabled) {
+  border-color: #d6d3d1;
+  background: #fcfcfb;
+}
+
+.channel-check.is-selected {
+  border-color: rgba(61, 79, 68, 0.3);
+  background: #f8faf7;
+  box-shadow: inset 0 0 0 1px rgba(61, 79, 68, 0.08);
 }
 
 .channel-check input {
@@ -565,9 +600,9 @@ onMounted(() => {
 }
 
 .channel-check__box {
-  width: 1.05rem;
-  height: 1.05rem;
-  border-radius: 0.3rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.32rem;
   border: 1.5px solid #d6d3d1;
   background: #fff;
   display: inline-flex;
@@ -584,6 +619,23 @@ onMounted(() => {
   color: #fff;
 }
 
+.channel-check__icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.55rem;
+  background: #f7f6f2;
+  color: #8a8a8a;
+  font-size: 0.72rem;
+}
+
+.channel-check.is-selected .channel-check__icon {
+  background: #e8efe6;
+  color: var(--vb-accent, #3d4f44);
+}
+
 .channel-check input:focus-visible + .channel-check__box {
   box-shadow: 0 0 0 3px var(--vb-focus-ring, rgba(61, 79, 68, 0.14));
 }
@@ -594,7 +646,22 @@ onMounted(() => {
 }
 
 .channel-check__label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 750;
   letter-spacing: -0.01em;
+}
+
+.channel-check__copy {
+  min-width: 0;
+}
+
+.channel-check__copy small {
+  display: block;
+  margin-top: 0.08rem;
+  color: var(--vb-muted, #8a8a8a);
+  font-size: 0.66rem;
+  line-height: 1.2;
 }
 
 .form-error {

@@ -41,8 +41,13 @@
     <!-- Card grid -->
     <div v-else-if="!selected" class="page-section">
       <div v-if="banner" class="register-banner">
-        <i class="fas fa-clock"></i>
-        <span>{{ banner }}</span>
+        <span class="register-banner__icon" aria-hidden="true">
+          <i class="fas fa-check"></i>
+        </span>
+        <span class="register-banner__body">
+          <strong>{{ bannerTitle }}</strong>
+          <span>{{ banner }}</span>
+        </span>
         <button type="button" class="register-banner__close" @click="banner = ''">
           <i class="fas fa-times"></i>
         </button>
@@ -527,6 +532,14 @@ const form = ref({
   file: null,
 })
 
+const bannerTitle = computed(() => {
+  const text = banner.value.toLowerCase()
+  if (text.includes('voter change')) return 'Voter change submitted'
+  if (text.includes('re-upload')) return 'Re-upload submitted'
+  if (text.includes('created')) return 'Register created'
+  return 'Submitted for approval'
+})
+
 const replaceForm = ref({
   categoryUuid: '',
   file: null,
@@ -928,7 +941,7 @@ const submitCreate = async () => {
 
     setProgress(100, 'Done', `${created} voter(s) imported${rowErrors ? `, ${rowErrors} row error(s)` : ''}`)
     banner.value = register.message
-      || 'Register created and submitted for approval. The other Main EC member must approve it before it can be used in elections.'
+      || 'Register created and submitted for approval. It will be available for elections after approval.'
     showCreate.value = false
     await load()
     clearSelection()
@@ -1077,15 +1090,47 @@ onMounted(load)
 
 .register-banner {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.8rem 1rem;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
   margin-bottom: 1rem;
-  border-radius: 0.85rem;
-  background: #fff8ec;
-  border: 1px solid #f5e2b8;
-  color: #92610a;
-  font-size: 0.85rem;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, #ffffff, #fbfdfb);
+  border: 1px solid rgba(61, 79, 68, 0.14);
+  color: var(--vb-ink, #1c1c1c);
+  box-shadow: 0 10px 28px rgba(28, 28, 28, 0.05);
+}
+
+.register-banner__icon {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.65rem;
+  background: #e8efe6;
+  color: var(--vb-accent, #3d4f44);
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+
+.register-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.register-banner__body strong {
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.register-banner__body span {
+  color: var(--vb-muted, #8a8a8a);
 }
 
 .register-banner__close {
@@ -1094,11 +1139,14 @@ onMounted(load)
   background: transparent;
   color: inherit;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.45;
+  padding: 0.2rem;
+  border-radius: 0.45rem;
 }
 
 .register-banner__close:hover {
   opacity: 1;
+  background: var(--vb-panel, #f7f6f2);
 }
 
 .approval-badge {
@@ -1212,10 +1260,10 @@ onMounted(load)
 
 .form-callout {
   margin: 0;
-  padding: 0.75rem 0.85rem;
-  border-radius: 0.75rem;
-  background: #f0f7f3;
-  border: 1px solid rgba(61, 79, 68, 0.14);
+  padding: 0.78rem 0.9rem;
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #ffffff, #fbfaf7);
+  border: 1px solid var(--vb-line, #ebeae4);
   font-size: 0.8rem;
   line-height: 1.45;
   color: var(--vb-ink, #1c1c1c);
@@ -1424,20 +1472,39 @@ onMounted(load)
 .file-drop {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.85rem 1rem;
+  gap: 0.65rem;
+  padding: 0.95rem 1rem;
   border: 1px dashed var(--vb-line, #ebeae4);
-  border-radius: 0.75rem;
-  background: var(--vb-panel, #f7f6f2);
+  border-radius: 0.95rem;
+  background: linear-gradient(180deg, #ffffff, #fbfaf7);
   cursor: pointer;
   font-size: 0.84rem;
   color: var(--vb-muted, #8a8a8a);
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.file-drop:hover:not(.is-disabled) {
+  border-color: rgba(61, 79, 68, 0.3);
+  background: #fff;
 }
 
 .file-drop.has-file {
   border-style: solid;
+  border-color: rgba(61, 79, 68, 0.24);
   color: var(--vb-ink, #1c1c1c);
   background: #fff;
+}
+
+.file-drop i {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.65rem;
+  background: #f7f6f2;
+  color: var(--vb-accent, #3d4f44);
+  flex-shrink: 0;
 }
 
 .file-drop.is-disabled {
@@ -1448,11 +1515,12 @@ onMounted(load)
 .upload-progress {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.75rem 0.85rem;
-  border-radius: 0.75rem;
-  background: #f0f7f3;
-  border: 1px solid rgba(61, 79, 68, 0.15);
+  gap: 0.45rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.95rem;
+  background: #fff;
+  border: 1px solid var(--vb-line, #ebeae4);
+  box-shadow: 0 8px 24px rgba(28, 28, 28, 0.04);
 }
 
 .upload-progress__meta {
@@ -1464,16 +1532,16 @@ onMounted(load)
 }
 
 .upload-progress__track {
-  height: 0.55rem;
+  height: 0.45rem;
   border-radius: 999px;
-  background: rgba(61, 79, 68, 0.12);
+  background: #f0efea;
   overflow: hidden;
 }
 
 .upload-progress__fill {
   height: 100%;
   border-radius: inherit;
-  background: var(--vb-accent, #3d4f44);
+  background: linear-gradient(90deg, var(--vb-accent, #3d4f44), #8da081);
   transition: width 0.2s ease;
 }
 

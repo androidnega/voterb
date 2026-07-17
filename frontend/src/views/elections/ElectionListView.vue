@@ -205,7 +205,12 @@
 
       <GovernanceSubmittedModal
         v-model:visible="showGovernanceModal"
+        :state="governanceModalState"
+        :eyebrow-text="governanceEyebrow"
+        :heading-text="governanceHeading"
         :message="governanceMessage"
+        :show-progress="governanceShowProgress"
+        @dismiss="onGovernanceDismiss"
       />
     </div>
   </Transition>
@@ -238,6 +243,11 @@ const showCreateDialog = ref(false)
 const statusFilter = ref('')
 const showGovernanceModal = ref(false)
 const governanceMessage = ref('')
+const governanceModalState = ref('pending')
+const governanceEyebrow = ref('')
+const governanceHeading = ref('')
+const governanceShowProgress = ref(true)
+const pendingElectionRoute = ref(null)
 
 const statusOptions = [
   { value: 'open', label: 'Open' },
@@ -368,17 +378,38 @@ const deleteElection = async (uuid) => {
 
 const onElectionCreated = (election) => {
   showCreateDialog.value = false
+  governanceModalState.value = 'enrolled'
+  governanceEyebrow.value = 'Election ready'
+  governanceHeading.value = 'Election created'
+  governanceShowProgress.value = false
+  governanceMessage.value = election?.title
+    ? `${election.title} is ready. Add positions and candidates next.`
+    : 'Election created. Add positions and candidates next.'
+  pendingElectionRoute.value = election?.uuid
+    ? {
+        path: `/elections/${election.uuid}`,
+        query: { tab: 'positions' },
+      }
+    : null
+  showGovernanceModal.value = true
   fetchElections()
-  if (election?.uuid) {
-    router.push({
-      path: `/elections/${election.uuid}`,
-      query: { tab: 'positions' },
-    })
+}
+
+const onGovernanceDismiss = () => {
+  const next = pendingElectionRoute.value
+  pendingElectionRoute.value = null
+  if (next) {
+    router.push(next)
   }
 }
 
 const onElectionPendingApproval = (decision) => {
   showCreateDialog.value = false
+  pendingElectionRoute.value = null
+  governanceModalState.value = 'pending'
+  governanceEyebrow.value = ''
+  governanceHeading.value = ''
+  governanceShowProgress.value = true
   governanceMessage.value =
     decision?.message
     || 'Submitted for approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'

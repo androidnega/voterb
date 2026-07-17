@@ -50,7 +50,7 @@
             {{ message }}
           </p>
 
-          <div v-if="state === 'pending'" class="gov-submit-progress" aria-label="Approval progress">
+          <div v-if="showProgress && state === 'pending'" class="gov-submit-progress" aria-label="Approval progress">
             <div class="gov-submit-step is-done">
               <span class="gov-submit-dot"><i class="fas fa-check"></i></span>
               <span>You approved</span>
@@ -62,7 +62,7 @@
             </div>
           </div>
 
-          <div v-else-if="state === 'enrolled'" class="gov-submit-progress is-complete" aria-label="Approved">
+          <div v-else-if="showProgress && state === 'enrolled'" class="gov-submit-progress is-complete" aria-label="Approved">
             <div class="gov-submit-step is-done">
               <span class="gov-submit-dot"><i class="fas fa-fingerprint"></i></span>
               <span>Approved</span>
@@ -117,6 +117,9 @@ const props = defineProps({
       'Submitted for approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.',
   },
   approvalsPath: { type: String, default: '/approvals' },
+  eyebrowText: { type: String, default: '' },
+  headingText: { type: String, default: '' },
+  showProgress: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['update:visible', 'dismiss', 'review'])
@@ -126,12 +129,14 @@ const panelRef = ref(null)
 const titleId = 'gov-submit-title'
 
 const eyebrow = computed(() => {
+  if (props.eyebrowText) return props.eyebrowText
   if (props.state === 'enrolled') return 'Approved'
   if (props.state === 'rejected') return 'Rejected'
   return 'Approvals'
 })
 
 const heading = computed(() => {
+  if (props.headingText) return props.headingText
   if (props.state === 'enrolled') return 'Decision enrolled'
   if (props.state === 'rejected') return 'Decision rejected'
   return 'Awaiting approval'
