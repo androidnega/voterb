@@ -124,9 +124,9 @@
           </div>
           <h3>Dummy vote successful</h3>
           <p>
-            {{ lastVoterCount }} simulated ballot{{ lastVoterCount === 1 ? '' : 's' }} cast across
-            {{ lastRaceCount }} race{{ lastRaceCount === 1 ? '' : 's' }}.
-            Nothing was recorded — this preview will clear automatically.
+            Ballot flow checked with {{ lastVoterCount }} sample voter{{ lastVoterCount === 1 ? '' : 's' }}
+            across {{ lastRaceCount }} race{{ lastRaceCount === 1 ? '' : 's' }}.
+            No results were shown or saved — this preview will clear automatically.
           </p>
           <p class="dummy-run__hint">You can schedule and open the real election now.</p>
         </div>
@@ -157,7 +157,7 @@ const candidates = ref([])
 const sampleVoters = ref([])
 
 const modalOpen = ref(false)
-const phase = ref('idle') // idle | casting | tallying | done
+const phase = ref('idle') // idle | casting | verifying | done
 const progressPct = ref(0)
 const statusLine = ref('')
 const feedItems = ref([])
