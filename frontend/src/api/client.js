@@ -30,6 +30,7 @@ function clearSessionTokens() {
 
 function isDefinitiveRefreshFailure(error) {
   const status = error?.response?.status
+  // Only wipe tokens when the refresh token itself is rejected.
   return status === 400 || status === 401 || status === 403
 }
 
@@ -57,7 +58,7 @@ api.interceptors.response.use(
     const originalRequest = error.config
     const url = originalRequest?.url || ''
 
-    if (error.response?.status !== 401 || originalRequest._retry) {
+    if (error.response?.status !== 401 || originalRequest?._retry) {
       return Promise.reject(error)
     }
 
@@ -69,7 +70,8 @@ api.interceptors.response.use(
 
     const storedRefresh = localStorage.getItem('refresh_token')
     if (!storedRefresh) {
-      clearSessionTokens()
+      // Keep access token if somehow only refresh is missing — do not wipe
+      // the whole session on a single 401 without a refresh attempt.
       return Promise.reject(error)
     }
 
@@ -85,7 +87,6 @@ api.interceptors.response.use(
         return access
       })()
         .catch((refreshError) => {
-          // Preserve the session through network timeouts, offline periods, and 5xx errors.
           if (isDefinitiveRefreshFailure(refreshError)) {
             clearSessionTokens()
           }

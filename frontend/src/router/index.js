@@ -213,10 +213,19 @@ function clearStuckOverlays() {
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
+  // Always sync-restore tokens first so a refresh never looks logged-out.
+  if (!authStore.isAuthenticated) {
+    authStore.restoreCachedSession()
+  }
+
   if (!authStore.initialized) {
     await withTimeout(authStore.initialize(), INIT_GUARD_TIMEOUT_MS)
     if (!authStore.initialized) {
       authStore.initialized = true
+    }
+    // Re-apply cache after initialize in case an error cleared flags incorrectly.
+    if (!authStore.isAuthenticated) {
+      authStore.restoreCachedSession()
     }
   }
 
@@ -234,6 +243,9 @@ router.beforeEach(async (to) => {
   }
 
   if (requiresAuth(to) && !authStore.isAuthenticated) {
+    if (authStore.restoreCachedSession()) {
+      return true
+    }
     return to.path === '/login' ? true : '/login'
   }
 

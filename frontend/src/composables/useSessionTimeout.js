@@ -46,6 +46,11 @@ export function useSessionTimeout() {
 
   const checkStoredIdle = () => {
     if (!authStore.isAuthenticated) return
+    // Never expire during bootstrap / before hydration finishes.
+    if (authStore.bootstrapping || !authStore.initialized) {
+      markActivity()
+      return
+    }
     const last = Number(localStorage.getItem(LAST_ACTIVITY_KEY) || 0)
     if (!last) {
       markActivity()

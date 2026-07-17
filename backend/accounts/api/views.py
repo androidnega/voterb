@@ -330,19 +330,18 @@ class MeView(APIView):
         from accounts.governance import institution_governance_status, resolve_user_institution
         from system.settings_utils import get_setting_int
 
+        # JWT already authenticated this request. Never 401 on idle DB session —
+        # that was causing refresh to look like a logout.
         session_uuid = request.headers.get('X-Session-UUID') or request.headers.get('X-Session-Uuid')
-        session_state = SessionService.validate_and_touch(request.user, session_uuid)
-        if session_state == 'expired':
-            return Response(
-                {'detail': 'Session expired due to inactivity. Sign in again.'},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+        session = SessionService.ensure_session(request.user, request, session_uuid)
 
         serializer = UserSerializer(request.user)
         data = serializer.data
         data['role_name'] = request.user.role.name if request.user.role else None
         data['is_main_ec'] = user_is_main_ec(request.user)
         data['is_sub_ec'] = user_is_sub_ec(request.user)
+        if session is not None:
+            data['session_uuid'] = str(session.uuid)
         institution = resolve_user_institution(request.user)
         if institution:
             data['institution'] = {

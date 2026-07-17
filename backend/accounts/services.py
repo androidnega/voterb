@@ -270,6 +270,50 @@ class SessionService:
         return session
 
     @staticmethod
+    def ensure_session(user, request=None, session_uuid=None):
+        """
+        Keep JWT-authenticated users online across refresh.
+        Revive an idle DB session or create a lightweight tracking row when missing.
+        Never treats a missing/idle DB session as a hard logout while the JWT is valid.
+        """
+        session = SessionService.get_active_session(user, session_uuid)
+        if session and not SessionService.is_idle_expired(session):
+            SessionService.touch_session(session)
+            return session
+
+        if session and SessionService.is_idle_expired(session):
+            session.is_active = True
+            session.revoked_at = None
+            session.last_activity_at = timezone.now()
+            session.save(update_fields=['is_active', 'revoked_at', 'last_activity_at'])
+            return session
+
+        # Also revive the latest inactive session for this user if present.
+        latest = (
+            Session.objects.filter(user=user)
+            .order_by('-last_activity_at')
+            .first()
+        )
+        if latest:
+            latest.is_active = True
+            latest.revoked_at = None
+            latest.last_activity_at = timezone.now()
+            latest.save(update_fields=['is_active', 'revoked_at', 'last_activity_at'])
+            return latest
+
+        import uuid as uuid_lib
+
+        ip = request.META.get('REMOTE_ADDR') if request is not None else None
+        ua = (request.META.get('HTTP_USER_AGENT', '') if request is not None else '')[:255]
+        return Session.objects.create(
+            user=user,
+            refresh_token_jti=f'ensure-{uuid_lib.uuid4().hex}',
+            expires_at=timezone.now() + timedelta(days=30),
+            ip_address=ip,
+            user_agent=ua,
+        )
+
+    @staticmethod
     def create_session(user, request):
         refresh = RefreshToken.for_user(user)
         expires_at = timezone.now() + timedelta(days=30)

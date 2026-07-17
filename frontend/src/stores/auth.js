@@ -26,6 +26,10 @@ function isStudentRole(role, user) {
     (!!user?.index_number && !isStaffRole(role, user))
 }
 
+function hasStoredTokens() {
+  return !!(localStorage.getItem('access_token') || localStorage.getItem('refresh_token'))
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
@@ -160,6 +164,9 @@ export const useAuthStore = defineStore('auth', {
       if (response.data?.session_timeout_minutes) {
         this.sessionTimeoutMinutes = Math.max(1, Number(response.data.session_timeout_minutes) || 20)
       }
+      if (response.data?.session_uuid) {
+        localStorage.setItem('session_uuid', response.data.session_uuid)
+      }
       localStorage.setItem('session_last_activity', String(Date.now()))
       this.resolveRoles()
       this.syncOnboardingFlag()
@@ -211,8 +218,13 @@ export const useAuthStore = defineStore('auth', {
       this.roleName = null
       this.isSuperAdmin = false
       this.isElectionManager = false
+      this.isMainEC = false
+      this.isSubEC = false
       this.isAuditor = false
       this.isStudent = false
+      this.institution = null
+      this.ecMemberships = []
+      this.governance = null
     },
 
     async logout() {
@@ -227,10 +239,12 @@ export const useAuthStore = defineStore('auth', {
       this.initialized = true
     },
 
+    /**
+     * Synchronously restore auth state from localStorage.
+     * Must run on every page load before any route guard redirect.
+     */
     restoreCachedSession() {
-      const accessToken = localStorage.getItem('access_token')
-      const refreshToken = localStorage.getItem('refresh_token')
-      if (!accessToken && !refreshToken) {
+      if (!hasStoredTokens()) {
         return false
       }
 
@@ -246,48 +260,41 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async initialize() {
-      if (this.initialized) return
+      // Always restore tokens first — never skip this, even if another call is in flight.
+      const hasStoredSession = this.restoreCachedSession()
+
+      if (this.initialized) {
+        return
+      }
+
       if (this.bootstrapping) {
-        // Another bootstrap is in flight — wait briefly, then continue.
         const started = Date.now()
-        while (this.bootstrapping && Date.now() - started < 8000) {
+        while (this.bootstrapping && Date.now() - started < 12000) {
           await new Promise((r) => setTimeout(r, 40))
+        }
+        if (!this.initialized) {
+          this.initialized = true
         }
         return
       }
 
       this.bootstrapping = true
       try {
-        const hasStoredSession = this.restoreCachedSession()
         if (!hasStoredSession) {
           this.initialized = true
           return
         }
 
         try {
-          await Promise.race([
-            this.fetchMe(),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Auth bootstrap timeout')), 12000),
-            ),
-          ])
-          this.isNewUser = localStorage.getItem('is_new_user') === 'true'
+          await this.fetchMe()
           this.syncOnboardingFlag()
         } catch (error) {
-          const status = error?.response?.status
-          const stillHasTokens = !!(
-            localStorage.getItem('access_token') || localStorage.getItem('refresh_token')
-          )
-          if ((status === 401 || status === 403) && !stillHasTokens) {
+          // Keep the cached session on any /me failure. Tokens are only cleared by
+          // the API client when refresh definitively fails (invalid/expired refresh).
+          if (!hasStoredTokens()) {
             this.clearLocalStorage()
-          } else if (status === 401 || status === 403) {
-            // Refresh interceptor may have already cleared invalid tokens.
-            if (!localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) {
-              this.clearLocalStorage()
-            } else {
-              console.warn('Session hydration rejected; keeping cached login until next API call:', error)
-            }
           } else {
+            this.restoreCachedSession()
             console.warn('Session hydration deferred; keeping cached login:', error)
           }
         }

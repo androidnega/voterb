@@ -16,8 +16,6 @@ import '@/styles/modal-animations.css'
 import '@/components/admin/admin-page.css'
 import '@/components/admin/admin-table.css'
 
-const AUTH_BOOT_TIMEOUT_MS = 8000
-
 const app = createApp(App)
 const pinia = createPinia()
 
@@ -35,18 +33,19 @@ app.use(ToastService)
 async function bootstrap() {
   const authStore = useAuthStore()
   const themeStore = useThemeStore()
-  authStore.bootstrapping = true
+
+  // Restore tokens synchronously BEFORE router mounts — this is what keeps
+  // users logged in across a normal page refresh.
+  authStore.restoreCachedSession()
 
   try {
-    await Promise.race([
-      Promise.all([
-        authStore.initialize(),
-        themeStore.bootstrap(),
-      ]),
-      new Promise((resolve) => setTimeout(resolve, AUTH_BOOT_TIMEOUT_MS)),
+    await Promise.all([
+      authStore.initialize(),
+      themeStore.bootstrap().catch(() => {}),
     ])
+  } catch (error) {
+    console.warn('Auth bootstrap warning:', error)
   } finally {
-    authStore.bootstrapping = false
     if (!authStore.initialized) {
       authStore.initialized = true
     }
@@ -56,15 +55,15 @@ async function bootstrap() {
 
   const current = window.location.pathname
   const publicPaths = ['/', '/login', '/otp']
-  const hasStoredTokens = !!(
-    localStorage.getItem('access_token') || localStorage.getItem('refresh_token')
-  )
-  if (!authStore.isAuthenticated && !hasStoredTokens && !publicPaths.includes(current)) {
-    await router.replace('/login')
-  } else if (authStore.isAuthenticated && current === '/login') {
+  if (authStore.isAuthenticated && current === '/login') {
     const home = authStore.homeRoute
     if (home !== '/login') {
       await router.replace(home)
+    }
+  } else if (!authStore.isAuthenticated && !publicPaths.includes(current)) {
+    // restoreCachedSession already ran; only redirect if tokens are truly gone.
+    if (!localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) {
+      await router.replace('/login')
     }
   }
 
