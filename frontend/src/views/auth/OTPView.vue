@@ -100,8 +100,6 @@ let verifyInFlight = false
 
 const getOTPString = () => otpDigits.value.join('').replace(/\s/g, '')
 
-const isMasterOtp = (code = getOTPString()) => code === '111111'
-
 const isOTPComplete = computed(() => {
   const code = getOTPString()
   // Always require 6 digits so auto-submit does not fire early on 11111
@@ -112,7 +110,7 @@ const scheduleVerify = () => {
   if (verifyInFlight || loading.value || !isOTPComplete.value) return
   setTimeout(() => {
     handleVerify()
-  }, 200)
+  }, 250)
 }
 
 onMounted(() => {
@@ -170,6 +168,10 @@ const handlePaste = (event) => {
 
 const handleVerify = async () => {
   if (!isOTPComplete.value || verifyInFlight || loading.value) return
+  if (!otpSessionId.value) {
+    errorMessage.value = 'No OTP session found. Please login again.'
+    return
+  }
 
   const code = getOTPString()
   verifyInFlight = true
@@ -178,7 +180,6 @@ const handleVerify = async () => {
 
   try {
     await authStore.verifyOtp(otpSessionId.value, code)
-    // Students → eligible elections dashboard; staff → admin dashboard
     if (authStore.isStudent) {
       await router.replace('/student')
     } else {
@@ -188,9 +189,9 @@ const handleVerify = async () => {
     verifyInFlight = false
     console.error('OTP verification error:', error)
     errorMessage.value = error.response?.data?.error || 'Invalid OTP. Please try again.'
-    otpDigits.value = ['', '', '', '', '', '']
+    // Keep digits so staff can correct/retry without retyping master code
     nextTick(() => {
-      otpInputs.value?.[0]?.focus()
+      otpInputs.value?.[5]?.focus()
     })
   } finally {
     loading.value = false
@@ -199,10 +200,21 @@ const handleVerify = async () => {
 
 const resendOTP = async () => {
   if (resendCooldown.value > 0 || loading.value) return
-  
+  if (!otpSessionId.value) {
+    errorMessage.value = 'No OTP session found. Please login again.'
+    return
+  }
+
   try {
     const response = await authStore.resendOtp(otpSessionId.value)
     if (response?.success) {
+      // Critical: resend invalidates the old session — use the new id
+      if (authStore.pendingOtp) {
+        otpSessionId.value = authStore.pendingOtp
+        await router.replace({ path: '/otp', query: { sessionId: otpSessionId.value } })
+      }
+      errorMessage.value = ''
+      otpDigits.value = ['', '', '', '', '', '']
       resendCooldown.value = 30
       cooldownInterval = setInterval(() => {
         resendCooldown.value--
@@ -211,6 +223,7 @@ const resendOTP = async () => {
           cooldownInterval = null
         }
       }, 1000)
+      nextTick(() => otpInputs.value?.[0]?.focus())
     }
   } catch (error) {
     console.error('Failed to resend OTP:', error)

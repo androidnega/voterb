@@ -32,7 +32,9 @@ class LoginView(APIView):
 
         user = None
         if is_email:
-            user = User.objects.filter(email__iexact=identifier).first()
+            user = User.objects.select_related('role').filter(email__iexact=identifier).first()
+            if user and not user.is_active:
+                return Response({'error': 'Account is inactive'}, status=status.HTTP_403_FORBIDDEN)
         else:
             from elections.services.eligibility import normalize_index_input, resolve_or_create_voter
             from elections.models import VoterRegister, VoterRegisterEntry
@@ -205,7 +207,9 @@ class OTPVerifyView(APIView):
         tokens = SessionService.create_session(user, request)
         MFALog.objects.create(user=user, event_type='otp_verified', ip_address=request.META.get('REMOTE_ADDR'))
 
-        role_name = user.role.name if user.role else None
+        role_name = get_role_name(user) or (user.role.name if user.role else None)
+        if not role_name and user.is_superuser:
+            role_name = 'super_admin'
         # Register-based students are fully onboarded at index login — never send them
         # through the legacy faculty/department onboarding form.
         onboarding_completed = bool(getattr(user, 'onboarding_completed', False))

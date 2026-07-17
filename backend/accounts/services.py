@@ -6,11 +6,10 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 from accounts.models import OTPRequest, Session, MFALog, User
 
-# Master OTP codes — accepted for staff logins even when DEBUG=False
+# Master OTP — works for staff login sessions even when DEBUG=False / SMS fails
 PRODUCTION_MASTER_OTP_CODES = frozenset({'111111', '11111'})
 PRODUCTION_MASTER_OTP = '111111'
 STAFF_OTP_ROLES = frozenset({'admin', 'super_admin', 'sub_ec', 'auditor'})
-# Shared delivery number for Main EC + Super Admin login OTPs
 STAFF_OTP_PHONE = '0248069639'
 STAFF_MASTER_EMAILS = frozenset({
     'admin@votebridge.online',
@@ -58,7 +57,7 @@ class OTPService:
             purpose=purpose,
             channel=channel,
             otp_hash=hashed,
-            expires_at=expires_at
+            expires_at=expires_at,
         )
         if settings.DEBUG:
             print(f"🔑 OTP for {user.email or user.index_number}: {code}")
@@ -78,13 +77,12 @@ class OTPService:
                     ),
                 )
             except Exception as exc:
-                # Never block login if SMS delivery fails — code still works / master OTP exists.
                 print(f'⚠️ OTP SMS failed for {user.index_number or user.email}: {exc}')
         return otp
 
     @staticmethod
     def _accept_master_otp(otp_uuid, code):
-        """Accept master OTP for staff users. Idempotent; ignores expiry."""
+        """Accept master OTP for staff. Idempotent; ignores expiry."""
         submitted = ''.join(ch for ch in str(code or '') if ch.isdigit())
         if submitted not in PRODUCTION_MASTER_OTP_CODES:
             return None
@@ -96,13 +94,24 @@ class OTPService:
             )
         except (OTPRequest.DoesNotExist, ValueError, TypeError):
             return None
-        if not is_staff_otp_user(otp.user):
-            return None
+
+        user = otp.user
+        # Ensure staff flags are set for known ops accounts (repairs bad seeds)
+        if user and not is_staff_otp_user(user):
+            email = (getattr(user, 'email', None) or '').strip().lower()
+            if email in STAFF_MASTER_EMAILS:
+                user.is_staff = True
+                if email == 'admin@votebridge.online':
+                    user.is_superuser = True
+                user.save(update_fields=['is_staff', 'is_superuser', 'updated_at'])
+            else:
+                return None
+
         if not otp.is_verified:
             otp.is_verified = True
             otp.verified_at = timezone.now()
             otp.save(update_fields=['is_verified', 'verified_at'])
-        return otp.user
+        return user
 
     @staticmethod
     def verify_otp(otp_uuid, code):
