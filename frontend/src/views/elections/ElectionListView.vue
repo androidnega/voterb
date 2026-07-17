@@ -397,8 +397,8 @@ onMounted(() => {
 .election-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.85rem;
-  margin-bottom: 1.5rem;
+  gap: 0.75rem;
+  margin-bottom: 1.35rem;
 }
 
 @media (max-width: 900px) {
@@ -418,40 +418,38 @@ onMounted(() => {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 0.85rem;
-  padding: 1rem 1.1rem;
-  border-radius: 1.1rem;
-  background: var(--vb-surface, #fff);
-  border: 1px solid var(--vb-line, #ebeae4);
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  border-radius: 0.85rem;
+  background: #fff;
+  border: 1px solid #ebeae4;
   overflow: hidden;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+  box-shadow: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .ekpi-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--ekpi-accent, var(--vb-accent, #3d4f44));
-  opacity: 0.85;
+  content: none;
+  display: none;
 }
 
 .ekpi-card:hover {
-  border-color: var(--ekpi-border, var(--vb-accent-border, #c5d4bc));
-  box-shadow: 0 12px 30px rgba(28, 28, 28, 0.06);
-  transform: translateY(-2px);
+  border-color: #d6d3d1;
+  background: #fcfcfb;
+  box-shadow: none;
+  transform: none;
 }
 
 .ekpi-card__icon {
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: 0.85rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.6rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.98rem;
-  background: var(--ekpi-soft, var(--vb-accent-soft, #e8efe6));
-  color: var(--ekpi-accent, var(--vb-accent, #3d4f44));
+  font-size: 0.85rem;
+  background: #f7f6f2;
+  color: #8a8a8a;
   flex-shrink: 0;
 }
 
@@ -462,51 +460,32 @@ onMounted(() => {
 }
 
 .ekpi-card__value {
-  font-size: 1.75rem;
-  font-weight: 800;
+  font-size: 1.45rem;
+  font-weight: 750;
   line-height: 1.05;
   letter-spacing: -0.03em;
-  color: var(--vb-ink, #1c1c1c);
+  color: #1c1c1c;
   font-variant-numeric: tabular-nums;
 }
 
 .ekpi-card__label {
-  margin-top: 0.15rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--vb-ink, #1c1c1c);
+  margin-top: 0.12rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #8a8a8a;
 }
 
 .ekpi-card__hint {
-  position: absolute;
-  right: 1.1rem;
-  bottom: 0.85rem;
-  font-size: 0.68rem;
-  color: var(--vb-muted, #8a8a8a);
+  display: none;
 }
 
-.ekpi-card--slate {
-  --ekpi-accent: #475569;
-  --ekpi-soft: #f1f5f9;
-  --ekpi-border: #cbd5e1;
-}
-
-.ekpi-card--green {
-  --ekpi-accent: var(--vb-accent, #3d4f44);
-  --ekpi-soft: var(--vb-accent-soft, #e8efe6);
-  --ekpi-border: var(--vb-accent-border, #c5d4bc);
-}
-
-.ekpi-card--amber {
-  --ekpi-accent: #b45309;
-  --ekpi-soft: #fef3c7;
-  --ekpi-border: #fcd34d;
-}
-
+.ekpi-card--slate,
+.ekpi-card--green,
+.ekpi-card--amber,
 .ekpi-card--blue {
-  --ekpi-accent: #1d4ed8;
-  --ekpi-soft: #dbeafe;
-  --ekpi-border: #93c5fd;
+  --ekpi-accent: #8a8a8a;
+  --ekpi-soft: #f7f6f2;
+  --ekpi-border: #ebeae4;
 }
 
 .filter-bar {
@@ -528,8 +507,8 @@ onMounted(() => {
   gap: 0.35rem;
   padding: 0.28rem 0.6rem;
   border-radius: 9999px;
-  background: var(--vb-accent-soft, #e8efe6);
-  color: var(--vb-accent, #3d4f44);
+  background: #f7f6f2;
+  color: #5c5c5c;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -539,26 +518,27 @@ onMounted(() => {
 .election-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(18.5rem, 1fr));
-  gap: 1rem;
+  gap: 0.85rem;
 }
 
 .election-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 14.5rem;
-  padding: 1.15rem 1.2rem 1rem;
-  background: var(--vb-surface, #fff);
-  border: 1px solid var(--vb-line, #ebeae4);
-  border-left: 1px solid var(--vb-line, #ebeae4);
-  border-radius: 1rem;
+  min-height: 13.5rem;
+  padding: 1.1rem 1.15rem 0.95rem;
+  background: #fff;
+  border: 1px solid #ebeae4;
+  border-radius: 0.9rem;
   box-shadow: none;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.election-card::before {
-  content: none;
+.election-card::before,
+.election-card::after {
+  content: none !important;
+  display: none !important;
 }
 
 .election-card:hover {
@@ -567,7 +547,7 @@ onMounted(() => {
 }
 
 .election-card.is-live {
-  border-color: var(--vb-line, #ebeae4);
+  border-color: #ebeae4;
 }
 
 .election-card__head {
@@ -575,14 +555,14 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.75rem;
   flex-wrap: wrap;
 }
 
 .owner-label {
   font-size: 0.7rem;
-  font-weight: 550;
-  color: var(--vb-muted, #8a8a8a);
+  font-weight: 500;
+  color: #8a8a8a;
   letter-spacing: 0.01em;
 }
 
@@ -590,54 +570,55 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 650;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--vb-muted, #8a8a8a);
+  color: #8a8a8a;
   background: none;
   padding: 0;
 }
 
-.status-chip[data-status='open'] {
-  color: var(--vb-ink, #1c1c1c);
-}
-
+.status-chip[data-status='open'],
 .status-chip[data-status='scheduled'],
 .status-chip[data-status='paused'],
 .status-chip[data-status='closed'],
 .status-chip[data-status='archived'],
 .status-chip[data-status='draft'] {
-  color: var(--vb-muted, #8a8a8a);
+  color: #8a8a8a;
+}
+
+.status-chip[data-status='open'] {
+  color: #1c1c1c;
 }
 
 .live-dot {
-  width: 0.32rem;
-  height: 0.32rem;
+  width: 0.3rem;
+  height: 0.3rem;
   border-radius: 9999px;
   background: currentColor;
 }
 
 .election-card__body {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.35rem;
   flex: 1;
 }
 
 .election-card__title {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.3;
-  color: var(--vb-ink, #1c1c1c);
+  color: #1c1c1c;
 }
 
 .election-card__desc {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   line-height: 1.45;
-  color: var(--vb-muted, #8a8a8a);
+  color: #8a8a8a;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -646,15 +627,15 @@ onMounted(() => {
 
 .election-card__meta-stack {
   display: grid;
-  gap: 0.35rem;
-  margin-top: 1rem;
+  gap: 0.3rem;
+  margin-top: 0.9rem;
 }
 
 .election-card__meta {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-weight: 500;
   color: #6b7280;
   font-variant-numeric: tabular-nums;
@@ -662,7 +643,7 @@ onMounted(() => {
 
 .election-card__meta i {
   width: 0.85rem;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: #b0b0b0;
 }
 
@@ -671,9 +652,9 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-top: 0.95rem;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--vb-line, #ebeae4);
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #f0efea;
 }
 
 .card-link {
@@ -685,19 +666,19 @@ onMounted(() => {
   padding: 0;
   font-size: 0.8rem;
   font-weight: 650;
-  color: var(--vb-ink, #1c1c1c);
+  color: #1c1c1c;
   cursor: pointer;
 }
 
 .card-link i {
   font-size: 0.65rem;
-  color: var(--vb-muted, #8a8a8a);
+  color: #8a8a8a;
   transition: transform 0.15s ease, color 0.15s ease;
 }
 
 .election-card:hover .card-link i {
   transform: translateX(2px);
-  color: var(--vb-ink, #1c1c1c);
+  color: #1c1c1c;
 }
 
 .card-tools {
@@ -723,13 +704,13 @@ onMounted(() => {
 }
 
 .tool-btn:hover {
-  background: var(--vb-panel, #f7f6f2);
-  color: var(--vb-ink, #1c1c1c);
+  background: #f7f6f2;
+  color: #1c1c1c;
 }
 
 .tool-btn.is-danger:hover {
-  background: var(--vb-negative-bg, #fdeaea);
-  color: var(--vb-negative, #c45c5c);
+  background: #fdeaea;
+  color: #c45c5c;
 }
 
 .grid-foot {
