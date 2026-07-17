@@ -78,51 +78,38 @@ def user_ballot_complete(user, election: Election) -> bool:
     return len(remaining) == 0
 
 
-def user_eligible_for_ussd_election(user, election: Election, index: str | None = None) -> bool:
-    """Whether this voter can access the election via USSD (register / eligibility)."""
-    from elections.services.register_service import election_register_entry_queryset
-
-    eligibility = VoterEligibility.objects.filter(election=election, user=user).first()
-    if eligibility is not None and not eligibility.is_eligible:
-        return False
-
-    register_filter = Q(user=user)
-    if index:
-        register_filter |= Q(voter_id__iexact=index)
-    on_register = election_register_entry_queryset(election).filter(register_filter).exists()
-    if on_register:
-        return True
-    return eligibility is not None and eligibility.is_eligible
-
-
 def msisdn_already_voted(msisdn: str) -> bool:
     """
-    Contact lockout for the current voting window only.
+    Contact lockout for *currently open* USSD elections only.
 
-    Blocks when this phone maps to a known voter who has finished every
-    currently *open* USSD election they are eligible for. Votes in closed
-    elections never lock the number out of a new open election.
+    Do not use historical USSDSession ballot_complete flags — those permanently
+    blocked the number after any past vote (including closed elections).
     """
+    from elections.services.register_service import election_register_entry_queryset
+
     open_elections = list(open_ussd_elections())
     if not open_elections:
         return False
 
     users = list(find_users_by_msisdn(msisdn)[:30])
     if not users:
-        # Unknown dialing number — let them enter an index (register phone may differ).
         return False
 
-    eligible_open = 0
+    considered = 0
     remaining = 0
     for user in users:
         for election in open_elections:
-            if not user_eligible_for_ussd_election(user, election):
+            eligibility = VoterEligibility.objects.filter(election=election, user=user).first()
+            if eligibility is not None and not eligibility.is_eligible:
                 continue
-            eligible_open += 1
+            on_register = election_register_entry_queryset(election).filter(user=user).exists()
+            if not on_register and eligibility is None:
+                continue
+            considered += 1
             if not user_ballot_complete(user, election):
                 remaining += 1
 
-    if eligible_open == 0:
+    if considered == 0:
         return False
     return remaining == 0
 
@@ -131,7 +118,6 @@ def resolve_index_candidates(raw_index: str, msisdn: str | None = None):
     """
     Resolve open USSD elections for an index number.
     Prefers register entries / users whose phone matches the dialing MSISDN.
-    Skips elections where the ballot is already complete.
     Returns list of dicts: {user, election, title, ...}.
     """
     index = normalize_index(raw_index)
@@ -168,36 +154,35 @@ def resolve_index_candidates(raw_index: str, msisdn: str | None = None):
             users = phone_matched
 
     results = []
-    finished = []
     seen = set()
     for user in users:
         for election in open_ussd_elections().order_by('title'):
-            if not user_eligible_for_ussd_election(user, election, index=index):
+            from elections.services.register_service import election_register_entry_queryset
+            on_register = election_register_entry_queryset(election).filter(
+                Q(user=user) | Q(voter_id__iexact=index)
+            ).exists()
+            eligibility = VoterEligibility.objects.filter(
+                election=election, user=user,
+            ).first()
+            if eligibility is not None and not eligibility.is_eligible:
+                continue
+            if not on_register and eligibility is None:
+                continue
+
+            # Skip ballots already completed for this open election so the
+            # voter can still reach another open election they are eligible for.
+            if user_ballot_complete(user, election):
                 continue
 
             key = (str(user.uuid), str(election.uuid))
             if key in seen:
                 continue
             seen.add(key)
-
-            payload = {
+            results.append({
                 'user': user,
                 'election': election,
                 'title': election.title,
                 'user_uuid': str(user.uuid),
                 'election_uuid': str(election.uuid),
-            }
-            if user_ballot_complete(user, election):
-                finished.append(payload)
-                continue
-            results.append(payload)
-
-    resolve_index_candidates.last_finished = finished  # type: ignore[attr-defined]
+            })
     return results
-
-
-def index_finished_all_open_ussd(raw_index: str, msisdn: str | None = None) -> bool:
-    """True when the index is known but every open USSD ballot is already cast."""
-    open_matches = resolve_index_candidates(raw_index, msisdn)
-    finished = getattr(resolve_index_candidates, 'last_finished', []) or []
-    return not open_matches and bool(finished)
