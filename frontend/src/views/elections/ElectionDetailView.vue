@@ -82,36 +82,65 @@
 
     <section
       v-if="canManageElections && election.status === 'draft'"
-      class="setup-strip page-section"
+      class="roadmap page-section"
+      aria-label="Election setup roadmap"
     >
-      <div class="setup-strip__step" :class="{ 'is-done': positions.length }">
-        <span class="setup-strip__num">1</span>
-        <div>
-          <strong>Set up positions</strong>
-          <p>Define the offices on the ballot</p>
-        </div>
-      </div>
-      <div class="setup-strip__step" :class="{ 'is-done': candidateCount > 0 }">
-        <span class="setup-strip__num">2</span>
-        <div>
-          <strong>Upload candidates</strong>
-          <p>Add and approve candidates per position</p>
-        </div>
-      </div>
-      <div class="setup-strip__step" :class="{ 'is-done': election.register }">
-        <span class="setup-strip__num">3</span>
-        <div>
-          <strong>Attach voters</strong>
-          <p>Link an approved register</p>
-        </div>
-      </div>
-      <div class="setup-strip__step">
-        <span class="setup-strip__num">4</span>
-        <div>
-          <strong>Start election</strong>
-          <p>Confirm when ready to open voting</p>
-        </div>
-      </div>
+      <header class="roadmap__head">
+        <p class="roadmap__eyebrow">Setup roadmap</p>
+        <h2 class="roadmap__title">Get this election ready</h2>
+      </header>
+
+      <ol class="roadmap__track">
+        <li
+          class="roadmap__step"
+          :class="roadmapStepClass(0)"
+        >
+          <span class="roadmap__marker" aria-hidden="true">
+            <i v-if="positions.length" class="fas fa-check"></i>
+            <span v-else>1</span>
+          </span>
+          <div class="roadmap__copy">
+            <strong>Positions</strong>
+            <p>Define offices on the ballot</p>
+          </div>
+        </li>
+        <li
+          class="roadmap__step"
+          :class="roadmapStepClass(1)"
+        >
+          <span class="roadmap__marker" aria-hidden="true">
+            <i v-if="candidateCount > 0" class="fas fa-check"></i>
+            <span v-else>2</span>
+          </span>
+          <div class="roadmap__copy">
+            <strong>Candidates</strong>
+            <p>Add and approve nominees</p>
+          </div>
+        </li>
+        <li
+          class="roadmap__step"
+          :class="roadmapStepClass(2)"
+        >
+          <span class="roadmap__marker" aria-hidden="true">
+            <i v-if="election.register" class="fas fa-check"></i>
+            <span v-else>3</span>
+          </span>
+          <div class="roadmap__copy">
+            <strong>Voters</strong>
+            <p>Link an approved register</p>
+          </div>
+        </li>
+        <li
+          class="roadmap__step"
+          :class="roadmapStepClass(3)"
+        >
+          <span class="roadmap__marker" aria-hidden="true">4</span>
+          <div class="roadmap__copy">
+            <strong>Launch</strong>
+            <p>Open voting when ready</p>
+          </div>
+        </li>
+      </ol>
     </section>
 
     <section
@@ -119,6 +148,7 @@
       class="launch-card page-section"
     >
       <div class="launch-card__copy">
+        <p class="launch-card__eyebrow">Ready to go live</p>
         <h3>Start this election</h3>
         <p>
           When positions, candidates, and voters are ready, confirm to open voting for eligible students on this election’s register.
@@ -471,6 +501,25 @@ watch(
 
 const positions = ref([])
 const candidateCount = ref(0)
+
+const roadmapDone = computed(() => ([
+  positions.value.length > 0,
+  candidateCount.value > 0,
+  !!election.value?.register,
+  false,
+]))
+
+const roadmapActiveIndex = computed(() => {
+  const idx = roadmapDone.value.findIndex((done) => !done)
+  return idx === -1 ? roadmapDone.value.length - 1 : idx
+})
+
+function roadmapStepClass(index) {
+  if (roadmapDone.value[index]) return 'is-done'
+  if (index === roadmapActiveIndex.value) return 'is-active'
+  return 'is-upcoming'
+}
+
 const loadingPositions = ref(false)
 const showPositionDialog = ref(false)
 const loadingPosition = ref(false)
@@ -813,45 +862,125 @@ watch(
 </script>
 
 <style scoped>
-.setup-strip {
+.roadmap {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.setup-strip__step {
-  display: flex;
-  gap: 0.65rem;
-  align-items: flex-start;
-  padding: 0.85rem 0.95rem;
-  border-radius: 0.95rem;
+  gap: 1rem;
+  padding: 1.15rem 1.2rem 1.25rem;
   background: #fff;
   border: 1px solid var(--vb-line, #ebeae4);
+  border-radius: 1.15rem;
 }
 
-.setup-strip__step.is-done {
-  border-color: rgba(61, 79, 68, 0.28);
-  background: #f0f7f3;
+.roadmap__head {
+  display: grid;
+  gap: 0.2rem;
 }
 
-.setup-strip__num {
-  width: 1.55rem;
-  height: 1.55rem;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 0.75rem;
-  font-weight: 800;
-  background: var(--vb-panel, #f7f6f2);
+.roadmap__eyebrow {
+  margin: 0;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a8a29e;
+}
+
+.roadmap__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 750;
+  letter-spacing: -0.025em;
   color: var(--vb-ink, #1c1c1c);
 }
 
-.setup-strip__step.is-done .setup-strip__num {
-  background: var(--vb-accent, #3d4f44);
+.roadmap__track {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  position: relative;
+}
+
+.roadmap__track::before {
+  content: '';
+  position: absolute;
+  top: 1.05rem;
+  left: 7%;
+  right: 7%;
+  height: 1px;
+  background: #ebe8e2;
+  z-index: 0;
+}
+
+.roadmap__step {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+  text-align: center;
+  padding: 0 0.35rem;
+}
+
+.roadmap__marker {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 750;
+  background: #fff;
+  border: 1.5px solid #e7e5e4;
+  color: #a8a29e;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.roadmap__copy {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.roadmap__copy strong {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: #78716c;
+}
+
+.roadmap__copy p {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #a8a29e;
+}
+
+.roadmap__step.is-done .roadmap__marker {
+  background: #0f766e;
+  border-color: #0f766e;
   color: #fff;
+}
+
+.roadmap__step.is-done .roadmap__copy strong {
+  color: #134e4a;
+}
+
+.roadmap__step.is-active .roadmap__marker {
+  background: #1c1917;
+  border-color: #1c1917;
+  color: #fff;
+  box-shadow: 0 0 0 4px rgba(28, 25, 23, 0.08);
+}
+
+.roadmap__step.is-active .roadmap__copy strong {
+  color: #1c1917;
+}
+
+.roadmap__step.is-active .roadmap__copy p {
+  color: #78716c;
 }
 
 .launch-card {
@@ -860,12 +989,10 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.05rem 1.15rem;
+  padding: 1.15rem 1.25rem;
   border-radius: 1.15rem;
-  background:
-    linear-gradient(135deg, rgba(61, 79, 68, 0.08), rgba(163, 177, 138, 0.12)),
-    #fff;
-  border: 1px solid rgba(61, 79, 68, 0.18);
+  background: #fff;
+  border: 1px solid #ebeae4;
 }
 
 .launch-card__copy {
@@ -873,11 +1000,21 @@ watch(
   flex: 1;
 }
 
+.launch-card__eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a8a29e;
+}
+
 .launch-card__copy h3 {
   margin: 0;
   font-size: 1.05rem;
-  font-weight: 800;
+  font-weight: 750;
   letter-spacing: -0.02em;
+  color: var(--vb-ink, #1c1c1c);
 }
 
 .launch-card__copy p {
@@ -894,20 +1031,36 @@ watch(
   gap: 0.5rem;
 }
 
-.setup-strip__step strong {
-  display: block;
-  font-size: 0.86rem;
-}
-
-.setup-strip__step p {
-  margin: 0.15rem 0 0;
-  font-size: 0.74rem;
-  color: var(--vb-muted, #8a8a8a);
-}
-
 @media (max-width: 800px) {
-  .setup-strip {
+  .roadmap__track {
     grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+
+  .roadmap__track::before {
+    display: none;
+  }
+
+  .roadmap__step {
+    grid-template-columns: auto 1fr;
+    justify-items: start;
+    text-align: left;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid #ebe8e2;
+    border-radius: 0.85rem;
+    background: #fafaf8;
+  }
+
+  .roadmap__step.is-active {
+    background: #fff;
+    border-color: #d6d3d1;
+  }
+
+  .roadmap__step.is-done {
+    background: #f0fdf9;
+    border-color: #d1fae5;
   }
 }
 .election-detail .btn-back {

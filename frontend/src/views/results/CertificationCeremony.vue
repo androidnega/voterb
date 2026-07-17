@@ -1,51 +1,59 @@
 <template>
   <div class="admin-page ceremony">
-    <div class="ceremony__top">
-      <button type="button" class="btn btn-ghost" @click="goBack">
-        <i class="fas fa-arrow-left"></i>
-        Back to results
+    <header class="ceremony-hero">
+      <button type="button" class="ceremony-back" @click="goBack">
+        <i class="fas fa-arrow-left" aria-hidden="true"></i>
+        Results
       </button>
-      <div>
-        <h1 class="ceremony__title">Certify results</h1>
-        <p class="ceremony__sub">
-          {{ electionTitle || 'Election results' }} — capture photo, location, and signature to certify.
-        </p>
-      </div>
-    </div>
+      <p class="ceremony-eyebrow">Certification</p>
+      <h1 class="ceremony-title">Certify results</h1>
+      <p class="ceremony-sub">
+        {{ electionTitle || 'Election results' }} — photo, location, and signature required.
+      </p>
+    </header>
 
-    <ol class="ceremony-steps">
-      <li
+    <nav class="ceremony-rail" aria-label="Certification steps">
+      <div
         v-for="s in steps"
         :key="s.id"
-        class="ceremony-steps__item"
+        class="ceremony-rail__item"
         :class="{
           'is-active': step === s.id,
           'is-done': step > s.id,
         }"
       >
-        <span class="ceremony-steps__num">{{ s.id }}</span>
-        <span>{{ s.label }}</span>
-      </li>
-    </ol>
+        <span class="ceremony-rail__dot" aria-hidden="true">
+          <i v-if="step > s.id" class="fas fa-check"></i>
+          <span v-else>{{ s.id }}</span>
+        </span>
+        <span class="ceremony-rail__label">{{ s.label }}</span>
+      </div>
+    </nav>
 
     <!-- Step 1: Photo -->
     <section v-if="step === 1" class="ceremony-panel">
-      <h2>Capture certifier photo</h2>
-      <p class="ceremony-panel__hint">Use your webcam to take a photo for the certification record.</p>
+      <div class="ceremony-panel__intro">
+        <h2>Certifier photo</h2>
+        <p>Capture a clear headshot for the official record.</p>
+      </div>
 
       <div class="photo-stage">
         <video v-show="!photoDataUrl" ref="videoEl" class="photo-stage__media" autoplay playsinline muted />
         <img v-if="photoDataUrl" :src="photoDataUrl" alt="Captured photo" class="photo-stage__media" />
         <canvas ref="photoCanvasEl" hidden />
+        <div v-if="!photoDataUrl && !stream && !startingCamera" class="photo-stage__empty">
+          <i class="fas fa-camera" aria-hidden="true"></i>
+          <span>Camera off</span>
+        </div>
       </div>
 
       <p v-if="cameraError" class="ceremony-error">{{ cameraError }}</p>
 
       <div class="ceremony-actions">
-        <button v-if="!photoDataUrl" type="button" class="btn btn-primary" :disabled="startingCamera" @click="startCamera">
+        <button v-if="!photoDataUrl" type="button" class="btn btn-ghost" :disabled="startingCamera" @click="startCamera">
           <i v-if="startingCamera" class="fas fa-spinner fa-spin"></i>
           <i v-else class="fas fa-video"></i>
-          {{ stream ? 'Retake setup' : 'Start camera' }}
+          {{ stream ? 'Restart camera' : 'Start camera' }}
         </button>
         <button v-if="stream && !photoDataUrl" type="button" class="btn btn-primary" @click="capturePhoto">
           <i class="fas fa-camera"></i>
@@ -62,23 +70,44 @@
 
     <!-- Step 2: Location -->
     <section v-else-if="step === 2" class="ceremony-panel">
-      <h2>Confirm location</h2>
-      <p class="ceremony-panel__hint">Allow GPS access, or enter coordinates manually if GPS is unavailable.</p>
+      <div class="ceremony-panel__intro">
+        <h2>Location</h2>
+        <p>Use GPS, or enter coordinates if GPS is unavailable.</p>
+      </div>
 
       <div v-if="location" class="location-card">
-        <p><strong>Latitude:</strong> {{ location.lat }}</p>
-        <p><strong>Longitude:</strong> {{ location.lng }}</p>
-        <p v-if="location.accuracy != null" class="text-muted">Accuracy ±{{ Math.round(location.accuracy) }}m</p>
-        <p class="text-muted">Source: {{ location.source }}</p>
+        <div class="location-card__row">
+          <span>Latitude</span>
+          <strong>{{ location.lat }}</strong>
+        </div>
+        <div class="location-card__row">
+          <span>Longitude</span>
+          <strong>{{ location.lng }}</strong>
+        </div>
+        <div v-if="location.accuracy != null" class="location-card__row">
+          <span>Accuracy</span>
+          <strong>±{{ Math.round(location.accuracy) }}m</strong>
+        </div>
+        <div class="location-card__row">
+          <span>Source</span>
+          <strong class="location-card__source">{{ location.source }}</strong>
+        </div>
+      </div>
+      <div v-else class="location-empty">
+        No location captured yet.
       </div>
 
       <p v-if="locationError" class="ceremony-error">{{ locationError }}</p>
 
       <div class="manual-location">
-        <label>Manual latitude</label>
-        <InputText v-model="manualLat" class="w-full" placeholder="e.g. 6.6885" />
-        <label>Manual longitude</label>
-        <InputText v-model="manualLng" class="w-full" placeholder="e.g. -1.6244" />
+        <label>
+          Manual latitude
+          <InputText v-model="manualLat" class="w-full" placeholder="e.g. 6.6885" />
+        </label>
+        <label>
+          Manual longitude
+          <InputText v-model="manualLng" class="w-full" placeholder="e.g. -1.6244" />
+        </label>
       </div>
 
       <div class="ceremony-actions">
@@ -97,19 +126,23 @@
 
     <!-- Step 3: Signature -->
     <section v-else-if="step === 3" class="ceremony-panel">
-      <h2>Draw signature</h2>
-      <p class="ceremony-panel__hint">Sign in the box below using your mouse or finger.</p>
+      <div class="ceremony-panel__intro">
+        <h2>Signature</h2>
+        <p>Sign in the box below with your mouse or finger.</p>
+      </div>
 
-      <canvas
-        ref="sigCanvasEl"
-        class="sig-canvas"
-        width="640"
-        height="220"
-        @pointerdown="onSigPointerDown"
-        @pointermove="onSigPointerMove"
-        @pointerup="onSigPointerUp"
-        @pointerleave="onSigPointerUp"
-      />
+      <div class="sig-wrap">
+        <canvas
+          ref="sigCanvasEl"
+          class="sig-canvas"
+          width="640"
+          height="220"
+          @pointerdown="onSigPointerDown"
+          @pointermove="onSigPointerMove"
+          @pointerup="onSigPointerUp"
+          @pointerleave="onSigPointerUp"
+        />
+      </div>
 
       <div class="ceremony-actions">
         <button type="button" class="btn btn-ghost" @click="step = 2">Back</button>
@@ -122,18 +155,20 @@
 
     <!-- Step 4: Confirm -->
     <section v-else class="ceremony-panel">
-      <h2>Confirm &amp; certify</h2>
-      <p class="ceremony-panel__hint">Review the evidence. IP and device fingerprint are recorded automatically.</p>
+      <div class="ceremony-panel__intro">
+        <h2>Review &amp; certify</h2>
+        <p>Confirm the evidence. IP and device fingerprint are recorded automatically.</p>
+      </div>
 
       <div class="confirm-grid">
-        <div class="confirm-card">
+        <div class="confirm-card confirm-card--photo">
           <h3>Photo</h3>
           <img v-if="photoDataUrl" :src="photoDataUrl" alt="Certifier photo" class="confirm-photo" />
         </div>
         <div class="confirm-card">
           <h3>Location</h3>
-          <p v-if="location">{{ location.lat }}, {{ location.lng }}</p>
-          <p class="text-muted">{{ location?.source }}</p>
+          <p v-if="location" class="confirm-value">{{ location.lat }}, {{ location.lng }}</p>
+          <p class="confirm-muted">{{ location?.source }}</p>
         </div>
         <div class="confirm-card">
           <h3>Signature</h3>
@@ -141,8 +176,8 @@
         </div>
         <div class="confirm-card">
           <h3>Device</h3>
-          <p><strong>IP:</strong> {{ clientIp || '…' }}</p>
-          <p class="mono fingerprint"><strong>Fingerprint:</strong> {{ fingerprint }}</p>
+          <p class="confirm-value"><span>IP</span> {{ clientIp || '…' }}</p>
+          <p class="confirm-muted mono fingerprint">{{ fingerprint }}</p>
         </div>
       </div>
 
@@ -308,7 +343,7 @@ const initSigCanvas = () => {
   const ctx = canvas.getContext('2d')
   ctx.fillStyle = '#fff'
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.strokeStyle = '#0f172a'
+  ctx.strokeStyle = '#1c1917'
   ctx.lineWidth = 2.5
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
@@ -422,112 +457,148 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.ceremony__top {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
+.ceremony {
+  max-width: 42rem;
+  margin: 0 auto;
 }
 
-.ceremony__title {
-  margin: 0;
-  font-size: 1.4rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--vb-ink, #1c1c1c);
+.ceremony-hero {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1.35rem;
 }
 
-.ceremony__sub {
-  margin: 0.3rem 0 0;
-  color: var(--vb-muted, #8a8a8a);
-  font-size: 0.9rem;
-  line-height: 1.45;
-  max-width: 40rem;
-}
-
-.ceremony-steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  list-style: none;
-  padding: 0.3rem;
-  margin: 0 0 1.25rem;
-  background: var(--vb-panel, #f7f6f2);
-  border: 1px solid var(--vb-line, #ebeae4);
-  border-radius: 999px;
-  width: fit-content;
-  max-width: 100%;
-}
-
-.ceremony-steps__item {
+.ceremony-back {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
+  width: fit-content;
+  border: none;
   background: transparent;
-  color: var(--vb-muted, #8a8a8a);
-  font-size: 0.78rem;
+  color: #78716c;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 0.45rem;
+}
+
+.ceremony-eyebrow {
+  margin: 0;
+  font-size: 0.66rem;
   font-weight: 700;
-  transition: all 0.16s ease;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a8a29e;
 }
 
-.ceremony-steps__item.is-active {
-  background: var(--vb-accent, #3d4f44);
-  color: #fff;
-  box-shadow: 0 6px 16px var(--vb-accent-shadow, rgba(61, 79, 68, 0.18));
+.ceremony-title {
+  margin: 0;
+  font-size: clamp(1.35rem, 3vw, 1.7rem);
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  color: #1c1917;
+  line-height: 1.15;
 }
 
-.ceremony-steps__item.is-done {
-  background: var(--vb-accent-soft, #e8efe6);
-  color: var(--vb-accent, #3d4f44);
+.ceremony-sub {
+  margin: 0;
+  color: #78716c;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  max-width: 34rem;
 }
 
-.ceremony-steps__num {
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: 50%;
+.ceremony-rail {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin: 0 0 1.25rem;
+  padding: 0.55rem;
+  background: #fff;
+  border: 1px solid #ebe8e2;
+  border-radius: 999px;
+}
+
+.ceremony-rail__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 999px;
+  color: #a8a29e;
+  font-size: 0.74rem;
+  font-weight: 650;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.ceremony-rail__dot {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
   display: inline-grid;
   place-items: center;
-  background: rgba(28, 28, 28, 0.06);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
+  font-weight: 750;
+  background: #f5f5f4;
+  flex-shrink: 0;
 }
 
-.ceremony-steps__item.is-active .ceremony-steps__num {
-  background: rgba(255, 255, 255, 0.2);
+.ceremony-rail__item.is-active {
+  background: #1c1917;
+  color: #fff;
+}
+
+.ceremony-rail__item.is-active .ceremony-rail__dot {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.ceremony-rail__item.is-done {
+  color: #0f766e;
+}
+
+.ceremony-rail__item.is-done .ceremony-rail__dot {
+  background: #ecfdf5;
+  color: #0f766e;
 }
 
 .ceremony-panel {
   background: #fff;
-  border: 1px solid var(--vb-line, #ebeae4);
-  border-radius: var(--vb-card-radius, 1.25rem);
-  padding: 1.25rem 1.35rem;
-  box-shadow: var(--vb-card-shadow, 0 8px 28px rgba(28, 28, 28, 0.05));
+  border: 1px solid #ebe8e2;
+  border-radius: 1.15rem;
+  padding: 1.25rem 1.3rem 1.3rem;
   animation: pane-in 0.22s ease;
 }
 
-.ceremony-panel h2 {
-  margin: 0 0 0.35rem;
-  font-size: 1.08rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+.ceremony-panel__intro {
+  margin-bottom: 1.05rem;
 }
 
-.ceremony-panel__hint {
-  margin: 0 0 1rem;
-  color: var(--vb-muted, #8a8a8a);
-  font-size: 0.86rem;
+.ceremony-panel__intro h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: #1c1917;
+}
+
+.ceremony-panel__intro p {
+  margin: 0;
+  color: #78716c;
+  font-size: 0.84rem;
   line-height: 1.45;
 }
 
 .photo-stage {
-  max-width: 420px;
+  position: relative;
+  max-width: 22rem;
   aspect-ratio: 4 / 3;
-  background: #1c1c1c;
+  background: #1c1917;
   border-radius: 1rem;
   overflow: hidden;
   margin-bottom: 1rem;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .photo-stage__media {
@@ -535,6 +606,23 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.photo-stage__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.4rem;
+  color: #a8a29e;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.photo-stage__empty i {
+  font-size: 1.25rem;
+  opacity: 0.7;
 }
 
 .ceremony-actions {
@@ -545,89 +633,153 @@ onBeforeUnmount(() => {
 }
 
 .ceremony-error {
-  color: #be123c;
-  font-size: 0.875rem;
-  margin: 0.5rem 0;
+  color: #b91c1c;
+  font-size: 0.82rem;
+  margin: 0.55rem 0 0;
 }
 
 .location-card {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.45rem;
   margin-bottom: 1rem;
-  max-width: 360px;
-  padding: 0.85rem 0.95rem;
+  max-width: 22rem;
+  padding: 0.85rem 1rem;
   border-radius: 0.9rem;
-  background: var(--vb-panel, #f7f6f2);
-  border: 1px solid var(--vb-line, #ebeae4);
+  background: #fafaf8;
+  border: 1px solid #ebe8e2;
+}
+
+.location-card__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+}
+
+.location-card__row span {
+  color: #a8a29e;
+}
+
+.location-card__row strong {
+  color: #1c1917;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.location-card__source {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+}
+
+.location-empty {
+  max-width: 22rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.9rem;
+  border: 1px dashed #e7e5e4;
+  color: #a8a29e;
+  font-size: 0.82rem;
 }
 
 .manual-location {
   display: grid;
-  gap: 0.45rem;
-  margin-bottom: 1rem;
-  max-width: 360px;
+  gap: 0.65rem;
+  margin-bottom: 0.25rem;
+  max-width: 22rem;
 }
 
 .manual-location label {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--vb-ink, #1c1c1c);
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 650;
+  color: #57534e;
+}
+
+.sig-wrap {
+  border: 1px solid #ebe8e2;
+  border-radius: 0.95rem;
+  background: #fafaf8;
+  padding: 0.55rem;
+  max-width: 40rem;
 }
 
 .sig-canvas {
   width: 100%;
-  max-width: 640px;
   height: auto;
-  border: 1px solid var(--vb-line, #ebeae4);
-  border-radius: 0.9rem;
+  border-radius: 0.7rem;
   touch-action: none;
   cursor: crosshair;
   background: #fff;
+  display: block;
 }
 
 .confirm-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
-@media (min-width: 800px) {
+@media (min-width: 720px) {
   .confirm-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
 
 .confirm-card {
-  border: 1px solid var(--vb-line, #ebeae4);
-  border-radius: 1rem;
+  border: 1px solid #ebe8e2;
+  border-radius: 0.95rem;
   padding: 0.9rem;
-  background: var(--vb-panel, #f7f6f2);
+  background: #fafaf8;
 }
 
 .confirm-card h3 {
-  margin: 0 0 0.5rem;
-  font-size: 0.78rem;
-  font-weight: 750;
-  color: var(--vb-muted, #8a8a8a);
+  margin: 0 0 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #a8a29e;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.confirm-value {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: #1c1917;
+  line-height: 1.4;
+}
+
+.confirm-value span {
+  display: inline-block;
+  margin-right: 0.35rem;
+  color: #a8a29e;
+  font-weight: 600;
+  font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.confirm-muted {
+  margin: 0.3rem 0 0;
+  color: #a8a29e;
+  font-size: 0.78rem;
 }
 
 .confirm-photo,
 .confirm-sig {
   max-width: 100%;
-  border-radius: 0.75rem;
+  border-radius: 0.7rem;
   background: #fff;
+  border: 1px solid #ebe8e2;
 }
 
 .fingerprint {
   word-break: break-all;
-  font-size: 0.75rem;
-}
-
-.text-muted {
-  color: var(--vb-muted, #8a8a8a);
-  font-size: 0.85rem;
+  font-size: 0.7rem;
+  line-height: 1.4;
 }
 
 .mono {
@@ -637,11 +789,26 @@ onBeforeUnmount(() => {
 @keyframes pane-in {
   from {
     opacity: 0;
-    transform: translateY(5px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .ceremony-rail {
+    border-radius: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ceremony-rail__label {
+    font-size: 0.7rem;
+  }
+
+  .ceremony-panel {
+    padding: 1.05rem 1rem 1.1rem;
   }
 }
 </style>
