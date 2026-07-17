@@ -23,47 +23,149 @@ class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        identifier = serializer.validated_data['identifier']
+        raw_identifier = (serializer.validated_data['identifier'] or '').strip()
         password = serializer.validated_data.get('password', '')
 
-        # Find user
-        user = User.objects.filter(email=identifier).first() or User.objects.filter(index_number=identifier).first()
-        
-        # Auto-create student if eligible
-        if not user and '@' not in identifier:
-            from elections.models import VoterEligibility
-            if VoterEligibility.objects.filter(user__index_number=identifier, is_eligible=True).exists():
-                role, _ = Role.objects.get_or_create(name='student')
-                user = User.objects.create(
-                    index_number=identifier,
-                    role=role,
-                    is_active=True,
-                    is_verified=True,
-                    is_staff=False
+        # Staff: email. Students: index number (normalized).
+        is_email = '@' in raw_identifier
+        identifier = raw_identifier.lower() if is_email else raw_identifier
+
+        user = None
+        if is_email:
+            user = User.objects.filter(email__iexact=identifier).first()
+        else:
+            from elections.services.eligibility import normalize_index_input, resolve_or_create_voter
+            from elections.models import VoterRegister, VoterRegisterEntry
+            from elections.services.register_service import parse_full_name
+
+            index = normalize_index_input(identifier)
+            entries = list(
+                VoterRegisterEntry.objects.filter(
+                    voter_id__iexact=index,
+                    register__approval_status=VoterRegister.APPROVAL_APPROVED,
+                    register__replace_of__isnull=True,
                 )
-                print(f"🆕 Auto-created student: {identifier}")
+                .select_related('user', 'category', 'category__faculty', 'category__department')
+                .order_by('-created_at')
+            )
+            if not entries:
+                return Response(
+                    {
+                        'error': (
+                            'This index number is not on an approved voter register. '
+                            'Contact your electoral commission if you believe this is a mistake.'
+                        ),
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            entry = next((e for e in entries if e.user_id), entries[0])
+            user = entry.user
+            if not user:
+                user, err = resolve_or_create_voter(index)
+                if err or not user:
+                    role, _ = Role.objects.get_or_create(name='student')
+                    first_name, last_name = parse_full_name(entry.full_name)
+                    user = User.objects.create(
+                        index_number=index,
+                        email=None,
+                        first_name=first_name or 'Student',
+                        last_name=last_name or '',
+                        phone_number=entry.phone_number or '',
+                        role=role,
+                        is_active=True,
+                        is_verified=True,
+                        is_staff=False,
+                        onboarding_completed=True,
+                    )
+                else:
+                    # Fresh resolve — sync profile from the live register row.
+                    first_name, last_name = parse_full_name(entry.full_name)
+                    updates = ['onboarding_completed']
+                    user.onboarding_completed = True
+                    if first_name and user.first_name != first_name:
+                        user.first_name = first_name[:150]
+                        updates.append('first_name')
+                    if last_name is not None and user.last_name != last_name:
+                        user.last_name = (last_name or '')[:150]
+                        updates.append('last_name')
+                    if entry.phone_number and user.phone_number != entry.phone_number:
+                        user.phone_number = entry.phone_number
+                        updates.append('phone_number')
+                    if not user.role_id or getattr(user.role, 'name', None) != 'student':
+                        role, _ = Role.objects.get_or_create(name='student')
+                        user.role = role
+                        updates.append('role')
+                    user.save(update_fields=list(dict.fromkeys(updates)))
+
+            # Link every matching entry to this user and keep profile in sync.
+            first_name, last_name = parse_full_name(entry.full_name)
+            profile_updates = []
+            if not user.onboarding_completed:
+                user.onboarding_completed = True
+                profile_updates.append('onboarding_completed')
+            if first_name and (not user.first_name or user.first_name in ('Student',)):
+                user.first_name = first_name[:150]
+                profile_updates.append('first_name')
+            if last_name and not user.last_name:
+                user.last_name = last_name[:150]
+                profile_updates.append('last_name')
+            if entry.phone_number and not user.phone_number:
+                user.phone_number = entry.phone_number
+                profile_updates.append('phone_number')
+            # Prefer faculty/department from the register category when present.
+            cat = entry.category
+            if cat:
+                if cat.department_id and user.department_id != cat.department_id:
+                    user.department = cat.department
+                    user.faculty = cat.department.faculty if cat.department_id else user.faculty
+                    profile_updates.extend(['department', 'faculty'])
+                elif cat.faculty_id and user.faculty_id != cat.faculty_id:
+                    user.faculty = cat.faculty
+                    profile_updates.append('faculty')
+            if profile_updates:
+                user.save(update_fields=list(dict.fromkeys(profile_updates)))
+
+            VoterRegisterEntry.objects.filter(
+                pk__in=[e.pk for e in entries],
+                user__isnull=True,
+            ).update(user=user)
 
         if not user:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
         # Check if staff login requires password
-        is_staff_user = user.is_staff or user.is_superuser or (user.role and user.role.name in ['admin', 'super_admin', 'auditor'])
-        
+        is_staff_user = user.is_staff or user.is_superuser or (
+            user.role and user.role.name in ['admin', 'super_admin', 'auditor', 'sub_ec']
+        )
+
         if is_staff_user:
             if not password:
                 return Response({'requires_password': True}, status=status.HTTP_200_OK)
             if not user.check_password(password):
                 return Response({'error': 'Invalid password'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Generate OTP
+        # Generate OTP (SMS when a phone number is available)
         otp = OTPService.create_otp(user, purpose='login', channel='sms')
         MFALog.objects.create(user=user, event_type='login_otp_sent', ip_address=request.META.get('REMOTE_ADDR'))
+
+        masked_phone = ''
+        if user.phone_number:
+            digits = ''.join(ch for ch in str(user.phone_number) if ch.isdigit())
+            masked_phone = f'***{digits[-4:]}' if len(digits) >= 4 else '***'
 
         return Response({
             'requires_otp': True,
             'otp_session_id': str(otp.uuid),
             'is_staff': is_staff_user,
-            'is_new_user': not user.first_name and not user.last_name and not user.email
+            'is_new_user': False,
+            'onboarding_completed': bool(user.onboarding_completed) if not is_staff_user else True,
+            'phone_hint': masked_phone,
+            'message': (
+                f'OTP sent to your phone ending {masked_phone}.'
+                if masked_phone
+                else 'OTP generated. Enter the code to continue.'
+            ),
         })
 
 class OTPVerifyView(APIView):
@@ -83,6 +185,21 @@ class OTPVerifyView(APIView):
         MFALog.objects.create(user=user, event_type='otp_verified', ip_address=request.META.get('REMOTE_ADDR'))
 
         role_name = user.role.name if user.role else None
+        # Register-based students are fully onboarded at index login — never send them
+        # through the legacy faculty/department onboarding form.
+        onboarding_completed = bool(getattr(user, 'onboarding_completed', False))
+        if role_name in ('student', 'candidate') and not onboarding_completed:
+            from elections.models import VoterRegister, VoterRegisterEntry
+            on_register = VoterRegisterEntry.objects.filter(
+                user=user,
+                register__approval_status=VoterRegister.APPROVAL_APPROVED,
+                register__replace_of__isnull=True,
+            ).exists()
+            if on_register:
+                user.onboarding_completed = True
+                user.save(update_fields=['onboarding_completed'])
+                onboarding_completed = True
+
         return Response({
             **tokens,
             'role': role_name,
@@ -90,10 +207,8 @@ class OTPVerifyView(APIView):
             'is_superuser': user.is_superuser,
             'is_staff': user.is_staff,
             'index_number': user.index_number,
-            'onboarding_completed': user.onboarding_completed,
-            'is_new_user': not user.onboarding_completed and (
-                not user.first_name and not user.last_name
-            ),
+            'onboarding_completed': onboarding_completed,
+            'is_new_user': False,
         })
 
 class OTPResendView(APIView):
@@ -183,67 +298,48 @@ class StudentOnboardingOptionsView(APIView):
         })
 
 class StudentOnboardingView(APIView):
+    """
+    Legacy endpoint kept for compatibility.
+
+    Student access is now index → approved register → OTP → dashboard.
+    Faculty/department/level forms are no longer used.
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = request.user
-
-        if user.role.name not in ['student', 'candidate']:
+        role_name = getattr(user.role, 'name', None) if user.role_id else None
+        if role_name not in ['student', 'candidate']:
             return Response({'error': 'Only students can complete onboarding'}, status=status.HTTP_403_FORBIDDEN)
 
-        if user.onboarding_completed:
-            return Response({'error': 'Onboarding already completed'}, status=status.HTTP_400_BAD_REQUEST)
+        # Always mark complete — register login is the source of truth.
+        from elections.services.register_service import parse_full_name
 
-        from elections.models import Faculty, Department
-
-        faculty_uuid = request.data.get('faculty_uuid')
-        department_uuid = request.data.get('department_uuid')
-        programme = request.data.get('programme', '')
-        phone_number = request.data.get('phone_number', user.phone_number)
-        first_name = request.data.get('first_name', user.first_name)
-        last_name = request.data.get('last_name', user.last_name)
-
-        if not faculty_uuid or not department_uuid:
-            return Response(
-                {'error': 'Faculty and Department are required'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            faculty = Faculty.objects.get(uuid=faculty_uuid)
-            department = Department.objects.get(uuid=department_uuid)
-
-            if department.faculty != faculty:
-                return Response(
-                    {'error': 'Department does not belong to selected faculty'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            user.faculty = faculty
-            user.department = department
-            user.programme = programme
+        full_name = (request.data.get('full_name') or '').strip()
+        phone_number = (request.data.get('phone_number') or user.phone_number or '').strip()
+        if full_name:
+            first_name, last_name = parse_full_name(full_name)
+            user.first_name = first_name[:150]
+            user.last_name = (last_name or '')[:150]
+        if phone_number:
             user.phone_number = phone_number
-            user.first_name = first_name
-            user.last_name = last_name
-            user.onboarding_completed = True
-            user.save()
+        user.onboarding_completed = True
+        user.save()
 
-            return Response({
-                'message': 'Onboarding completed successfully',
-                'user': {
-                    'uuid': user.uuid,
-                    'email': user.email,
-                    'index_number': user.index_number,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                    'faculty': user.faculty.name if user.faculty else None,
-                    'department': user.department.name if user.department else None,
-                }
-            })
-        except Faculty.DoesNotExist:
-            return Response({'error': 'Faculty not found'}, status=status.HTTP_404_NOT_FOUND)
-        except Department.DoesNotExist:
-            return Response({'error': 'Department not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            'message': 'Profile saved. You can access your eligible elections.',
+            'user': {
+                'uuid': str(user.uuid),
+                'email': user.email,
+                'index_number': user.index_number,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'phone_number': user.phone_number,
+                'onboarding_completed': True,
+                'faculty': user.faculty.name if user.faculty_id else None,
+                'department': user.department.name if user.department_id else None,
+            },
+        })
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # USER MANAGEMENT – SUPER ADMIN ONLY

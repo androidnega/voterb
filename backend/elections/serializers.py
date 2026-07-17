@@ -2,7 +2,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from voting.models import Vote
 from .models import (
-    Election, Position, VoterEligibility, Faculty, Department,
+    Election, Position, VoterEligibility, Faculty, Department, InstitutionCategory,
     VoterRegister, VoterCategory, VoterRegisterEntry,
 )
 from candidates.models import Candidate
@@ -104,6 +104,22 @@ class DepartmentWriteSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 
+class InstitutionCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InstitutionCategory
+        fields = ['uuid', 'name', 'code', 'description', 'is_active', 'created_at']
+        read_only_fields = ['uuid', 'created_at']
+
+    def validate_name(self, value):
+        name = (value or '').strip()
+        if not name:
+            raise serializers.ValidationError('Category name is required.')
+        return name
+
+    def validate_code(self, value):
+        return (value or '').strip().upper()
+
+
 class ElectionRegisterSummarySerializer(serializers.ModelSerializer):
     """Small nested register payload used by election read APIs."""
     entry_count = serializers.SerializerMethodField()
@@ -114,7 +130,8 @@ class ElectionRegisterSummarySerializer(serializers.ModelSerializer):
         fields = ['uuid', 'name', 'description', 'entry_count', 'category_count']
 
     def get_entry_count(self, obj):
-        return obj.entries.filter(user__isnull=False).values('user_id').distinct().count()
+        from elections.services.register_service import register_voter_count
+        return register_voter_count(obj)
 
     def get_category_count(self, obj):
         return obj.categories.count()
@@ -247,6 +264,14 @@ class ElectionSerializer(serializers.ModelSerializer):
             return election_register_user_count(obj)
         return obj.eligibilities.filter(is_eligible=True).count()
 
+    def to_representation(self, instance):
+        from elections.services.register_service import ensure_election_uses_live_register
+
+        # Legacy elections may still point at frozen clones — reattach to the live list.
+        if ensure_election_uses_live_register(instance, sync=True):
+            instance.refresh_from_db()
+        return super().to_representation(instance)
+
     def get_votes_cast(self, obj):
         return Vote.objects.filter(election=obj).count()
 
@@ -287,6 +312,8 @@ class ElectionCreateUpdateSerializer(serializers.ModelSerializer):
             election=election,
             name=source_register.name,
             description=source_register.description,
+            audience=getattr(source_register, 'audience', VoterRegister.AUDIENCE_SUB),
+            institution=source_register.institution,
         )
         category_map = {}
         for category in source_register.categories.all():
@@ -314,8 +341,13 @@ class ElectionCreateUpdateSerializer(serializers.ModelSerializer):
             VoterRegisterEntry.objects.bulk_create(entries)
         return cloned_register
 
-    def _assign_register(self, election, selected_register, clone_register=True):
+    def _assign_register(self, election, selected_register, clone_register=False):
         from elections.services.register_service import sync_eligibility_from_registers
+
+        # Institutional registers are always shared live lists (one register = one count).
+        # Never snapshot/clone them — approved edits must flow into every linked election.
+        if getattr(selected_register, 'institution_id', None):
+            clone_register = False
 
         if clone_register:
             election.register = self._clone_register_for_election(selected_register, election)
@@ -413,10 +445,25 @@ class ElectionCreateUpdateSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         'register_uuid': 'Select an approved institutional voter register.',
                     })
+                if selected_register and getattr(selected_register, 'audience', None) != ElectionModel.OWNER_MAIN:
+                    # OWNER_MAIN value matches VoterRegister.AUDIENCE_MAIN ('main')
+                    raise serializers.ValidationError({
+                        'register_uuid': (
+                            'Main EC elections must use a Main EC institution category register. '
+                            'Faculty/department registers belong to Sub EC elections.'
+                        ),
+                    })
             elif owner['owner_type'] == ElectionModel.OWNER_SUB:
                 if not selected_register:
                     raise serializers.ValidationError({
                         'register_uuid': 'Sub EC elections require a faculty/department register.',
+                    })
+                if getattr(selected_register, 'audience', None) == ElectionModel.OWNER_MAIN:
+                    raise serializers.ValidationError({
+                        'register_uuid': (
+                            'This register is reserved for Main EC institution-wide elections. '
+                            'Choose a faculty/department register in your Sub EC scope.'
+                        ),
                     })
                 if not register_matches_sub_ec_scope(selected_register, owner['owner_ec_unit']):
                     raise serializers.ValidationError({
@@ -648,6 +695,7 @@ class VoterRegisterSerializer(serializers.ModelSerializer):
     institution_name = serializers.CharField(source='institution.name', read_only=True, default=None)
     is_approved = serializers.BooleanField(read_only=True)
     pending_replace = serializers.SerializerMethodField()
+    pending_entry_edits = serializers.SerializerMethodField()
     linked_election_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -655,14 +703,15 @@ class VoterRegisterSerializer(serializers.ModelSerializer):
         fields = [
             'uuid', 'name', 'description', 'categories',
             'entry_count', 'category_count', 'created_at',
-            'institution_uuid', 'institution_name',
+            'institution_uuid', 'institution_name', 'audience',
             'approval_status', 'approved_at', 'is_approved',
-            'pending_replace', 'linked_election_count',
+            'pending_replace', 'pending_entry_edits', 'linked_election_count',
         ]
-        read_only_fields = ['uuid', 'created_at', 'approval_status', 'approved_at']
+        read_only_fields = ['uuid', 'created_at', 'approval_status', 'approved_at', 'audience']
 
     def get_entry_count(self, obj):
-        return obj.entries.count()
+        from elections.services.register_service import register_voter_count
+        return register_voter_count(obj)
 
     def get_category_count(self, obj):
         return obj.categories.count()
@@ -676,11 +725,45 @@ class VoterRegisterSerializer(serializers.ModelSerializer):
         )
         if not staging:
             return None
+        from elections.services.register_service import register_voter_count
         return {
             'staging_uuid': str(staging.uuid),
-            'entry_count': staging.entries.count(),
+            'entry_count': register_voter_count(staging),
             'created_at': staging.created_at.isoformat() if staging.created_at else None,
         }
+
+    def get_pending_entry_edits(self, obj):
+        """
+        Proposed individual voter edits awaiting dual Main EC approval.
+        Live register rows stay on pre-approval data until enrollment.
+        """
+        from accounts.models import MainECDecision
+
+        decisions = (
+            MainECDecision.objects.filter(
+                status=MainECDecision.STATUS_PENDING,
+                decision_type=MainECDecision.TYPE_REGISTER_ENTRY_UPDATE,
+                payload__register_uuid=str(obj.uuid),
+            )
+            .order_by('-created_at')[:100]
+        )
+        out = []
+        for decision in decisions:
+            payload = decision.payload or {}
+            out.append({
+                'decision_uuid': str(decision.uuid),
+                'entry_uuid': payload.get('entry_uuid'),
+                'before': payload.get('before') or {},
+                'proposed': {
+                    'voter_id': payload.get('voter_id'),
+                    'full_name': payload.get('full_name'),
+                    'phone_number': payload.get('phone_number') or '',
+                },
+                'title': decision.title,
+                'proposed_by': getattr(decision.proposed_by, 'email', '') or '',
+                'created_at': decision.created_at.isoformat() if decision.created_at else None,
+            })
+        return out
 
     def get_linked_election_count(self, obj):
         from elections.models import Election

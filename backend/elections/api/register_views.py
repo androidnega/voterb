@@ -51,26 +51,39 @@ class AvailableRegisterListView(generics.ListAPIView):
         )
 
         institution = resolve_user_institution(self.request.user)
-        qs = VoterRegister.objects.filter(replace_of__isnull=True).prefetch_related('categories', 'entries')
-        if institution:
-            qs = qs.filter(Q(institution=institution) | Q(institution__isnull=True, election__isnull=False))
-        # Only approved (or legacy election-owned) registers can back an election.
-        qs = qs.filter(
-            Q(approval_status=VoterRegister.APPROVAL_APPROVED)
-            | Q(institution__isnull=True, election__isnull=False)
+        # One live institutional register only — never offer election-owned clones
+        # (those caused duplicate counts like 660 vs 50 for the "same" list).
+        qs = (
+            VoterRegister.objects.filter(
+                institution__isnull=False,
+                replace_of__isnull=True,
+                approval_status=VoterRegister.APPROVAL_APPROVED,
+            )
+            .prefetch_related('categories', 'entries')
+            .select_related('institution')
+            .order_by('name')
         )
-        qs = qs.select_related('election', 'institution').order_by('name')
+        if institution:
+            qs = qs.filter(institution=institution)
+        elif user_is_main_ec(self.request.user) or user_is_sub_ec(self.request.user):
+            return qs.none()
 
-        # Sub EC only sees registers that intersect their faculty/department assignments
+        # Sub EC only sees Sub-scoped registers that intersect their assignments.
         if user_is_sub_ec(self.request.user) and not user_is_main_ec(self.request.user):
             units = user_sub_ec_units(self.request.user)
             if not units:
                 return qs.none()
+            qs = qs.filter(audience=VoterRegister.AUDIENCE_SUB)
             allowed_ids = [
                 r.pk for r in qs
                 if any(register_matches_sub_ec_scope(r, unit) for unit in units)
             ]
             return qs.filter(pk__in=allowed_ids)
+
+        # Main EC institutional elections: only Main EC / institution categories.
+        # Never offer faculty/department registers that belong to Sub EC scopes.
+        if user_is_main_ec(self.request.user):
+            return qs.filter(audience=VoterRegister.AUDIENCE_MAIN)
 
         return qs
 

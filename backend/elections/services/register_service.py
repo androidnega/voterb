@@ -22,15 +22,128 @@ def election_register_entry_queryset(election):
     Transitional fallback: if no primary register is selected yet, use any
     legacy register still owned by the election.
     """
-    qs = VoterRegisterEntry.objects.filter(user__isnull=False)
     if getattr(election, 'register_id', None):
-        return qs.filter(register_id=election.register_id)
-    return qs.filter(register__election=election)
+        return VoterRegisterEntry.objects.filter(register_id=election.register_id)
+    return VoterRegisterEntry.objects.filter(register__election=election)
+
+
+def register_voter_count(register) -> int:
+    """
+    One register → one voter count.
+    Counts live entries on this register only (not staging replacements).
+    """
+    if register is None:
+        return 0
+    return VoterRegisterEntry.objects.filter(register_id=register.pk).count()
 
 
 def election_register_user_count(election) -> int:
-    """Count distinct linked students in the election's register scope."""
-    return election_register_entry_queryset(election).values('user_id').distinct().count()
+    """Eligible voter count for an election — same as its attached register size."""
+    if getattr(election, 'register_id', None):
+        return register_voter_count(election.register)
+    return election_register_entry_queryset(election).count()
+
+
+def ensure_register_entry_users(register, *, chunk_size: int = 200) -> int:
+    """
+    Link User accounts for register entries that have no user yet.
+    Keeps eligibility / voting dynamic with the live register list.
+    """
+    if register is None:
+        return 0
+    linked = 0
+    qs = (
+        VoterRegisterEntry.objects.filter(register=register, user__isnull=True)
+        .only('uuid', 'voter_id', 'full_name', 'phone_number', 'user_id')
+    )
+    for entry in qs.iterator(chunk_size=chunk_size):
+        user, _err = resolve_or_create_voter(entry.voter_id)
+        if not user:
+            continue
+        # Keep profile fields in sync with the live register row.
+        first_name, last_name = parse_full_name(entry.full_name)
+        updates = []
+        if first_name and user.first_name != first_name:
+            user.first_name = first_name[:150]
+            updates.append('first_name')
+        if last_name is not None and user.last_name != last_name:
+            user.last_name = (last_name or '')[:150]
+            updates.append('last_name')
+        if entry.phone_number and user.phone_number != entry.phone_number:
+            user.phone_number = entry.phone_number
+            updates.append('phone_number')
+        if updates:
+            user.save(update_fields=updates)
+        entry.user = user
+        entry.save(update_fields=['user'])
+        linked += 1
+    return linked
+
+
+def sync_elections_for_register(register, verified_by=None) -> int:
+    """Re-sync eligibility for every election that shares this live register."""
+    from elections.models import Election
+
+    if register is None:
+        return 0
+    ensure_register_entry_users(register)
+    synced = 0
+    for election in Election.objects.filter(register=register).iterator():
+        sync_eligibility_from_registers(election, verified_by=verified_by)
+        synced += 1
+    return synced
+
+
+def find_live_institutional_register(register, institution=None):
+    """
+    Resolve the shared institutional register for a clone / legacy election-owned copy.
+    Returns the live register, or None if none exists.
+    """
+    from elections.models import VoterRegister
+
+    if register is None:
+        return None
+    if register.institution_id and register.replace_of_id is None:
+        if register.approval_status == VoterRegister.APPROVAL_APPROVED:
+            return register
+        return None
+
+    institution = institution or register.institution
+    if institution is None:
+        return None
+
+    qs = VoterRegister.objects.filter(
+        institution=institution,
+        replace_of__isnull=True,
+        approval_status=VoterRegister.APPROVAL_APPROVED,
+    )
+    named = qs.filter(name__iexact=register.name).order_by('created_at').first()
+    return named
+
+
+def ensure_election_uses_live_register(election, *, sync=True, verified_by=None):
+    """
+    Re-point an election from a frozen clone onto the live institutional register.
+    Keeps Main EC institution-wide and Sub EC elections on one dynamic list.
+    """
+    if election is None or not getattr(election, 'register_id', None):
+        return False
+
+    register = election.register
+    institution = (
+        getattr(election, 'institution', None)
+        or getattr(getattr(election, 'owner_ec_unit', None), 'institution', None)
+        or getattr(register, 'institution', None)
+    )
+    live = find_live_institutional_register(register, institution=institution)
+    if not live or live.pk == register.pk:
+        return False
+
+    election.register = live
+    election.save(update_fields=['register', 'updated_at'])
+    if sync:
+        sync_eligibility_from_registers(election, verified_by=verified_by)
+    return True
 
 
 def user_is_on_election_register(user, election) -> bool:
@@ -68,7 +181,14 @@ def sync_eligibility_from_registers(election, verified_by=None):
     Upsert VoterEligibility for every linked register entry user.
     Keeps legacy eligibility table in sync for dashboards/counts.
     """
-    entries = election_register_entry_queryset(election).select_related('user')
+    if getattr(election, 'register_id', None):
+        ensure_register_entry_users(election.register)
+
+    entries = (
+        election_register_entry_queryset(election)
+        .filter(user__isnull=False)
+        .select_related('user')
+    )
     user_ids = set()
     created = 0
     for entry in entries:
@@ -389,14 +509,7 @@ def import_register_csv(*, register, category, file_obj, imported_by):
     if getattr(register, 'replace_of_id', None):
         return import_record
 
-    from elections.models import Election
-    election_ids = set(
-        Election.objects.filter(register=register).values_list('id', flat=True)
-    )
-    if register.election_id:
-        election_ids.add(register.election_id)
-    for election in Election.objects.filter(id__in=election_ids):
-        sync_eligibility_from_registers(election, verified_by=imported_by)
+    sync_elections_for_register(register, verified_by=imported_by)
     return import_record
 
 
@@ -409,7 +522,7 @@ def apply_register_replace(*, live_register, staging_register, target_category_u
     with staging entries, then syncs eligibility for every election using the
     live institutional register (Main EC + Sub EC).
     """
-    from elections.models import Election, VoterCategory
+    from elections.models import VoterCategory
 
     if staging_register.replace_of_id != live_register.pk:
         raise ValueError('Staging register does not belong to this live register.')
@@ -476,11 +589,7 @@ def apply_register_replace(*, live_register, staging_register, target_category_u
             VoterRegisterEntry.objects.bulk_create(new_entries)
 
     # Sync every election that shares this institutional register.
-    elections = Election.objects.filter(register=live_register)
-    synced = 0
-    for election in elections:
-        sync_eligibility_from_registers(election, verified_by=verified_by)
-        synced += 1
+    synced = sync_elections_for_register(live_register, verified_by=verified_by)
 
     staging_register.delete()
     return {'categories_replaced': len(pairs), 'elections_synced': synced}

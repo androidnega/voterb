@@ -31,7 +31,13 @@
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
-            <tr v-if="activeTab === 'faculties'">
+            <tr v-if="activeTab === 'institution'">
+              <th>Category</th>
+              <th>Code</th>
+              <th>Status</th>
+              <th class="text-center">Actions</th>
+            </tr>
+            <tr v-else-if="activeTab === 'faculties'">
               <th>Faculty</th>
               <th>Code</th>
               <th>Departments</th>
@@ -47,7 +53,34 @@
             </tr>
           </thead>
           <tbody>
-            <template v-if="activeTab === 'faculties'">
+            <template v-if="activeTab === 'institution'">
+              <tr v-for="row in filteredInstitutionCategories" :key="row.uuid">
+                <td><span class="cell-title">{{ row.name }}</span></td>
+                <td class="mono">{{ row.code || '—' }}</td>
+                <td>
+                  <span class="admin-badge" :class="row.is_active ? 'success' : 'neutral'">
+                    {{ row.is_active ? 'Active' : 'Inactive' }}
+                  </span>
+                </td>
+                <td>
+                  <div class="row-actions">
+                    <button type="button" class="admin-icon-btn" title="Edit" @click="editInstitutionCategory(row)">
+                      <i class="fas fa-pen"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="admin-icon-btn"
+                      :title="row.is_active ? 'Deactivate' : 'Activate'"
+                      @click="toggleInstitutionCategory(row)"
+                    >
+                      <i :class="row.is_active ? 'fas fa-ban' : 'fas fa-check'"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+
+            <template v-else-if="activeTab === 'faculties'">
               <tr v-for="row in filteredFaculties" :key="row.uuid">
                 <td><span class="cell-title">{{ row.name }}</span></td>
                 <td class="mono">{{ row.code }}</td>
@@ -116,7 +149,7 @@
             </template>
 
             <tr v-if="!loading && currentRows.length === 0">
-              <td colspan="5">
+              <td :colspan="activeTab === 'institution' ? 4 : 5">
                 <EmptyState
                   icon="fas fa-university"
                   title="Nothing found"
@@ -131,7 +164,26 @@
 
     <Dialog v-model:visible="showDialog" :header="dialogTitle" :modal="true" class="w-full max-w-lg">
       <form class="dialog-form" @submit.prevent="submitForm">
-        <template v-if="dialogType === 'faculty'">
+        <template v-if="dialogType === 'institution'">
+          <div>
+            <label>Name</label>
+            <InputText v-model="form.name" class="w-full" required placeholder="e.g. Institution" />
+          </div>
+          <div>
+            <label>Code</label>
+            <InputText v-model="form.code" class="w-full mono" maxlength="20" placeholder="Optional code" />
+          </div>
+          <div>
+            <label>Description</label>
+            <Textarea v-model="form.description" rows="2" class="w-full" placeholder="Optional description" />
+          </div>
+          <label class="check-row">
+            <input v-model="form.is_active" type="checkbox" />
+            <span>Active</span>
+          </label>
+        </template>
+
+        <template v-else-if="dialogType === 'faculty'">
           <div>
             <label>Name</label>
             <InputText v-model="form.name" class="w-full" required placeholder="e.g. Faculty of Engineering" />
@@ -213,19 +265,20 @@ import { usePageHeading } from '@/composables/usePageHeading'
 const { setPageHeading } = usePageHeading()
 setPageHeading({
   title: 'Categories',
-  subtitle: 'Faculties and departments — organisational categories for Sub ECs and registers',
+  subtitle: 'Institution categories for Main EC, and faculties/departments for Sub EC registers',
 })
 
 const loading = ref(false)
 const submitting = ref(false)
-const activeTab = ref('faculties')
+const activeTab = ref('institution')
 const searchQuery = ref('')
 const activeOnly = ref(true)
 const showDialog = ref(false)
-const dialogType = ref('faculty')
+const dialogType = ref('institution')
 const editingId = ref(null)
 const formError = ref('')
 
+const institutionCategories = ref([])
 const faculties = ref([])
 const departments = ref([])
 
@@ -238,33 +291,43 @@ const form = ref({
 })
 
 const tabs = computed(() => [
+  { key: 'institution', label: 'Institution', icon: 'fas fa-building', count: institutionCategories.value.length, tone: 'teal' },
   { key: 'faculties', label: 'Faculties', icon: 'fas fa-university', count: faculties.value.length, tone: 'indigo' },
   { key: 'departments', label: 'Departments', icon: 'fas fa-book', count: departments.value.length, tone: 'blue' },
 ])
 
 const panelTitle = computed(() => ({
+  institution: 'Institution',
   faculties: 'Faculties',
   departments: 'Departments',
 }[activeTab.value]))
 
 const panelSubtitle = computed(() => ({
+  institution: 'Main EC institution-wide categories (e.g. Institution, General, SRC)',
   faculties: 'Faculty categories (e.g. FAS, FAAT) used for Sub EC assignment',
   departments: 'Department categories under each faculty (e.g. Hospitality, Comp. Sci.)',
 }[activeTab.value]))
 
 const searchPlaceholder = computed(() => ({
+  institution: 'Search institution categories…',
   faculties: 'Search faculties…',
   departments: 'Search departments…',
 }[activeTab.value]))
 
 const createLabel = computed(() => ({
+  institution: 'Add institution category',
   faculties: 'Add faculty',
   departments: 'Add department',
 }[activeTab.value]))
 
 const dialogTitle = computed(() => {
   const action = editingId.value ? 'Edit' : 'Add'
-  return `${action} ${dialogType.value}`
+  const labels = {
+    institution: 'institution category',
+    faculty: 'faculty',
+    department: 'department',
+  }
+  return `${action} ${labels[dialogType.value] || dialogType.value}`
 })
 
 const filterRows = (rows, fields) => {
@@ -273,12 +336,15 @@ const filterRows = (rows, fields) => {
   return rows.filter((row) => fields.some((field) => String(row[field] || '').toLowerCase().includes(q)))
 }
 
+const filteredInstitutionCategories = computed(() => filterRows(institutionCategories.value, ['name', 'code']))
 const filteredFaculties = computed(() => filterRows(faculties.value, ['name', 'code']))
 const filteredDepartments = computed(() => filterRows(departments.value, ['name', 'code', 'faculty_name']))
 
-const currentRows = computed(() => (
-  activeTab.value === 'faculties' ? filteredFaculties.value : filteredDepartments.value
-))
+const currentRows = computed(() => {
+  if (activeTab.value === 'institution') return filteredInstitutionCategories.value
+  if (activeTab.value === 'faculties') return filteredFaculties.value
+  return filteredDepartments.value
+})
 
 const listParams = computed(() => (
   activeOnly.value ? {} : { include_inactive: 'true' }
@@ -287,10 +353,12 @@ const listParams = computed(() => (
 const fetchAll = async () => {
   loading.value = true
   try {
-    const [fRes, dRes] = await Promise.all([
+    const [iRes, fRes, dRes] = await Promise.all([
+      academicApi.institutionCategories(listParams.value),
       academicApi.faculties(listParams.value),
       academicApi.departments(listParams.value),
     ])
+    institutionCategories.value = Array.isArray(iRes.data) ? iRes.data : []
     const facultyRows = Array.isArray(fRes.data) ? fRes.data : []
     const departmentRows = Array.isArray(dRes.data) ? dRes.data : []
     faculties.value = facultyRows.map((f) => ({
@@ -327,7 +395,11 @@ const resetForm = () => {
 }
 
 const openCreate = () => {
-  dialogType.value = activeTab.value === 'faculties' ? 'faculty' : 'department'
+  dialogType.value = {
+    institution: 'institution',
+    faculties: 'faculty',
+    departments: 'department',
+  }[activeTab.value] || 'institution'
   resetForm()
   showDialog.value = true
 }
@@ -335,6 +407,18 @@ const openCreate = () => {
 const closeDialog = () => {
   showDialog.value = false
   resetForm()
+}
+
+const editInstitutionCategory = (row) => {
+  dialogType.value = 'institution'
+  editingId.value = row.uuid
+  form.value = {
+    name: row.name,
+    code: row.code || '',
+    description: row.description || '',
+    is_active: row.is_active,
+  }
+  showDialog.value = true
 }
 
 const editFaculty = (row) => {
@@ -366,7 +450,16 @@ const submitForm = async () => {
   submitting.value = true
   formError.value = ''
   try {
-    if (dialogType.value === 'faculty') {
+    if (dialogType.value === 'institution') {
+      const payload = {
+        name: form.value.name.trim(),
+        code: (form.value.code || '').trim().toUpperCase(),
+        description: form.value.description,
+        is_active: form.value.is_active,
+      }
+      if (editingId.value) await academicApi.updateInstitutionCategory(editingId.value, payload)
+      else await academicApi.createInstitutionCategory(payload)
+    } else if (dialogType.value === 'faculty') {
       const payload = {
         name: form.value.name.trim(),
         code: form.value.code.trim().toUpperCase(),
@@ -395,6 +488,11 @@ const submitForm = async () => {
   } finally {
     submitting.value = false
   }
+}
+
+const toggleInstitutionCategory = async (row) => {
+  await academicApi.updateInstitutionCategory(row.uuid, { is_active: !row.is_active })
+  await fetchAll()
 }
 
 const toggleFaculty = async (row) => {

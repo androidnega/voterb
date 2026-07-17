@@ -207,14 +207,7 @@ router.beforeEach(async (to) => {
     return to.path === '/login' ? true : '/login'
   }
 
-  if (authStore.isAuthenticated && authStore.needsOnboarding) {
-    if (to.path !== '/onboarding') {
-      return to.path === '/onboarding' ? true : '/onboarding'
-    }
-    return true
-  }
-
-  if (authStore.isAuthenticated && to.path === '/onboarding' && !authStore.needsOnboarding) {
+  if (authStore.isAuthenticated && to.path === '/onboarding') {
     return '/student'
   }
 

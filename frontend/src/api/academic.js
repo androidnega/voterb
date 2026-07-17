@@ -26,6 +26,16 @@ export const academicApi = {
   deleteDepartment(uuid) {
     return api.delete(`/elections/departments/${uuid}/`)
   },
+
+  institutionCategories(params = {}) {
+    return api.get('/elections/institution-categories/', { params })
+  },
+  createInstitutionCategory(data) {
+    return api.post('/elections/institution-categories/', data)
+  },
+  updateInstitutionCategory(uuid, data) {
+    return api.patch(`/elections/institution-categories/${uuid}/`, data)
+  },
 }
 
 export const onboardingApi = {

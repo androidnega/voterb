@@ -73,6 +73,11 @@ class InstitutionRegisterListCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        institution_category_uuids = request.data.get('institution_category_uuids') or []
+        if request.data.get('institution_category_uuid'):
+            institution_category_uuids = list(institution_category_uuids) + [
+                request.data.get('institution_category_uuid')
+            ]
         faculty_uuids = request.data.get('faculty_uuids') or []
         department_uuids = request.data.get('department_uuids') or []
         # Backward compatible singular fields
@@ -82,7 +87,11 @@ class InstitutionRegisterListCreateView(APIView):
             department_uuids = list(department_uuids) + [request.data.get('department_uuid')]
 
         # Deduplicate while preserving order
-        seen_f, seen_d = set(), set()
+        seen_i, seen_f, seen_d = set(), set(), set()
+        institution_category_uuids = [
+            str(u) for u in institution_category_uuids
+            if u and not (str(u) in seen_i or seen_i.add(str(u)))
+        ]
         faculty_uuids = [
             str(u) for u in faculty_uuids
             if u and not (str(u) in seen_f or seen_f.add(str(u)))
@@ -92,11 +101,54 @@ class InstitutionRegisterListCreateView(APIView):
             if u and not (str(u) in seen_d or seen_d.add(str(u)))
         ]
 
-        if not faculty_uuids and not department_uuids:
+        has_institution = bool(institution_category_uuids)
+        has_sub = bool(faculty_uuids or department_uuids)
+        if has_institution and has_sub:
             return Response(
-                {'error': 'Select at least one faculty or department for this register.'},
+                {
+                    'error': (
+                        'Choose either institution categories (Main EC) or '
+                        'faculty/department categories (Sub EC), not both.'
+                    ),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if not has_institution and not has_sub:
+            return Response(
+                {
+                    'error': (
+                        'Select at least one category. Create an Institution category under '
+                        'Categories for Main EC, or choose a faculty/department for Sub EC.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from elections.models import InstitutionCategory
+
+        institution_categories = []
+        if has_institution:
+            institution_categories = list(
+                InstitutionCategory.objects.filter(
+                    institution=institution,
+                    uuid__in=institution_category_uuids,
+                    is_active=True,
+                )
+            )
+            found = {str(c.uuid) for c in institution_categories}
+            missing = [u for u in institution_category_uuids if u not in found]
+            if missing:
+                return Response(
+                    {'institution_category_uuids': ['One or more institution categories were not found.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            # Preserve selection order
+            by_id = {str(c.uuid): c for c in institution_categories}
+            institution_categories = [by_id[u] for u in institution_category_uuids if u in by_id]
+
+        audience = (
+            VoterRegister.AUDIENCE_MAIN if has_institution else VoterRegister.AUDIENCE_SUB
+        )
 
         from django.db import transaction
         from accounts.governance import serialize_decision, submit_main_ec_decision
@@ -109,21 +161,46 @@ class InstitutionRegisterListCreateView(APIView):
                 election=None,
                 created_by=request.user,
                 name=name,
+                audience=audience,
                 approval_status=VoterRegister.APPROVAL_PENDING,
             )
-            for faculty_uuid in faculty_uuids:
-                cat_serializer = VoterCategorySerializer(data={'faculty_uuid': faculty_uuid})
-                cat_serializer.is_valid(raise_exception=True)
-                categories.append(cat_serializer.save(register=register))
-            for department_uuid in department_uuids:
-                cat_serializer = VoterCategorySerializer(data={'department_uuid': department_uuid})
-                cat_serializer.is_valid(raise_exception=True)
-                categories.append(cat_serializer.save(register=register))
+            if audience == VoterRegister.AUDIENCE_MAIN:
+                for inst_cat in institution_categories:
+                    cat_serializer = VoterCategorySerializer(data={
+                        'name': inst_cat.name,
+                        'description': inst_cat.description or '',
+                    })
+                    cat_serializer.is_valid(raise_exception=True)
+                    categories.append(cat_serializer.save(register=register))
+            else:
+                for faculty_uuid in faculty_uuids:
+                    cat_serializer = VoterCategorySerializer(data={'faculty_uuid': faculty_uuid})
+                    cat_serializer.is_valid(raise_exception=True)
+                    categories.append(cat_serializer.save(register=register))
+                for department_uuid in department_uuids:
+                    cat_serializer = VoterCategorySerializer(data={'department_uuid': department_uuid})
+                    cat_serializer.is_valid(raise_exception=True)
+                    categories.append(cat_serializer.save(register=register))
 
         primary = categories[0]
         category_names = ', '.join(c.name for c in categories[:4])
         if len(categories) > 4:
             category_names += f' (+{len(categories) - 4} more)'
+
+        if audience == VoterRegister.AUDIENCE_MAIN:
+            summary = (
+                f'Create a Main EC institution-wide voter register “{name}” with '
+                f'categor{"y" if len(categories) == 1 else "ies"} {category_names}. '
+                'Assigned to Main EC elections only. '
+                'The other Main EC member must approve before it can be used.'
+            )
+        else:
+            summary = (
+                f'Create a Sub EC voter register assigning voters to '
+                f'{len(categories)} facult{"y" if len(categories) == 1 else "ies"}/department '
+                f'container(s): {category_names}. '
+                'The other Main EC member must approve before it can be used in elections.'
+            )
 
         # Register creation requires dual Main EC approval before it becomes usable.
         try:
@@ -131,17 +208,14 @@ class InstitutionRegisterListCreateView(APIView):
                 user=request.user,
                 decision_type=MainECDecision.TYPE_REGISTER_CREATE,
                 title=f'Create voter register: {name}',
-                summary=(
-                    f'Create an institutional voter register assigning voters to '
-                    f'{len(categories)} facult{"y" if len(categories) == 1 else "ies"}/department '
-                    f'container(s): {category_names}. '
-                    'The other Main EC member must approve before it can be used in elections.'
-                ),
+                summary=summary,
                 payload={
                     'register_uuid': str(register.uuid),
                     'name': name,
+                    'audience': audience,
                     'category': primary.name,
                     'category_uuids': [str(c.uuid) for c in categories],
+                    'institution_category_uuids': institution_category_uuids,
                     'faculty_uuids': faculty_uuids,
                     'department_uuids': department_uuids,
                 },
@@ -223,6 +297,30 @@ class InstitutionCategoryListCreateView(APIView):
 
         faculty_uuid = request.data.get('faculty_uuid')
         department_uuid = request.data.get('department_uuid')
+        category_name = (request.data.get('name') or '').strip()
+
+        if register.audience == VoterRegister.AUDIENCE_MAIN:
+            if faculty_uuid or department_uuid:
+                return Response(
+                    {
+                        'error': (
+                            'This is a Main EC institution register. Add a preferred '
+                            'category name instead of a faculty or department.'
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not category_name:
+                return Response(
+                    {'name': ['Enter a category name for this Main EC register.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif not faculty_uuid and not department_uuid and not category_name:
+            return Response(
+                {'error': 'Select a faculty, department, or provide a category name.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if faculty_uuid and VoterCategory.objects.filter(register=register, faculty__uuid=faculty_uuid).exists():
             return Response(
                 {'faculty_uuid': ['This faculty is already assigned to the register.']},
@@ -231,6 +329,15 @@ class InstitutionCategoryListCreateView(APIView):
         if department_uuid and VoterCategory.objects.filter(register=register, department__uuid=department_uuid).exists():
             return Response(
                 {'department_uuid': ['This department is already assigned to the register.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if (
+            register.audience == VoterRegister.AUDIENCE_MAIN
+            and category_name
+            and VoterCategory.objects.filter(register=register, name__iexact=category_name).exists()
+        ):
+            return Response(
+                {'name': ['This category name already exists on the register.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -339,6 +446,22 @@ class InstitutionRegisterEntryUpdateView(APIView):
         }
         if before == after:
             return Response({'error': 'No changes detected.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing_pending = MainECDecision.objects.filter(
+            status=MainECDecision.STATUS_PENDING,
+            decision_type=MainECDecision.TYPE_REGISTER_ENTRY_UPDATE,
+            payload__entry_uuid=str(entry.uuid),
+        ).exists()
+        if existing_pending:
+            return Response(
+                {
+                    'error': (
+                        'This voter already has a pending change awaiting dual Main EC approval. '
+                        'Live data stays on the current values until that decision is enrolled.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         decision = submit_main_ec_decision(
             user=request.user,
@@ -487,6 +610,7 @@ class InstitutionRegisterReplaceView(APIView):
                 election=None,
                 name=f'{live.name} · pending replace {uuid_lib.uuid4().hex[:8]}',
                 description=f'Staging re-upload for {live.name}',
+                audience=live.audience,
                 replace_of=live,
                 approval_status=VoterRegister.APPROVAL_PENDING,
                 created_by=request.user,

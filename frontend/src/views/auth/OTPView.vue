@@ -178,9 +178,9 @@ const handleVerify = async () => {
 
   try {
     await authStore.verifyOtp(otpSessionId.value, code)
-    // Students → /student (or onboarding); staff → /dashboard
+    // Students → eligible elections dashboard; staff → admin dashboard
     if (authStore.isStudent) {
-      await router.replace(authStore.needsOnboarding ? '/onboarding' : '/student')
+      await router.replace('/student')
     } else {
       await router.replace('/dashboard')
     }

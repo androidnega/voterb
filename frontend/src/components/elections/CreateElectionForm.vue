@@ -39,7 +39,8 @@
               categories, then return here to create the election.
             </template>
             <template v-else>
-              Create an institutional register under Register, get dual approval, then return here.
+              Create a Main EC institution register under Register (not a Sub EC faculty/department one),
+              get dual approval, then return here.
             </template>
           </p>
           <router-link

@@ -8,7 +8,13 @@
       @click.stop="toggle"
     >
       <i class="far fa-bell" aria-hidden="true"></i>
-      <span v-if="unreadCount > 0" class="student-bell__dot" aria-hidden="true"></span>
+      <span
+        v-if="unreadCount > 0"
+        class="student-bell__badge"
+        :aria-label="`${unreadCount} unread notifications`"
+      >
+        {{ unreadCount > 99 ? '99+' : unreadCount }}
+      </span>
     </button>
 
     <Transition name="bell-drop">
@@ -208,15 +214,23 @@ onUnmounted(() => {
   background: #f0fdf9;
 }
 
-.student-bell__dot {
+.student-bell__badge {
   position: absolute;
-  top: 0.32rem;
-  right: 0.36rem;
-  width: 0.48rem;
-  height: 0.48rem;
+  top: 0.1rem;
+  right: 0.08rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.26rem;
   border-radius: 9999px;
   background: #0d9488;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1rem;
+  text-align: center;
   border: 2px solid #fff;
+  box-sizing: content-box;
 }
 
 .student-bell__panel {

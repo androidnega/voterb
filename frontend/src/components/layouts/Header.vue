@@ -40,7 +40,13 @@
           @click.stop="toggleNotifications"
         >
           <i class="far fa-bell"></i>
-          <span v-if="unreadCount > 0" class="soft-icon-btn__dot"></span>
+          <span
+            v-if="unreadCount > 0"
+            class="soft-icon-btn__badge"
+            :aria-label="`${unreadCount} unread notifications`"
+          >
+            {{ unreadCount > 99 ? '99+' : unreadCount }}
+          </span>
         </button>
 
         <div v-if="showNotifications" class="soft-dropdown">
@@ -58,11 +64,11 @@
               No notifications
             </div>
             <button
-              v-for="notif in notifications"
+              v-for="notif in notificationsWithCountdown"
               :key="notif.uuid"
               type="button"
               class="soft-dropdown__item"
-              :class="{ 'is-unread': !notif.is_read, 'has-countdown': !!notifCountdown(notif) }"
+              :class="{ 'is-unread': !notif.is_read, 'has-countdown': !!notif.countdown }"
               @click="handleNotificationClick(notif)"
             >
               <span class="soft-dropdown__accent" aria-hidden="true"></span>
@@ -74,12 +80,12 @@
                 <p class="soft-dropdown__item-body">{{ notif.body }}</p>
                 <div class="soft-dropdown__item-meta">
                   <span
-                    v-if="notifCountdown(notif)"
+                    v-if="notif.countdown"
                     class="soft-dropdown__countdown"
-                    :class="`is-${notifCountdown(notif).urgency}`"
+                    :class="`is-${notif.countdown.urgency}`"
                   >
                     <i class="fas fa-hourglass-half" aria-hidden="true"></i>
-                    {{ notifCountdown(notif).expired ? 'Expired' : notifCountdown(notif).display }}
+                    {{ notif.countdown.expired ? 'Expired' : notif.countdown.display }}
                   </span>
                   <span class="soft-dropdown__item-time">{{ timeAgo(notif.created_at) }}</span>
                 </div>
@@ -263,7 +269,7 @@ const pageMeta = computed(() => {
   if (path.startsWith('/categories') || path.startsWith('/academic')) {
     return {
       title: 'Categories',
-      subtitle: 'Faculties and departments used for Sub EC assignment and registers',
+      subtitle: 'Institution categories for Main EC, plus faculties and departments for Sub ECs',
     }
   }
   if (path.startsWith('/sub-ec') || path.startsWith('/ec-structure')) {
@@ -321,6 +327,12 @@ const initials = computed(() => {
 })
 
 const unreadCount = computed(() => notifications.value.filter((n) => !n.is_read).length)
+const notificationsWithCountdown = computed(() =>
+  notifications.value.map((notification) => ({
+    ...notification,
+    countdown: notifCountdown(notification),
+  })),
+)
 
 const allSearchTargets = [
   { match: ['election', 'elections'], path: '/elections', roles: ['admin', 'auditor'] },
@@ -588,14 +600,21 @@ onUnmounted(() => {
   color: var(--vb-ink);
 }
 
-.soft-icon-btn__dot {
+.soft-icon-btn__badge {
   position: absolute;
-  top: 0.55rem;
-  right: 0.6rem;
-  width: 0.45rem;
-  height: 0.45rem;
+  top: 0.2rem;
+  right: 0.15rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.28rem;
   border-radius: 9999px;
   background: #e11d48;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15rem;
+  text-align: center;
   box-shadow: 0 0 0 2px #fff;
 }
 

@@ -31,6 +31,38 @@ class Department(models.Model):
         return f'{self.name} ({self.faculty.name})'
 
 
+class InstitutionCategory(models.Model):
+    """
+    Main EC institution-wide category (e.g. Institution, General, SRC).
+
+    Created under Categories, then selected when building a Main EC register.
+    Distinct from faculty/department categories used by Sub ECs.
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey(
+        'system.InstitutionProfile',
+        on_delete=models.CASCADE,
+        related_name='institution_categories',
+    )
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=20, blank=True)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = 'institution categories'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['institution', 'name'],
+                name='uniq_institutioncategory_institution_name',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.name} ({self.institution.short_name})'
+
+
 class Election(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -205,6 +237,22 @@ class VoterRegister(models.Model):
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
 
+    # Who this register is for when creating elections.
+    # Main EC institutional elections use AUDIENCE_MAIN (custom/institution categories).
+    # Sub EC elections use AUDIENCE_SUB (faculty/department categories).
+    AUDIENCE_MAIN = 'main'
+    AUDIENCE_SUB = 'sub'
+    AUDIENCE_CHOICES = [
+        (AUDIENCE_MAIN, 'Main EC (institution-wide)'),
+        (AUDIENCE_SUB, 'Sub EC (faculty / department)'),
+    ]
+    audience = models.CharField(
+        max_length=10,
+        choices=AUDIENCE_CHOICES,
+        default=AUDIENCE_SUB,
+        db_index=True,
+    )
+
     # Dual Main EC approval — a second Main EC member must approve before the
     # register can be used for elections.
     APPROVAL_PENDING = 'pending'
@@ -319,7 +367,7 @@ class VoterCategory(models.Model):
             return f'Department · {self.department.name}'
         if self.faculty_id:
             return f'Faculty · {self.faculty.name}'
-        return 'Custom'
+        return f'Main EC · {self.name}'
 
 class VoterRegisterEntry(models.Model):
     GENDER_CHOICES = [

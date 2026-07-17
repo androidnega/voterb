@@ -1,8 +1,9 @@
 import axios from 'axios'
+import { API_BASE_URL, apiUrl } from './config'
 
 /** Axios client for multipart uploads — longer timeout, no JSON default header */
 const uploadClient = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE_URL,
   timeout: 300000, // 5 min — large register CSV chunks
 })
 
@@ -43,7 +44,7 @@ uploadClient.interceptors.response.use(
       refreshPromise = (async () => {
         const refresh = localStorage.getItem('refresh_token')
         if (!refresh) throw new Error('No refresh token')
-        const response = await axios.post('/api/v1/accounts/auth/token/refresh/', { refresh })
+        const response = await axios.post(apiUrl('accounts/auth/token/refresh/'), { refresh })
         const access = response.data.access
         localStorage.setItem('access_token', access)
         return access

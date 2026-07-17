@@ -1,7 +1,8 @@
 import axios from 'axios'
+import { API_BASE_URL, apiUrl } from './config'
 
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
   timeout: 15000,
 })
@@ -45,7 +46,7 @@ api.interceptors.response.use(
         if (!refresh) {
           throw new Error('No refresh token')
         }
-        const response = await axios.post('/api/v1/accounts/auth/token/refresh/', { refresh })
+        const response = await axios.post(apiUrl('accounts/auth/token/refresh/'), { refresh })
         const access = response.data.access
         localStorage.setItem('access_token', access)
         return access

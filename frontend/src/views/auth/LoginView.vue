@@ -8,7 +8,7 @@
           </svg>
         </div>
         <h1 class="auth-title">Welcome back</h1>
-        <p class="auth-subtitle">Sign in to continue to VoteBridge</p>
+        <p class="auth-subtitle">Sign in with your student index number to vote</p>
       </div>
 
       <div class="auth-card">
@@ -27,7 +27,7 @@
                 v-model="identifier"
                 :type="isStaffLogin ? 'email' : 'text'"
                 class="field-input"
-                :placeholder="isStaffLogin ? 'admin@voterb.com' : 'BCITS24047'"
+                :placeholder="isStaffLogin ? 'admin@voterb.com' : 'e.g. SC/2021/PL/001'"
                 autocomplete="username"
                 :disabled="loading"
               />

@@ -205,6 +205,15 @@ def submit_main_ec_decision(
 
 @transaction.atomic
 def approve_main_ec_decision(decision: MainECDecision, user: User, note: str = '') -> MainECDecision:
+    # Serialize concurrent approvals and make retries safe. A proxy can return
+    # 502 after enrollment has committed, so the same signer may legitimately
+    # retry the versioned endpoint.
+    decision = MainECDecision.objects.select_for_update().get(pk=decision.pk)
+    if (
+        decision.status == MainECDecision.STATUS_ENROLLED
+        and decision.approvals.filter(user=user).exists()
+    ):
+        return decision
     if decision.status != MainECDecision.STATUS_PENDING:
         raise GovernanceBlocked('This decision is no longer pending approval.', code='not_pending')
     if not user_is_main_ec_of_institution(user, decision.institution):
@@ -382,6 +391,11 @@ def _execute_decision(decision: MainECDecision) -> str:
 
     if decision.decision_type == MainECDecision.TYPE_REGISTER_ENTRY_UPDATE:
         from elections.models import VoterRegisterEntry
+        from elections.services.register_service import (
+            ensure_register_entry_users,
+            sync_elections_for_register,
+        )
+        from elections.services.eligibility import resolve_or_create_voter
 
         entry = get_object_or_404(VoterRegisterEntry, uuid=payload['entry_uuid'])
         voter_id = (payload.get('voter_id') or entry.voter_id or '').strip()
@@ -405,6 +419,12 @@ def _execute_decision(decision: MainECDecision) -> str:
         entry.save(update_fields=['voter_id', 'full_name', 'phone_number'])
 
         user = entry.user
+        if not user:
+            user, _err = resolve_or_create_voter(voter_id)
+            if user:
+                entry.user = user
+                entry.save(update_fields=['user'])
+
         if user:
             parts = full_name.split(None, 1)
             user.index_number = voter_id
@@ -413,6 +433,10 @@ def _execute_decision(decision: MainECDecision) -> str:
             if phone_number:
                 user.phone_number = phone_number
             user.save(update_fields=['index_number', 'first_name', 'last_name', 'phone_number'])
+
+        # Propagate into every election sharing this live institutional register.
+        ensure_register_entry_users(entry.register)
+        sync_elections_for_register(entry.register, verified_by=proposer)
         return str(entry.uuid)
 
     if decision.decision_type == MainECDecision.TYPE_SUB_EC_CREATE:

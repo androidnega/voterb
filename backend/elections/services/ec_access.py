@@ -206,6 +206,8 @@ def register_matches_sub_ec_scope(register, ec_unit: ECUnit) -> bool:
     """
     if not register:
         return False
+    if getattr(register, 'audience', None) == register.AUDIENCE_MAIN:
+        return False
     scope = sub_ec_assignment_scope(ec_unit)
     if not scope['faculty_uuids'] and not scope['department_uuids']:
         return False
@@ -216,3 +218,21 @@ def register_matches_sub_ec_scope(register, ec_unit: ECUnit) -> bool:
         if cat.department_id and str(cat.department_id) in scope['department_uuids']:
             return True
     return False
+
+
+def register_is_main_ec_audience(register) -> bool:
+    """Registers intended for Main EC institution-wide elections."""
+    if not register:
+        return False
+    return getattr(register, 'audience', None) == getattr(
+        register, 'AUDIENCE_MAIN', 'main',
+    )
+
+
+def register_is_sub_ec_audience(register) -> bool:
+    """Registers intended for Sub EC faculty/department elections."""
+    if not register:
+        return False
+    return getattr(register, 'audience', None) == getattr(
+        register, 'AUDIENCE_SUB', 'sub',
+    )

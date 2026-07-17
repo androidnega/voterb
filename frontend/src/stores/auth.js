@@ -51,7 +51,6 @@ export const useAuthStore = defineStore('auth', {
     isAdmin: (state) => state.isElectionManager || state.isSuperAdmin || state.isAuditor,
     homeRoute: (state) => {
       if (isStudentRole(state.roleName, state.user)) {
-        if (state.needsOnboarding) return '/onboarding'
         return '/student'
       }
       if (isStaffRole(state.roleName, state.user)) return '/dashboard'
@@ -176,28 +175,14 @@ export const useAuthStore = defineStore('auth', {
     },
 
     syncOnboardingFlag() {
-      if (!this.isStudent) {
-        this.needsOnboarding = false
-        localStorage.removeItem('requires_onboarding')
-        localStorage.removeItem('needs_onboarding')
-        return false
-      }
-      // Prefer explicit server flag; fall back to is_new_user only when unknown
-      if (this.user?.onboarding_completed === true) {
-        this.needsOnboarding = false
-      } else if (this.user?.onboarding_completed === false) {
-        this.needsOnboarding = true
-      } else {
-        this.needsOnboarding = this.isNewUser || localStorage.getItem('is_new_user') === 'true'
-      }
-      if (this.needsOnboarding) {
-        localStorage.setItem('requires_onboarding', 'true')
-        localStorage.setItem('needs_onboarding', 'true')
-      } else {
-        localStorage.removeItem('requires_onboarding')
-        localStorage.removeItem('needs_onboarding')
-      }
-      return this.needsOnboarding
+      // Students authenticate via index + approved register + OTP.
+      // Legacy faculty/department onboarding is retired.
+      this.needsOnboarding = false
+      this.isNewUser = false
+      localStorage.removeItem('requires_onboarding')
+      localStorage.removeItem('needs_onboarding')
+      localStorage.removeItem('is_new_user')
+      return false
     },
 
     clearLocalStorage() {

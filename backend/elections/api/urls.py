@@ -7,6 +7,7 @@ from .views import (
 from .eligibility_views import EligibilityListCreateView, EligibilityDeleteView, EligibilityBulkImportView
 from .academic_views import FacultyListView, DepartmentListView
 from .academic_views import FacultyCreateView, DepartmentCreateView
+from .academic_views import InstitutionCategoryListCreateView, InstitutionCategoryDetailView
 from .register_views import (
     RegisterListCreateView,
     RegisterDetailView,
@@ -19,8 +20,8 @@ from .register_views import (
 from .institution_register_views import (
     InstitutionRegisterListCreateView,
     InstitutionRegisterDetailView,
-    InstitutionCategoryListCreateView,
-    InstitutionCategoryDetailView,
+    InstitutionCategoryListCreateView as RegisterCategoryListCreateView,
+    InstitutionCategoryDetailView as RegisterCategoryDetailView,
     InstitutionRegisterEntryListView,
     InstitutionRegisterEntryUpdateView,
     InstitutionRegisterImportView,
@@ -33,6 +34,16 @@ urlpatterns = [
     path('faculties/create/', FacultyCreateView.as_view(), name='faculty-create'),
     path('departments/', DepartmentListView.as_view(), name='department-list'),
     path('departments/create/', DepartmentCreateView.as_view(), name='department-create'),
+    path(
+        'institution-categories/',
+        InstitutionCategoryListCreateView.as_view(),
+        name='institution-category-list',
+    ),
+    path(
+        'institution-categories/<uuid:uuid>/',
+        InstitutionCategoryDetailView.as_view(),
+        name='institution-category-detail',
+    ),
 
     # ─── INSTITUTIONAL REGISTERS (Main EC) ───────────────────────
     path('institution-registers/', InstitutionRegisterListCreateView.as_view(), name='institution-register-list'),
@@ -43,12 +54,12 @@ urlpatterns = [
     ),
     path(
         'institution-registers/<uuid:register_uuid>/categories/',
-        InstitutionCategoryListCreateView.as_view(),
+        RegisterCategoryListCreateView.as_view(),
         name='institution-register-categories',
     ),
     path(
         'institution-registers/<uuid:register_uuid>/categories/<uuid:category_uuid>/',
-        InstitutionCategoryDetailView.as_view(),
+        RegisterCategoryDetailView.as_view(),
         name='institution-register-category-detail',
     ),
     path(

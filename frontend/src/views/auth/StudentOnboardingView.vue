@@ -10,237 +10,111 @@
           </span>
           <div>
             <p class="setup-eyebrow">VoteBridge</p>
-            <h1 class="setup-title">Set up your profile</h1>
+            <h1 class="setup-title">You're all set</h1>
           </div>
         </div>
       </header>
 
       <div class="step-heading">
-        <h2>Your details</h2>
-        <p>Enter your full name and mobile number. Your faculty is assigned by the election committee.</p>
+        <h2>Sign in with your index number</h2>
+        <p>
+          Faculty, department, and level setup is no longer required.
+          Enter your index on the login page — if you are on an approved voter register,
+          you will receive an OTP and go straight to your eligible elections.
+        </p>
       </div>
 
-      <form class="setup-form" @submit.prevent="submitOnboarding">
-        <div class="setup-body">
-          <OnboardingStepFields
-            v-model:form="form"
-            step-id="profile"
-            :index-number="indexNumber"
-          />
-          <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
-        </div>
-
-        <footer class="setup-actions">
-          <button type="submit" class="btn-main" :disabled="loading">
-            <i v-if="loading" class="fas fa-spinner fa-spin" aria-hidden="true"></i>
-            {{ loading ? 'Saving…' : 'Continue' }}
-          </button>
-        </footer>
-      </form>
+      <footer class="setup-actions">
+        <button type="button" class="btn-main" @click="goStudent">
+          Go to my elections
+        </button>
+      </footer>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { onboardingApi } from '@/api/academic'
-import OnboardingStepFields from '@/components/onboarding/OnboardingStepFields.vue'
-import { formatIndexDisplay } from '@/utils/index'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const loading = ref(false)
-const errorMessage = ref('')
-
-const form = ref({
-  full_name: '',
-  phone_number: '',
-})
-
-const indexNumber = computed(() => formatIndexDisplay(authStore.user?.index_number))
-
-const submitOnboarding = async () => {
-  errorMessage.value = ''
-  if (!form.value.full_name.trim()) {
-    errorMessage.value = 'Please enter your full name.'
-    return
-  }
-  if (!form.value.phone_number.trim()) {
-    errorMessage.value = 'Please enter your phone number.'
-    return
-  }
-
-  loading.value = true
-  try {
-    const payload = {
-      full_name: form.value.full_name.trim(),
-      phone_number: form.value.phone_number.trim(),
-    }
-    const { data } = await onboardingApi.complete(payload)
-    if (data.user) authStore.user = data.user
-    else if (authStore.user) authStore.user.onboarding_completed = true
-    authStore.isNewUser = false
-    authStore.syncOnboardingFlag(authStore.user)
-    localStorage.removeItem('is_new_user')
-    localStorage.removeItem('requires_onboarding')
-    await router.replace('/student')
-  } catch (error) {
-    console.error('Onboarding failed:', error)
-    const data = error.response?.data
-    if (data?.error) {
-      errorMessage.value = data.error
-    } else if (typeof data === 'object' && data) {
-      const firstField = Object.keys(data)[0]
-      const firstError = Array.isArray(data[firstField]) ? data[firstField][0] : data[firstField]
-      errorMessage.value = firstError || 'Failed to complete onboarding.'
-    } else {
-      errorMessage.value = 'Failed to complete onboarding.'
-    }
-  } finally {
-    loading.value = false
-  }
+const goStudent = async () => {
+  authStore.syncOnboardingFlag()
+  await router.replace('/student')
 }
 
-onMounted(async () => {
-  if (!authStore.initialized) await authStore.initialize()
-  if (!authStore.isAuthenticated) {
-    await router.replace('/login')
-    return
-  }
-  if (!authStore.needsOnboarding) {
-    await router.replace('/student')
-  }
-})
+onMounted(goStudent)
 </script>
 
 <style scoped>
 .onboarding-page {
-  min-height: 100dvh;
+  min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 1.5rem 1rem;
+  padding: 1.5rem;
   background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(15, 118, 110, 0.08), transparent),
-    #f7f6f3;
+    radial-gradient(circle at top left, rgba(61, 79, 68, 0.08), transparent 40%),
+    #f7f6f2;
 }
 
 .setup-card {
-  width: min(100%, 24rem);
+  width: min(28rem, 100%);
   background: #fff;
-  border: 1px solid #e8e6e1;
-  border-radius: 1.15rem;
-  padding: 1.35rem 1.25rem 1.25rem;
-  box-shadow: 0 10px 40px rgba(28, 25, 23, 0.06);
+  border: 1px solid #ebeae4;
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+  box-shadow: 0 12px 40px rgba(28, 28, 28, 0.06);
 }
 
-.setup-head {
-  margin-bottom: 1.1rem;
-}
-
-.setup-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
+.setup-head { margin-bottom: 1.25rem; }
+.setup-brand { display: flex; gap: 0.85rem; align-items: center; }
 .setup-logo {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.75rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #0f766e;
-  color: #fff;
-  flex-shrink: 0;
-}
-
-.setup-logo svg {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
-.setup-eyebrow {
-  margin: 0;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.85rem;
+  display: grid;
+  place-items: center;
+  background: #ecfdf5;
   color: #0f766e;
 }
-
+.setup-logo svg { width: 1.25rem; height: 1.25rem; }
+.setup-eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8a8a8a;
+}
 .setup-title {
-  margin: 0.1rem 0 0;
-  font-size: 1.15rem;
+  margin: 0.15rem 0 0;
+  font-size: 1.35rem;
   font-weight: 800;
-  letter-spacing: -0.03em;
-  color: #1c1917;
+  color: #1c1c1c;
 }
-
-.step-heading {
-  margin-bottom: 1rem;
-}
-
 .step-heading h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 750;
-  color: #1c1917;
 }
-
 .step-heading p {
-  margin: 0.35rem 0 0;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: #78716c;
+  margin: 0.45rem 0 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
-
-.setup-form {
-  display: grid;
-  gap: 1rem;
-}
-
-.setup-body {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.form-error {
-  margin: 0;
-  font-size: 0.78rem;
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #f5e6d3;
-  border-radius: 0.65rem;
-  padding: 0.55rem 0.7rem;
-}
-
-.setup-actions {
-  display: flex;
-  justify-content: stretch;
-}
-
+.setup-actions { margin-top: 1.4rem; }
 .btn-main {
   width: 100%;
   border: none;
   border-radius: 0.85rem;
-  background: #1c1917;
-  color: #fff;
-  font-size: 0.88rem;
-  font-weight: 700;
   padding: 0.85rem 1rem;
+  background: #1c1c1c;
+  color: #fff;
+  font-weight: 700;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-}
-
-.btn-main:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }
 </style>

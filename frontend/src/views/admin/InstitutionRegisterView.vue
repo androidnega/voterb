@@ -79,7 +79,7 @@
         v-else
         icon="fas fa-book"
         title="No registers yet"
-        message="Use Create register above to assign voters to one or more faculties and departments."
+        message="Create categories under Categories, then use Create register to assign them."
       />
     </div>
 
@@ -155,19 +155,35 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in entries" :key="row.uuid">
-                <td class="mono">{{ row.voter_id }}</td>
-                <td><span class="cell-title">{{ row.full_name }}</span></td>
+              <tr
+                v-for="row in entries"
+                :key="row.uuid"
+                :class="{ 'is-pending-edit': !!pendingEditFor(row) }"
+              >
+                <td class="mono">
+                  {{ row.voter_id }}
+                  <span v-if="pendingEditFor(row)" class="pending-pill">Pending approval</span>
+                </td>
+                <td>
+                  <span class="cell-title">{{ row.full_name }}</span>
+                  <p v-if="pendingEditFor(row)" class="pending-hint">
+                    Proposed:
+                    {{ pendingEditFor(row).proposed.voter_id }}
+                    · {{ pendingEditFor(row).proposed.full_name }}
+                    · {{ pendingEditFor(row).proposed.phone_number || '—' }}
+                  </p>
+                </td>
                 <td class="mono">{{ row.phone_number || '—' }}</td>
                 <td>
                   <button
-                    v-if="selected.approval_status === 'approved'"
+                    v-if="selected.approval_status === 'approved' && !pendingEditFor(row)"
                     type="button"
                     class="btn btn-ghost btn-sm"
                     @click="openEditEntry(row)"
                   >
                     Edit
                   </button>
+                  <span v-else-if="pendingEditFor(row)" class="pending-wait">Awaiting co-approval</span>
                 </td>
               </tr>
               <tr v-if="!entriesLoading && !entries.length">
@@ -211,40 +227,21 @@
         </div>
 
         <p class="form-callout">
-          This register assigns voters to the faculties and/or departments you select below.
-          You can choose <strong>more than one faculty</strong> and/or
-          <strong>more than one department</strong> — each becomes its own voter container.
-          Sub ECs can also be scoped to multiple faculties or departments the same way.
+          Choose categories from Categories. Institution categories create a Main EC register;
+          faculty/department create a Sub EC register. Do not mix both types.
         </p>
 
         <div class="field">
-          <label>Faculties</label>
+          <label>Categories</label>
           <MultiSelect
-            v-model="form.facultyUuids"
-            :options="faculties"
-            optionLabel="name"
-            optionValue="uuid"
-            placeholder="Search and select faculties…"
-            display="chip"
-            filter
-            filterPlaceholder="Search faculty…"
-            class="w-full"
-            :disabled="creating"
-            :showClear="true"
-          />
-        </div>
-
-        <div class="field">
-          <label>Departments</label>
-          <MultiSelect
-            v-model="form.departmentUuids"
-            :options="departmentOptions"
+            v-model="form.categoryKeys"
+            :options="categoryOptions"
             optionLabel="label"
-            optionValue="uuid"
-            placeholder="Search and select departments…"
+            optionValue="key"
+            placeholder="Search and select categories…"
             display="chip"
             filter
-            filterPlaceholder="Search department…"
+            filterPlaceholder="Search categories…"
             class="w-full"
             :disabled="creating"
             :showClear="true"
@@ -268,7 +265,7 @@
             :disabled="creating"
           />
           <p class="field-hint">
-            Other selected faculties/departments are created as empty containers — open the
+            Other selected categories are created as empty containers — open the
             register later to upload a CSV into each one.
           </p>
         </div>
@@ -323,8 +320,8 @@
           <p v-if="progressHint" class="upload-progress__hint">{{ progressHint }}</p>
         </div>
 
-        <p v-if="!faculties.length && !departments.length" class="inline-hint">
-          No faculties or departments yet.
+        <p v-if="!categoryOptions.length" class="inline-hint">
+          No categories yet.
           <router-link to="/categories">Create them in Categories</router-link>
           first.
         </p>
@@ -491,7 +488,7 @@ import { usePageHeading } from '@/composables/usePageHeading'
 const { setPageHeading } = usePageHeading()
 setPageHeading({
   title: 'Register',
-  subtitle: 'Assign voters to faculties and departments — select one or many',
+  subtitle: 'Choose categories under Categories, then assign them to a register',
 })
 
 const ROWS_PER_CHUNK = 100
@@ -502,6 +499,7 @@ const entriesLoading = ref(false)
 const registers = ref([])
 const selected = ref(null)
 const entries = ref([])
+const institutionCategories = ref([])
 const faculties = ref([])
 const departments = ref([])
 const entrySearch = ref('')
@@ -524,8 +522,7 @@ const progressHint = ref('')
 
 const form = ref({
   name: '',
-  facultyUuids: [],
-  departmentUuids: [],
+  categoryKeys: [],
   importTargetKey: '',
   file: null,
 })
@@ -535,39 +532,63 @@ const replaceForm = ref({
   file: null,
 })
 
-const departmentOptions = computed(() =>
-  departments.value.map((d) => ({
-    ...d,
-    label: d.faculty_name ? `${d.name} · ${d.faculty_name}` : d.name,
-  })),
-)
+const categoryOptions = computed(() => {
+  const options = []
+  for (const row of institutionCategories.value) {
+    options.push({
+      key: `institution:${row.uuid}`,
+      label: `Institution · ${row.name}`,
+      type: 'institution',
+      uuid: row.uuid,
+    })
+  }
+  for (const row of faculties.value) {
+    options.push({
+      key: `faculty:${row.uuid}`,
+      label: `Faculty · ${row.name}`,
+      type: 'faculty',
+      uuid: row.uuid,
+    })
+  }
+  for (const row of departments.value) {
+    options.push({
+      key: `department:${row.uuid}`,
+      label: `Department · ${row.name}`,
+      type: 'department',
+      uuid: row.uuid,
+    })
+  }
+  return options
+})
+
+const splitCategoryKeys = (keys = []) => {
+  const institution_category_uuids = []
+  const faculty_uuids = []
+  const department_uuids = []
+  for (const key of keys) {
+    if (key.startsWith('institution:')) institution_category_uuids.push(key.slice('institution:'.length))
+    else if (key.startsWith('faculty:')) faculty_uuids.push(key.slice('faculty:'.length))
+    else if (key.startsWith('department:')) department_uuids.push(key.slice('department:'.length))
+  }
+  return { institution_category_uuids, faculty_uuids, department_uuids }
+}
 
 const selectedImportTargets = computed(() => {
   const targets = []
-  for (const uuid of form.value.facultyUuids || []) {
-    const f = faculties.value.find((x) => x.uuid === uuid)
-    if (f) targets.push({ key: `faculty:${uuid}`, label: `Faculty · ${f.name}`, uuid, type: 'faculty' })
-  }
-  for (const uuid of form.value.departmentUuids || []) {
-    const d = departments.value.find((x) => x.uuid === uuid)
-    if (d) {
-      targets.push({
-        key: `department:${uuid}`,
-        label: `Department · ${d.name}`,
-        uuid,
-        type: 'department',
-      })
-    }
+  for (const key of form.value.categoryKeys || []) {
+    const opt = categoryOptions.value.find((x) => x.key === key)
+    if (opt) targets.push({ key: opt.key, label: opt.label, uuid: opt.uuid, type: opt.type })
   }
   return targets
 })
 
 const primaryCategory = computed(() => selected.value?.categories?.[0] || null)
 
-const canSubmit = computed(() => {
-  if (!form.value.name.trim() || !form.value.file) return false
-  return (form.value.facultyUuids?.length || 0) + (form.value.departmentUuids?.length || 0) > 0
-})
+const canSubmit = computed(() => (
+  !!form.value.name.trim()
+  && !!form.value.file
+  && (form.value.categoryKeys?.length || 0) > 0
+))
 
 const canReplaceSubmit = computed(() => {
   const cats = selected.value?.categories || []
@@ -576,6 +597,7 @@ const canReplaceSubmit = computed(() => {
 })
 
 const categoryLabel = (reg) => {
+  if (reg?.audience === 'main') return 'Main EC'
   const cats = reg.categories || []
   if (!cats.length) return 'Register'
   if (cats.length > 1) return `${cats.length} containers`
@@ -590,6 +612,7 @@ const categoryName = (reg) => {
 }
 
 const scopeClass = (reg) => {
+  if (reg?.audience === 'main') return 'is-main'
   const cats = reg.categories || []
   if (cats.length > 1) return 'is-multi'
   const type = cats[0]?.category_type || 'custom'
@@ -611,7 +634,7 @@ const maybeAutofillName = () => {
   if (form.value.name.trim()) return
   const targets = selectedImportTargets.value
   if (targets.length === 1) {
-    const name = targets[0].label.replace(/^(Faculty|Department) · /, '')
+    const name = targets[0].label.replace(/^(Institution|Faculty|Department) · /, '')
     form.value.name = `${name} Register`
   } else if (targets.length > 1) {
     form.value.name = 'Institutional Register'
@@ -619,7 +642,7 @@ const maybeAutofillName = () => {
 }
 
 watch(
-  () => [form.value.facultyUuids, form.value.departmentUuids],
+  () => form.value.categoryKeys,
   () => {
     maybeAutofillName()
     const targets = selectedImportTargets.value
@@ -760,8 +783,7 @@ const submitReplace = async () => {
 const openCreate = () => {
   form.value = {
     name: '',
-    facultyUuids: [],
-    departmentUuids: [],
+    categoryKeys: [],
     importTargetKey: '',
     file: null,
   }
@@ -804,7 +826,20 @@ const clearSelection = () => {
 const submitCreate = async () => {
   formError.value = ''
   if (!canSubmit.value) {
-    formError.value = 'Name, at least one faculty or department, and a CSV file are required.'
+    formError.value = 'Name, at least one category, and a CSV file are required.'
+    return
+  }
+
+  const {
+    institution_category_uuids,
+    faculty_uuids,
+    department_uuids,
+  } = splitCategoryKeys(form.value.categoryKeys)
+
+  const hasInstitution = institution_category_uuids.length > 0
+  const hasSub = faculty_uuids.length > 0 || department_uuids.length > 0
+  if (hasInstitution && hasSub) {
+    formError.value = 'Do not mix institution categories with faculty/department categories.'
     return
   }
 
@@ -819,8 +854,9 @@ const submitCreate = async () => {
     const payload = {
       name: form.value.name.trim(),
       description: '',
-      faculty_uuids: form.value.facultyUuids || [],
-      department_uuids: form.value.departmentUuids || [],
+      institution_category_uuids,
+      faculty_uuids,
+      department_uuids,
     }
 
     const { data: register } = await institutionRegisterApi.create(payload)
@@ -830,9 +866,15 @@ const submitCreate = async () => {
       ? register.categories
       : [register.primary_category].filter(Boolean)
 
-    const targetKey = form.value.importTargetKey || selectedImportTargets.value[0]?.key
     let categoryUuid = cats[0]?.uuid
-    if (targetKey?.startsWith('faculty:')) {
+    const targetKey = form.value.importTargetKey || selectedImportTargets.value[0]?.key
+    if (targetKey?.startsWith('institution:')) {
+      const instUuid = targetKey.slice('institution:'.length)
+      const inst = institutionCategories.value.find((c) => c.uuid === instUuid)
+      if (inst) {
+        categoryUuid = cats.find((c) => c.name === inst.name)?.uuid || categoryUuid
+      }
+    } else if (targetKey?.startsWith('faculty:')) {
       const facUuid = targetKey.slice('faculty:'.length)
       categoryUuid = cats.find((c) => c.faculty?.uuid === facUuid || c.faculty_uuid === facUuid)?.uuid
         || categoryUuid
@@ -903,12 +945,14 @@ const submitCreate = async () => {
 const load = async () => {
   loading.value = true
   try {
-    const [regRes, facRes, depRes] = await Promise.all([
+    const [regRes, instRes, facRes, depRes] = await Promise.all([
       institutionRegisterApi.list(),
+      academicApi.institutionCategories(),
       academicApi.faculties(),
       academicApi.departments(),
     ])
     registers.value = Array.isArray(regRes.data) ? regRes.data : []
+    institutionCategories.value = Array.isArray(instRes.data) ? instRes.data : []
     faculties.value = Array.isArray(facRes.data) ? facRes.data : []
     departments.value = Array.isArray(depRes.data)
       ? depRes.data.map((d) => ({
@@ -991,13 +1035,25 @@ const submitEditEntry = async () => {
       },
     )
     showEditEntry.value = false
-    banner.value = data?.message || 'Voter change submitted for dual Main EC approval.'
+    banner.value = data?.message || 'Voter change submitted for dual Main EC approval. Live list stays on current data until approved.'
+    // Refresh register + entries so pending badges appear; live rows stay pre-approval.
+    await selectRegister(selected.value)
   } catch (error) {
     formError.value = parseApiError(error) || 'Could not submit voter change.'
   } finally {
     editingEntry.value = false
   }
 }
+
+const pendingEditsByEntry = computed(() => {
+  const map = {}
+  for (const edit of selected.value?.pending_entry_edits || []) {
+    if (edit?.entry_uuid) map[edit.entry_uuid] = edit
+  }
+  return map
+})
+
+const pendingEditFor = (row) => pendingEditsByEntry.value[row?.uuid] || null
 
 const confirmDelete = async () => {
   if (!selected.value) return
@@ -1118,7 +1174,35 @@ onMounted(load)
 .scope-pill.is-faculty { background: #eef2ff; color: #3730a3; }
 .scope-pill.is-department { background: #ecfdf5; color: #047857; }
 .scope-pill.is-custom { background: #fff7ed; color: #c2410c; }
+.scope-pill.is-main { background: #ecfeff; color: #0e7490; }
 .scope-pill.is-multi { background: #f0f7f3; color: #3d4f44; }
+
+.audience-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  padding: 0.25rem;
+  border-radius: 0.85rem;
+  background: #f5f5f2;
+  border: 1px solid var(--vb-line, #ebeae4);
+}
+
+.audience-toggle__btn {
+  border: none;
+  border-radius: 0.7rem;
+  padding: 0.65rem 0.75rem;
+  background: transparent;
+  color: var(--vb-muted, #8a8a8a);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.audience-toggle__btn.is-active {
+  background: #fff;
+  color: var(--vb-ink, #1c1c1c);
+  box-shadow: 0 1px 4px rgba(28, 28, 28, 0.06);
+}
 
 .detail-scope-note {
   margin: 0.35rem 0 0;
@@ -1421,5 +1505,36 @@ onMounted(load)
   justify-content: flex-end;
   gap: 0.5rem;
   padding-top: 0.25rem;
+}
+
+tr.is-pending-edit td {
+  background: #fffbeb;
+}
+
+.pending-pill {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: #fef3c7;
+  color: #92400e;
+  vertical-align: middle;
+}
+
+.pending-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.72rem;
+  color: #92610a;
+  line-height: 1.35;
+}
+
+.pending-wait {
+  font-size: 0.75rem;
+  color: #92610a;
+  font-weight: 600;
 }
 </style>

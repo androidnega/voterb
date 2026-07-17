@@ -16,7 +16,7 @@ DEBUG_MASTER_OTP_CODES = frozenset({'11111', '111111'})
 class OTPService:
     @staticmethod
     def create_otp(user, purpose='login', channel='sms'):
-        """Generate OTP, hash it, store in DB, and return the OTP request object."""
+        """Generate OTP, hash it, store in DB, optionally SMS it, and return the OTP request."""
         code = f"{random.randint(100000, 999999)}"
         hashed = hashlib.sha256(code.encode()).hexdigest()
         expires_at = timezone.now() + timedelta(minutes=5)
@@ -30,6 +30,21 @@ class OTPService:
         if settings.DEBUG:
             print(f"🔑 OTP for {user.email or user.index_number}: {code}")
             print("🔑 DEBUG master OTP accepted: 11111 (or 111111)")
+
+        phone = (getattr(user, 'phone_number', None) or '').strip()
+        if channel == 'sms' and phone:
+            try:
+                from notifications.sms import send_sms
+                send_sms(
+                    phone=phone,
+                    message=(
+                        f'Your VoteBridge login code is {code}. '
+                        'It expires in 5 minutes. Do not share this code.'
+                    ),
+                )
+            except Exception as exc:
+                # Never block login if SMS delivery fails — code still works / DEBUG print exists.
+                print(f'⚠️ OTP SMS failed for {user.index_number or user.email}: {exc}')
         return otp
 
     @staticmethod

@@ -507,25 +507,15 @@ const isLumen = computed(() => themeStore.isLumenDashboard)
 
 const orgContext = computed(() => {
   const inst = authStore.institution
-  const gov = authStore.governance
-  if (!inst && !authStore.isMainEC && !authStore.isSubEC) return null
+  // Main EC identity and dual-approval guidance belong in the profile and
+  // approvals screens, not as a repeated dashboard banner.
+  if (!authStore.isSubEC || authStore.isMainEC) return null
   const institutionName = inst?.short_name || inst?.name || 'Your institution'
-  if (authStore.isSubEC && !authStore.isMainEC) {
-    return {
-      roleLabel: 'Sub EC',
-      institutionName,
-      hint: 'Scoped preview for assigned faculties / departments (assignments coming next).',
-      ready: true,
-    }
-  }
-  const ready = gov?.ready !== false
   return {
-    roleLabel: 'Main EC',
+    roleLabel: 'Sub EC',
     institutionName,
-    hint: ready
-      ? 'Institutional Electoral Commission — dual approval required for enrollment'
-      : (gov?.message || `Add a second Main EC before operations can proceed (${gov?.main_ec_count || 0}/${gov?.required_main_ec_count || 2}).`),
-    ready,
+    hint: 'Scoped preview for assigned faculties / departments.',
+    ready: true,
   }
 })
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
