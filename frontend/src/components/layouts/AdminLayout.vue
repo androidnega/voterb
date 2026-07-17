@@ -23,10 +23,12 @@
 </template>
 
 <script setup>
-import { ref, provide, onMounted, onUnmounted } from 'vue'
+import { ref, provide, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import Sidebar from './Sidebar.vue'
 import Header from './Header.vue'
 
+const route = useRoute()
 const isMobileMenuOpen = ref(false)
 const isCollapsed = ref(false)
 const isDesktop = ref(typeof window !== 'undefined' ? window.innerWidth >= 1024 : true)
@@ -47,6 +49,13 @@ const toggleSidebar = () => {
   }
   isCollapsed.value = !isCollapsed.value
 }
+
+watch(
+  () => route.fullPath,
+  () => {
+    isMobileMenuOpen.value = false
+  },
+)
 
 onMounted(() => {
   syncViewport()

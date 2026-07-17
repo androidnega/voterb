@@ -22,6 +22,7 @@
 
 .p-dialog-mask.p-overlay-mask-leave-active {
   animation: modal-backdrop-out var(--modal-backdrop-out) var(--modal-ease-in) forwards;
+  pointer-events: none !important;
 }
 
 /* PrimeVue dialog panel */
@@ -66,6 +67,7 @@
 
 .app-modal-leave-active {
   animation: modal-backdrop-out var(--modal-backdrop-out) var(--modal-ease-in) forwards;
+  pointer-events: none !important;
 }
 
 .app-modal-enter-active .app-modal-panel {

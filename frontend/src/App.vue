@@ -1,10 +1,21 @@
 <template>
-  <router-view />
-  <Toast position="top-right" :pt="toastPt" />
+  <div class="app-root">
+    <div v-if="navigating" class="nav-progress" aria-hidden="true">
+      <span class="nav-progress__bar" />
+    </div>
+    <router-view />
+    <Toast position="top-right" :pt="toastPt" />
+  </div>
 </template>
 
 <script setup>
+import { onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import Toast from 'primevue/toast'
+
+const router = useRouter()
+const navigating = ref(false)
+let navTimer = null
 
 const toastPt = {
   root: { class: 'vb-toast-root' },
@@ -14,9 +25,72 @@ const toastPt = {
   detail: { class: 'vb-toast-detail' },
   buttonContainer: { class: 'vb-toast-close' },
 }
+
+const startNav = () => {
+  navigating.value = true
+  if (navTimer) clearTimeout(navTimer)
+  navTimer = setTimeout(() => {
+    navigating.value = false
+  }, 8000)
+}
+
+const endNav = () => {
+  if (navTimer) {
+    clearTimeout(navTimer)
+    navTimer = null
+  }
+  navigating.value = false
+}
+
+const removeBefore = router.beforeEach(() => {
+  startNav()
+  return true
+})
+const removeAfter = router.afterEach(() => endNav())
+const removeError = router.onError(() => endNav())
+
+onUnmounted(() => {
+  removeBefore()
+  removeAfter()
+  removeError()
+  if (navTimer) clearTimeout(navTimer)
+})
 </script>
 
 <style>
+.app-root {
+  min-height: 100%;
+}
+
+.nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  height: 2px;
+  pointer-events: none;
+  overflow: hidden;
+  background: transparent;
+}
+
+.nav-progress__bar {
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, #3d4f44, transparent);
+  animation: nav-slide 0.9s ease-in-out infinite;
+}
+
+@keyframes nav-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
 .vb-toast-root.p-toast {
   width: min(22rem, calc(100vw - 1.5rem));
 }

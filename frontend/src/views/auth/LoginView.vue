@@ -110,6 +110,7 @@ watch(identifier, (value) => {
 })
 
 const handleLogin = async () => {
+  if (loading.value) return
   errorMessage.value = ''
   const trimmedIdentifier = identifier.value.trim()
 
@@ -131,7 +132,7 @@ const handleLogin = async () => {
   try {
     const result = await authStore.login(
       trimmedIdentifier,
-      isStaffLogin.value ? password.value : undefined
+      isStaffLogin.value ? password.value : undefined,
     )
 
     if (result?.requires_password) {
@@ -140,7 +141,7 @@ const handleLogin = async () => {
     }
 
     if (result?.requires_otp) {
-      router.push({
+      await router.push({
         path: '/otp',
         query: { sessionId: authStore.pendingOtp },
       })
@@ -154,10 +155,14 @@ const handleLogin = async () => {
     if (error.response?.data?.requires_password) {
       showPassword.value = true
       errorMessage.value = ''
+    } else if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message || '')) {
+      errorMessage.value = 'Sign-in is taking too long. Check your connection and try again.'
     } else if (error.response?.data?.error) {
       errorMessage.value = error.response.data.error
+    } else if (error.response?.data?.detail) {
+      errorMessage.value = String(error.response.data.detail)
     } else if (error.request) {
-      errorMessage.value = 'Cannot connect to server. Make sure the backend is running.'
+      errorMessage.value = 'Cannot connect to the server. Please try again.'
     } else {
       errorMessage.value = 'An unexpected error occurred.'
     }

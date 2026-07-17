@@ -14,6 +14,15 @@ const staffDashboardRoles = ['auditor', 'admin', 'sub_ec', 'super_admin']
 const studentRoles = ['student', 'candidate']
 const publicPaths = new Set(['/', '/login', '/otp'])
 
+const INIT_GUARD_TIMEOUT_MS = 6000
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(resolve, ms)),
+  ])
+}
+
 function layoutRoute(path, children, meta = {}) {
   return {
     path,
@@ -158,6 +167,11 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+  scrollBehavior(to, from, saved) {
+    if (saved) return saved
+    if (to.hash) return { el: to.hash, behavior: 'smooth' }
+    return { top: 0 }
+  },
 })
 
 function isPublicRoute(to) {
@@ -185,11 +199,25 @@ function userHasRequiredRoles(authStore, requiredRoles) {
   return false
 }
 
+function clearStuckOverlays() {
+  if (typeof document === 'undefined') return
+  document.querySelectorAll('.p-dialog-mask').forEach((el) => {
+    if (!el.querySelector('.p-dialog')) el.remove()
+  })
+  document.body.classList.remove('p-overflow-hidden')
+  document.documentElement.style.removeProperty('overflow')
+  document.body.style.removeProperty('overflow')
+  document.body.style.removeProperty('pointer-events')
+}
+
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
   if (!authStore.initialized) {
-    await authStore.initialize()
+    await withTimeout(authStore.initialize(), INIT_GUARD_TIMEOUT_MS)
+    if (!authStore.initialized) {
+      authStore.initialized = true
+    }
   }
 
   // Always allow OTP page during verification
@@ -218,7 +246,7 @@ router.beforeEach(async (to) => {
     // Role flags can be missing right after OTP if /me hydrate is slow — retry once
     if (authStore.isAuthenticated && !authStore.roleName) {
       try {
-        await authStore.fetchMe()
+        await withTimeout(authStore.fetchMe(), 4000)
       } catch {
         // fall through
       }
@@ -235,6 +263,23 @@ router.beforeEach(async (to) => {
   }
 
   return true
+})
+
+router.afterEach(() => {
+  clearStuckOverlays()
+})
+
+router.onError((error) => {
+  const message = String(error?.message || error || '')
+  const isChunkError = /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk|ChunkLoadError/i.test(message)
+  if (isChunkError && typeof window !== 'undefined') {
+    const key = 'vb_chunk_reload'
+    const last = Number(sessionStorage.getItem(key) || 0)
+    if (Date.now() - last > 10000) {
+      sessionStorage.setItem(key, String(Date.now()))
+      window.location.reload()
+    }
+  }
 })
 
 export default router

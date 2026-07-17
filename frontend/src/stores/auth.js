@@ -64,7 +64,9 @@ export const useAuthStore = defineStore('auth', {
         const requestData = { identifier }
         if (password) requestData.password = password
 
-        const response = await api.post('/accounts/auth/login/', requestData)
+        const response = await api.post('/accounts/auth/login/', requestData, {
+          timeout: 12000,
+        })
 
         if (response.data.requires_password) {
           return { requires_password: true }
@@ -220,20 +222,39 @@ export const useAuthStore = defineStore('auth', {
 
     async initialize() {
       if (this.initialized) return
-      const token = localStorage.getItem('access_token')
-      if (!token) {
-        this.initialized = true
+      if (this.bootstrapping) {
+        // Another bootstrap is in flight — wait briefly, then continue.
+        const started = Date.now()
+        while (this.bootstrapping && Date.now() - started < 8000) {
+          await new Promise((r) => setTimeout(r, 40))
+        }
         return
       }
+
+      this.bootstrapping = true
       try {
-        await this.fetchMe()
-        this.isNewUser = localStorage.getItem('is_new_user') === 'true'
-        this.syncOnboardingFlag()
-      } catch (error) {
-        console.error('Token validation failed:', error)
-        this.clearLocalStorage()
+        const token = localStorage.getItem('access_token')
+        if (!token) {
+          this.initialized = true
+          return
+        }
+        try {
+          await Promise.race([
+            this.fetchMe(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Auth bootstrap timeout')), 7000),
+            ),
+          ])
+          this.isNewUser = localStorage.getItem('is_new_user') === 'true'
+          this.syncOnboardingFlag()
+        } catch (error) {
+          console.error('Token validation failed:', error)
+          this.clearLocalStorage()
+        }
+        this.initialized = true
+      } finally {
+        this.bootstrapping = false
       }
-      this.initialized = true
     },
   },
 })
