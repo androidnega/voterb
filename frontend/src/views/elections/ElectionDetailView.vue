@@ -670,8 +670,8 @@ const fetchCandidateCount = async () => {
 
 const checkResultExists = async () => {
   try {
-    await resultsApi.preview(route.params.uuid)
-    resultExists.value = true
+    const { data } = await resultsApi.preview(route.params.uuid)
+    resultExists.value = data?.exists !== false && !!data?.uuid
   } catch {
     resultExists.value = false
   }
@@ -751,7 +751,12 @@ const generateResults = async () => {
     router.push(`/results/${route.params.uuid}`)
   } catch (error) {
     console.error('Failed to generate results:', error)
-    alert('Failed to generate results. Please try again.')
+    const data = error.response?.data
+    alert(
+      data?.error ||
+      data?.detail ||
+      'Failed to generate results. Please try again.',
+    )
   } finally {
     isGenerating.value = false
   }
