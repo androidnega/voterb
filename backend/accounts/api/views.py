@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -11,6 +13,8 @@ from accounts.models import User, Role, MFALog, OTPRequest
 from accounts.serializers import LoginSerializer, OTPVerifySerializer, UserSerializer, UserListSerializer, RoleSerializer
 from accounts.services import OTPService, SessionService, is_staff_otp_user, resolve_otp_phone
 from accounts.permissions import IsSuperAdmin, IsElectionManager, IsAdminOrSuperAdmin, get_role_name
+
+logger = logging.getLogger(__name__)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # AUTHENTICATION
@@ -199,6 +203,13 @@ class LoginView(APIView):
                         ),
                     },
                     status=status.HTTP_400_BAD_REQUEST,
+                )
+            if sms_result and not sms_ok and not sms_queued:
+                logger.warning(
+                    'OTP SMS not delivered for %s (%s): %s',
+                    user.index_number or user.email,
+                    sms_result.get('provider'),
+                    sms_result.get('error') or sms_result,
                 )
             message = (
                 f'OTP is being sent to your phone ending {masked_phone}. '

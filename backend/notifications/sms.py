@@ -49,9 +49,28 @@ def mask_phone(phone: str) -> str:
     return f'***{digits[-4:]}'
 
 
+# Cloudflare (and some SMS gateways) block Python's default urllib User-Agent.
+_DEFAULT_SMS_HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (compatible; VoteBridge/1.0; +https://votebridge.online) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    ),
+    'Accept': 'application/json',
+}
+
+
+def _with_sms_headers(headers: dict | None) -> dict:
+    merged = dict(_DEFAULT_SMS_HEADERS)
+    if headers:
+        merged.update(headers)
+    return merged
+
+
 def _http_json_post(url: str, payload: dict, headers: dict, timeout: int = 20) -> tuple[bool, int, str]:
     body = json.dumps(payload).encode('utf-8')
-    req = urllib.request.Request(url, data=body, headers=headers, method='POST')
+    req = urllib.request.Request(
+        url, data=body, headers=_with_sms_headers(headers), method='POST',
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
             status_code = int(getattr(response, 'status', 200))
@@ -66,7 +85,7 @@ def _http_json_post(url: str, payload: dict, headers: dict, timeout: int = 20) -
 
 
 def _http_get(url: str, headers: dict | None = None, timeout: int = 20) -> tuple[bool, int, str]:
-    req = urllib.request.Request(url, headers=headers or {}, method='GET')
+    req = urllib.request.Request(url, headers=_with_sms_headers(headers), method='GET')
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
             status_code = int(getattr(response, 'status', 200))
