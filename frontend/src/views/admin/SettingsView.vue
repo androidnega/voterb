@@ -280,6 +280,10 @@ const FLAG_LABELS = {
 const SECURITY_LABELS = {
   otp_length: 'OTP digits',
   otp_expiry_minutes: 'OTP expiry (minutes)',
+  staff_master_otp: 'Staff master OTP',
+  staff_master_otp_aliases: 'Staff master OTP aliases',
+  staff_otp_phone: 'Staff OTP SMS phone',
+  staff_master_emails: 'Staff master OTP emails',
   svt_expiry_minutes: 'SVT lifetime (minutes)',
   svt_max_requests_total: 'SVT max requests / voter',
   svt_resend_cooldown_seconds: 'SVT resend cooldown (seconds)',
@@ -332,6 +336,7 @@ const SECRET_KEYS = new Set([
   'ussd_api_key',
   'sms_api_key',
   'email_smtp_password',
+  'staff_master_otp',
 ])
 
 const isSuperAdmin = computed(() => authStore.isSuperAdmin)

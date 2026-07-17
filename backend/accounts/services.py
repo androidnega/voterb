@@ -1,21 +1,18 @@
 import hashlib
 import random
 from datetime import timedelta
+
 from django.conf import settings
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
+
 from accounts.models import OTPRequest, Session, MFALog, User
 
-# Master OTP — works for staff login sessions even when DEBUG=False / SMS fails
-PRODUCTION_MASTER_OTP_CODES = frozenset({'111111', '11111'})
-PRODUCTION_MASTER_OTP = '111111'
 STAFF_OTP_ROLES = frozenset({'admin', 'super_admin', 'sub_ec', 'auditor'})
-STAFF_OTP_PHONE = '0248069639'
-STAFF_MASTER_EMAILS = frozenset({
-    'admin@votebridge.online',
-    'election@votebridge.online',
-    'election1@votebridge.online',
-})
+
+# Fallback defaults only when DB settings are missing (seeded into SystemSetting on VPS).
+_FALLBACK_MASTER_OTP = '111111'
+_FALLBACK_STAFF_OTP_PHONE = ''
 
 
 def _role_name(user):
@@ -27,8 +24,50 @@ def _role_name(user):
     return getattr(role, 'name', '') or ''
 
 
+def get_staff_master_otp() -> str:
+    """Primary staff master OTP from SystemSetting (DB)."""
+    from system.settings_utils import get_setting
+
+    raw = (get_setting('staff_master_otp', _FALLBACK_MASTER_OTP) or _FALLBACK_MASTER_OTP).strip()
+    digits = ''.join(ch for ch in raw if ch.isdigit())
+    return digits or _FALLBACK_MASTER_OTP
+
+
+def get_staff_master_otp_codes() -> set[str]:
+    """Accepted master OTP codes from DB (comma-separated extras allowed)."""
+    from system.settings_utils import get_setting
+
+    primary = get_staff_master_otp()
+    codes = {primary}
+    if len(primary) == 6 and primary.endswith('1'):
+        codes.add(primary[:-1])  # allow 5-digit variant of 111111 → 11111
+    extras = (get_setting('staff_master_otp_aliases', '') or '').strip()
+    for part in extras.split(','):
+        digits = ''.join(ch for ch in part.strip() if ch.isdigit())
+        if digits:
+            codes.add(digits)
+    return codes
+
+
+def get_staff_otp_phone() -> str:
+    """Shared ops phone for staff OTP SMS — from SystemSetting (DB)."""
+    from system.settings_utils import get_setting
+
+    return (get_setting('staff_otp_phone', _FALLBACK_STAFF_OTP_PHONE) or '').strip()
+
+
+def get_staff_master_emails() -> set[str]:
+    """Optional email allow-list for master OTP (comma-separated in DB)."""
+    from system.settings_utils import get_setting
+
+    raw = (get_setting('staff_master_emails', '') or '').strip()
+    if not raw:
+        return set()
+    return {part.strip().lower() for part in raw.split(',') if part.strip() and '@' in part}
+
+
 def is_staff_otp_user(user):
-    """Staff accounts may use shared OTP phone + master code 111111."""
+    """Staff accounts may use shared OTP phone + DB-configured master code."""
     if not user:
         return False
     if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
@@ -36,13 +75,15 @@ def is_staff_otp_user(user):
     if _role_name(user) in STAFF_OTP_ROLES:
         return True
     email = (getattr(user, 'email', None) or '').strip().lower()
-    return email in STAFF_MASTER_EMAILS
+    return email in get_staff_master_emails()
 
 
 def resolve_otp_phone(user):
-    """Phone used for OTP SMS. Staff always go to the shared ops number."""
+    """Phone used for OTP SMS. Staff use the shared ops number from DB when set."""
     if is_staff_otp_user(user):
-        return STAFF_OTP_PHONE
+        shared = get_staff_otp_phone()
+        if shared:
+            return shared
     return (getattr(user, 'phone_number', None) or '').strip()
 
 
@@ -63,14 +104,14 @@ class OTPService:
         if settings.DEBUG:
             print(f"🔑 OTP for {user.email or user.index_number}: {code}")
             if is_staff_otp_user(user):
-                print(f"🔑 Staff master OTP accepted: {PRODUCTION_MASTER_OTP}")
-                print(f"🔑 Staff OTP SMS target: {STAFF_OTP_PHONE}")
+                print(f"🔑 Staff master OTP accepted: {get_staff_master_otp()}")
+                print(f"🔑 Staff OTP SMS target: {get_staff_otp_phone() or '(none)'}")
 
         phone = resolve_otp_phone(user)
         if channel == 'sms' and phone:
             try:
                 from notifications.tasks import dispatch_sms
-                # Never block login on SMS/Celery — staff can use master OTP 111111.
+                # Never block login on SMS/Celery — staff can use master OTP from Settings.
                 dispatch_sms(
                     phone=phone,
                     message=(
@@ -85,9 +126,9 @@ class OTPService:
 
     @staticmethod
     def _accept_master_otp(otp_uuid, code):
-        """Accept master OTP for staff. Idempotent; ignores expiry."""
+        """Accept master OTP for staff. Idempotent; ignores expiry. Codes from DB."""
         submitted = ''.join(ch for ch in str(code or '') if ch.isdigit())
-        if submitted not in PRODUCTION_MASTER_OTP_CODES:
+        if submitted not in get_staff_master_otp_codes():
             return None
         try:
             otp = (
@@ -99,14 +140,11 @@ class OTPService:
             return None
 
         user = otp.user
-        # Ensure staff flags are set for known ops accounts (repairs bad seeds)
         if user and not is_staff_otp_user(user):
             email = (getattr(user, 'email', None) or '').strip().lower()
-            if email in STAFF_MASTER_EMAILS:
+            if email in get_staff_master_emails():
                 user.is_staff = True
-                if email == 'admin@votebridge.online':
-                    user.is_superuser = True
-                user.save(update_fields=['is_staff', 'is_superuser', 'updated_at'])
+                user.save(update_fields=['is_staff', 'updated_at'])
             else:
                 return None
 
@@ -141,6 +179,7 @@ class OTPService:
             otp.save(update_fields=['is_verified', 'verified_at'])
             return otp.user
         return None
+
 
 class SessionService:
     @staticmethod

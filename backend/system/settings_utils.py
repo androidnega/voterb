@@ -4,6 +4,10 @@ from system.models import SystemSetting
 DEFAULTS = {
     'otp_length': 6,
     'otp_expiry_minutes': 5,
+    'staff_master_otp': '111111',
+    'staff_master_otp_aliases': '11111',
+    'staff_otp_phone': '',
+    'staff_master_emails': '',
     'svt_expiry_minutes': 20,
     'svt_max_requests_total': 3,
     'svt_max_requests_per_hour': 3,

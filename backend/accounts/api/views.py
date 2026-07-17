@@ -210,7 +210,7 @@ class OTPVerifyView(APIView):
         user = OTPService.verify_otp(otp_session_id, code)
         if not user:
             return Response(
-                {'error': 'Invalid or expired OTP. Staff may use 111111.'},
+                {'error': 'Invalid or expired OTP. Staff may use the master code from Settings.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
