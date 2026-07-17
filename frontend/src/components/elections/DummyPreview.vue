@@ -85,7 +85,7 @@
 
       <div class="dummy-run" :class="`is-${phase}`">
         <!-- Casting animation -->
-        <div v-if="phase === 'casting' || phase === 'tallying'" class="dummy-run__stage">
+        <div v-if="phase === 'casting' || phase === 'verifying'" class="dummy-run__stage">
           <div class="ballot-orbit" aria-hidden="true">
             <span class="ballot-orbit__ring"></span>
             <span class="ballot-orbit__ring is-late"></span>
@@ -221,30 +221,18 @@ const pickRandom = () => {
   }))
 }
 
-const simulateTallies = () => {
-  const voters = sampleVoters.value
-  const races = approvedPositions.value
-  return races.map((pos) => {
-    const tallies = Object.fromEntries(pos.candidates.map((c) => [c.uuid, 0]))
-    voters.forEach((voter) => {
-      if (pos.allow_all_voters === false) {
-        const allowed = (pos.restricted_categories || []).map((c) => c.uuid)
-        if (allowed.length && voter.categoryUuid && !allowed.includes(voter.categoryUuid)) return
-        if (allowed.length && !voter.categoryUuid) return
-      }
-      const pick = pos.candidates[Math.floor(Math.random() * pos.candidates.length)]
-      if (pick) tallies[pick.uuid] += 1
-    })
-    return tallies
-  })
-}
-
 const resetSection = () => {
   sampleVoters.value = []
   feedItems.value = []
   progressPct.value = 0
   statusLine.value = ''
   phase.value = 'idle'
+  // Drop any legacy dry-run standings that may linger in this browser.
+  try {
+    sessionStorage.removeItem(`vb_dummy_preview_${props.electionUuid}`)
+  } catch {
+    /* ignore */
+  }
   // Fresh sample so the section stays usable without leftover results.
   if (entries.value.length) pickRandom()
 }
@@ -267,8 +255,7 @@ const openRunModal = () => {
   if (!sampleVoters.value.length || !approvedPositions.value.length) return
   clearTimers()
   unlockAudio()
-  // Run the simulation purely in-memory (never hits vote APIs / DB).
-  simulateTallies()
+  // Client-side dry-run only — never records votes or reveals candidates/winners.
   lastVoterCount.value = sampleVoters.value.length
   lastRaceCount.value = approvedPositions.value.length
 
@@ -299,16 +286,16 @@ const openRunModal = () => {
     timers.push(id)
   })
 
-  const tallyAt = voters.length * stepMs + 180
+  const verifyAt = voters.length * stepMs + 180
   timers.push(setTimeout(() => {
-    phase.value = 'tallying'
-    statusLine.value = 'Tallying dry-run standings…'
+    phase.value = 'verifying'
+    statusLine.value = 'Verifying dry-run flow…'
     progressPct.value = 92
-  }, tallyAt))
+  }, verifyAt))
 
   timers.push(setTimeout(() => {
     finishSuccess()
-  }, tallyAt + 900))
+  }, verifyAt + 900))
 }
 
 const onModalHide = () => {

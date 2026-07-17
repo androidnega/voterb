@@ -597,7 +597,7 @@ const activePanel = computed(() => {
     positions: { title: 'Positions', subtitle: 'Ballot positions and vote limits' },
     candidates: { title: 'Candidates', subtitle: 'Approved and pending candidates' },
     voters: { title: '', subtitle: '' },
-    preview: { title: 'Dummy preview', subtitle: 'Test ballot with random register voters (not saved)' },
+    preview: { title: 'Dummy preview', subtitle: 'Test the ballot flow only — no winners, nothing saved' },
   }
   return map[activeTab.value] || map.positions
 })
