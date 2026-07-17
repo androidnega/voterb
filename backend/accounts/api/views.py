@@ -134,6 +134,16 @@ class LoginView(APIView):
             ).update(user=user)
 
         if not user:
+            if is_email:
+                return Response(
+                    {
+                        'error': (
+                            'No account found for that email. '
+                            'Confirm the address, or ask a Super Admin to create your Main EC account.'
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
         # Check if staff login requires password
