@@ -17,7 +17,6 @@
         draggable="false"
         aria-hidden="true"
       />
-
       <h1 class="confirm-title">Ballot sealed</h1>
       <p class="confirm-copy">Your vote is recorded. Keep this confirmation for your records.</p>
 
