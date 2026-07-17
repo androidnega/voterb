@@ -40,7 +40,7 @@
                 <span class="admin-badge" :class="statusBadge(result.status)">{{ result.status }}</span>
               </td>
               <td class="text-muted">{{ result.turnout_percentage || 0 }}%</td>
-              <td class="text-muted">{{ result.certified_by?.email || '—' }}</td>
+              <td class="text-muted">{{ certifiedByLabel(result) }}</td>
               <td>
                 <div class="row-actions">
                   <button type="button" class="admin-icon-btn" title="View" @click="viewResult(result.election.uuid)">
@@ -123,6 +123,13 @@ const statusBadge = (s) => ({
   certified: 'info',
   published: 'success',
 }[s] || 'neutral')
+
+const certifiedByLabel = (result) =>
+  result.certified_by_email
+  || result.certified_by?.email
+  || result.certified_by_name
+  || result.certified_by?.display_name
+  || '—'
 
 const viewResult = (uuid) => router.push(`/results/${uuid}`)
 

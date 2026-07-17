@@ -120,6 +120,36 @@
         </article>
       </div>
     </section>
+
+    <section v-if="publishedResults.length || publishedLoading" class="published">
+      <div class="published-head">
+        <div>
+          <p class="published-eyebrow">Outcomes</p>
+          <h2 class="published-title">Published results</h2>
+        </div>
+        <router-link to="/student/results" class="published-all">View all</router-link>
+      </div>
+
+      <div v-if="publishedLoading" class="published-loading">Loading results…</div>
+
+      <div v-else class="published-list">
+        <article
+          v-for="result in publishedResults.slice(0, 3)"
+          :key="result.uuid"
+          class="published-card"
+          @click="openPublished(result)"
+        >
+          <div class="published-card__body">
+            <h3>{{ result.election?.title || 'Election' }}</h3>
+            <p>
+              Turnout {{ result.turnout_percentage || 0 }}%
+              <span v-if="result.published_at"> · {{ formatPublishedAt(result.published_at) }}</span>
+            </p>
+          </div>
+          <i class="fas fa-arrow-right" aria-hidden="true"></i>
+        </article>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -128,6 +158,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { votingApi } from '@/api/voting'
+import { resultsApi } from '@/api/results'
 import { displayUserName } from '@/utils/user'
 import { getElectionTiming } from '@/composables/useCountdown'
 import { useFriendlyLoad } from '@/composables/useFriendlyLoad'
@@ -139,6 +170,8 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const elections = ref([])
+const publishedResults = ref([])
+const publishedLoading = ref(false)
 const launchingId = ref('')
 const {
   loading,
@@ -214,6 +247,38 @@ async function fetchElections() {
   }
 }
 
+async function fetchPublishedResults() {
+  publishedLoading.value = true
+  try {
+    const { data } = await resultsApi.getPublished()
+    publishedResults.value = Array.isArray(data) ? data : (data?.results || [])
+  } catch (err) {
+    console.error('Failed to fetch published results:', err)
+    publishedResults.value = []
+  } finally {
+    publishedLoading.value = false
+  }
+}
+
+function formatPublishedAt(value) {
+  if (!value) return ''
+  try {
+    return new Date(value).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
+  } catch {
+    return ''
+  }
+}
+
+function openPublished(result) {
+  const uuid = result?.election?.uuid || result?.uuid
+  if (!uuid) return
+  router.push(`/student/results/${uuid}`)
+}
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -239,7 +304,10 @@ async function startVoting(electionUuid) {
   }
 }
 
-onMounted(fetchElections)
+onMounted(() => {
+  fetchElections()
+  fetchPublishedResults()
+})
 </script>
 
 <style scoped>
@@ -294,6 +362,102 @@ onMounted(fetchElections)
 .ballots {
   display: grid;
   gap: 0.75rem;
+}
+
+.published {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.published-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.published-eyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a8a29e;
+}
+
+.published-title {
+  margin: 0.2rem 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #1c1917;
+}
+
+.published-all {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: #0f766e;
+  text-decoration: none;
+}
+
+.published-all:hover {
+  text-decoration: underline;
+}
+
+.published-loading {
+  font-size: 0.78rem;
+  color: #a8a29e;
+  padding: 0.5rem 0;
+}
+
+.published-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.published-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: #fff;
+  border: 1px solid #ebe8e2;
+  border-radius: 0.85rem;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.published-card:hover {
+  border-color: #d1fae5;
+  box-shadow: 0 6px 18px rgba(15, 118, 110, 0.06);
+}
+
+.published-card__body {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.published-card__body h3 {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #1c1917;
+  line-height: 1.3;
+}
+
+.published-card__body p {
+  margin: 0;
+  font-size: 0.7rem;
+  color: #78716c;
+}
+
+.published-card > i {
+  color: #0f766e;
+  font-size: 0.65rem;
+  flex-shrink: 0;
 }
 
 .ballot-list {

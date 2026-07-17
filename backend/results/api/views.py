@@ -144,7 +144,12 @@ class PreviewResultsView(APIView):
 
     def get(self, request, uuid):
         election = get_object_or_404(Election, uuid=uuid)
-        result = ElectionResult.objects.filter(election=election).first()
+        result = (
+            ElectionResult.objects
+            .select_related('election', 'certified_by')
+            .filter(election=election)
+            .first()
+        )
         if not result:
             return Response(
                 {'exists': False, 'election_uuid': str(election.uuid)},
@@ -265,14 +270,22 @@ class PublishResultsView(APIView):
 class ResultsListView(generics.ListAPIView):
     permission_classes = [IsElectionViewer]
     serializer_class = ElectionResultSerializer
-    queryset = ElectionResult.objects.select_related('election').order_by('-created_at')
+    queryset = (
+        ElectionResult.objects
+        .select_related('election', 'certified_by')
+        .order_by('-created_at')
+    )
 
 
 class CertificationQueueView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request):
-        results = ElectionResult.objects.filter(status__in=['generated', 'pending_certification']).select_related('election')
+        results = (
+            ElectionResult.objects
+            .filter(status__in=['generated', 'pending_certification'])
+            .select_related('election', 'certified_by')
+        )
         serializer = ElectionResultSerializer(results, many=True)
         return Response(serializer.data)
 
@@ -280,14 +293,33 @@ class CertificationQueueView(APIView):
 class PublishedResultsListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = ElectionResultSerializer
-    queryset = ElectionResult.objects.filter(status='published').select_related('election').order_by('-published_at')
+    queryset = (
+        ElectionResult.objects
+        .filter(status='published')
+        .select_related('election', 'certified_by')
+        .order_by('-published_at')
+    )
 
 
-class PublishedResultDetailView(generics.RetrieveAPIView):
+class PublishedResultDetailView(APIView):
+    """Lookup published results by election UUID or result UUID."""
     permission_classes = [permissions.AllowAny]
-    serializer_class = ElectionResultSerializer
-    lookup_field = 'uuid'
-    queryset = ElectionResult.objects.filter(status='published')
+
+    def get(self, request, uuid):
+        result = (
+            ElectionResult.objects
+            .filter(status='published')
+            .select_related('election', 'certified_by')
+            .filter(election__uuid=uuid)
+            .first()
+        )
+        if not result:
+            result = get_object_or_404(
+                ElectionResult.objects.select_related('election', 'certified_by'),
+                status='published',
+                uuid=uuid,
+            )
+        return Response(ElectionResultSerializer(result).data)
 
 
 class LiveResultsView(APIView):

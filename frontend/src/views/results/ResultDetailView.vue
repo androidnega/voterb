@@ -164,7 +164,7 @@
           </p>
           <p><span class="text-gray-500">IP address:</span> {{ evidence.ip_address || '—' }}</p>
           <p class="break-all"><span class="text-gray-500">Device fingerprint:</span> {{ evidence.device_fingerprint || '—' }}</p>
-          <p><span class="text-gray-500">Certified by:</span> {{ evidence.certified_by || result.certified_by || '—' }}</p>
+          <p><span class="text-gray-500">Certified by:</span> {{ certifiedByLabel }}</p>
           <p><span class="text-gray-500">Certified at:</span> {{ formatDate(evidence.certified_at || result.certified_at) }}</p>
         </div>
       </div>
@@ -214,6 +214,19 @@ const canCertify = computed(() => authStore.isElectionManager)
 const evidence = computed(() => {
   const raw = result.value?.certification_evidence
   return raw && typeof raw === 'object' && Object.keys(raw).length ? raw : null
+})
+
+const certifiedByLabel = computed(() => {
+  const r = result.value
+  if (!r) return '—'
+  return (
+    r.certified_by_email
+    || r.certified_by?.email
+    || r.certified_by_name
+    || r.certified_by?.display_name
+    || evidence.value?.certified_by
+    || '—'
+  )
 })
 
 const standings = computed(() => {

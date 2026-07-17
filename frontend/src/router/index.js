@@ -69,6 +69,7 @@ const routes = [
 
   studentLayoutRoute('/student', [
     { path: '', component: () => import('../views/student/StudentDashboardView.vue'), meta: { roles: studentRoles } },
+    { path: 'results', component: () => import('../views/student/StudentResultsView.vue'), meta: { roles: studentRoles } },
     { path: 'results/:uuid', component: () => import('../views/student/StudentResultDetailView.vue'), meta: { roles: studentRoles } },
     // Absolute child paths keep StudentLayout mounted for sleek page transitions
     { path: '/vote/:uuid', component: () => import('../views/voting/VoteEntryView.vue'), meta: { roles: studentRoles } },

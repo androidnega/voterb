@@ -12,6 +12,13 @@
         </router-link>
 
         <div class="student-topbar-actions">
+          <router-link
+            to="/student/results"
+            class="student-nav-link"
+            :class="{ 'is-active': isResultsRoute }"
+          >
+            Results
+          </router-link>
           <StudentNotificationBell />
           <StudentProfileMenu />
         </div>
@@ -29,19 +36,23 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import StudentProfileMenu from '@/components/student/StudentProfileMenu.vue'
 import StudentNotificationBell from '@/components/student/StudentNotificationBell.vue'
 
 const router = useRouter()
+const route = useRoute()
 const transitionName = ref('page-fade')
+
+const isResultsRoute = computed(() => route.path.startsWith('/student/results'))
 
 function routeDepth(path = '') {
   if (path.startsWith('/vote/') && path.includes('/confirmation')) return 4
   if (path.startsWith('/vote/') && path.includes('/ballot')) return 3
   if (path.startsWith('/vote/') && path.includes('/presence')) return 2
   if (path.startsWith('/vote/')) return 1
+  if (path.match(/^\/student\/results\/[^/]+/)) return 2
   if (path.startsWith('/student/results')) return 1
   return 0
 }
@@ -110,6 +121,30 @@ router.beforeEach((to, from) => {
   align-items: center;
   gap: 0.55rem;
   flex-shrink: 0;
+}
+
+.student-nav-link {
+  text-decoration: none;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: #78716c;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.student-nav-link:hover {
+  color: #1c1917;
+  background: #fff;
+  border-color: var(--sd-border);
+}
+
+.student-nav-link.is-active {
+  color: var(--vb-accent, #0f766e);
+  background: #ecfdf5;
+  border-color: #d1fae5;
 }
 
 .student-brand {

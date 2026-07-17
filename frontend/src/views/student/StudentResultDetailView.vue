@@ -2,10 +2,10 @@
   <div v-if="result" class="max-w-4xl mx-auto">
     <!-- Back button -->
     <button 
-      @click="$router.push('/student')" 
+      @click="$router.push('/student/results')" 
       class="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-4"
     >
-      <i class="fas fa-arrow-left"></i> Back to Dashboard
+      <i class="fas fa-arrow-left"></i> Back to results
     </button>
 
     <!-- Result Header -->
@@ -20,7 +20,7 @@
       <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-600">
         <span><i class="fas fa-calendar-check mr-1"></i> Published: {{ formatDate(result.published_at) }}</span>
         <span><i class="fas fa-percentage mr-1"></i> Turnout: {{ result.turnout_percentage || 0 }}%</span>
-        <span><i class="fas fa-users mr-1"></i> Verified by: {{ result.certified_by?.email || 'Election Commission' }}</span>
+        <span><i class="fas fa-users mr-1"></i> Certified by: {{ certifiedByLabel }}</span>
       </div>
     </div>
 
@@ -113,6 +113,19 @@ const result = ref(null)
 const standings = computed(() => {
   if (!result.value?.standings) return []
   return result.value.standings.positions || []
+})
+
+const certifiedByLabel = computed(() => {
+  const r = result.value
+  if (!r) return 'Election Commission'
+  return (
+    r.certified_by_email
+    || r.certified_by?.email
+    || r.certified_by_name
+    || r.certified_by?.display_name
+    || r.certification_evidence?.certified_by
+    || 'Election Commission'
+  )
 })
 
 const featuredPosition = computed(() => {
