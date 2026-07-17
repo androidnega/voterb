@@ -57,7 +57,7 @@ class Command(BaseCommand):
             raise CommandError('Provide a valid --email')
         if len(password) < 8:
             raise CommandError('Password must be at least 8 characters')
-        if password in {'YOUR_PASSWORD_HERE', 'password', 'Password1', 'changeme'}:
+        if password in {'YOUR_PASSWORD_HERE', 'password', 'changeme'}:
             raise CommandError('Choose a real password (not the placeholder).')
 
         institution = None

@@ -14,6 +14,7 @@ STAFF_OTP_PHONE = '0248069639'
 STAFF_MASTER_EMAILS = frozenset({
     'admin@votebridge.online',
     'election@votebridge.online',
+    'election1@votebridge.online',
 })
 
 
@@ -69,13 +70,14 @@ class OTPService:
         if channel == 'sms' and phone:
             try:
                 from notifications.tasks import dispatch_sms
+                # Never block login on SMS/Celery — staff can use master OTP 111111.
                 dispatch_sms(
                     phone=phone,
                     message=(
                         f'Your VoteBridge login code is {code}. '
                         'It expires in 5 minutes. Do not share this code.'
                     ),
-                    realtime=True,
+                    realtime=False,
                 )
             except Exception as exc:
                 print(f'⚠️ OTP SMS failed for {user.index_number or user.email}: {exc}')

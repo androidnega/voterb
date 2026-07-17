@@ -90,7 +90,8 @@ def dispatch_sms(*, phone: str, message: str, cache_key: str | None = None, real
                 'masked_phone': None,
                 'provider': 'celery',
             }
-        result = async_result.get(timeout=20)
+        # Keep OTP/login paths snappy; fall back to sync if workers are slow.
+        result = async_result.get(timeout=3)
         if isinstance(result, dict):
             result['queued'] = True
             result['task_id'] = async_result.id
