@@ -4,241 +4,219 @@
       <div class="vault-grid"></div>
     </div>
 
-    <div class="vault-panel" :class="{ 'is-busy': phase !== 'idle' }">
+    <div class="vault-panel" :class="{ 'is-busy': authenticating }">
       <div class="vault-panel__head">
         <div class="vault-seal" :class="sealClass" aria-hidden="true">
           <i :class="sealIcon"></i>
         </div>
         <div class="vault-panel__titles">
-          <p class="vault-classified">Restricted Access</p>
-          <h1 class="vault-title">Strongroom Vault</h1>
+          <p class="vault-classified">Custody unlock</p>
+          <h1 class="vault-title">Audit vault</h1>
         </div>
       </div>
 
       <p class="vault-subtitle">
-        Step-up authentication required. All access is logged and monitored.
+        Three-party unlock: EC password → peer EC confirm → nominee key. Ballot choices are never revealed.
       </p>
 
-      <div class="vault-meta">
-        <span><i class="fas fa-fingerprint"></i> Session tracked</span>
-        <span><i class="fas fa-eye"></i> Audited reveals</span>
-        <span><i class="fas fa-clock"></i> 30m TTL</span>
-      </div>
+      <ol class="vault-steps" aria-label="Unlock steps">
+        <li :class="{ 'is-done': stepIndex >= 1, 'is-active': stepIndex === 0 }">EC password</li>
+        <li :class="{ 'is-done': stepIndex >= 2, 'is-active': stepIndex === 1 }">Peer confirm</li>
+        <li :class="{ 'is-done': stepIndex >= 3, 'is-active': stepIndex === 2 }">Nominee key</li>
+      </ol>
 
-      <form v-if="phase === 'idle' || phase === 'error'" class="vault-cli" @submit.prevent="submit">
-        <div class="vault-cli__bar">
-          <span class="vault-cli__prompt">vault@strongroom</span>
-          <span class="vault-cli__sep">:~$</span>
-          <span class="vault-cli__cmd">unlock</span>
+      <!-- Step 1: password -->
+      <form v-if="stepIndex === 0" class="vault-cli" @submit.prevent="onPassword">
+        <label class="vault-field">
+          <span>Your EC password</span>
           <input
             ref="inputRef"
             v-model="password"
             :type="showPassword ? 'text' : 'password'"
-            class="vault-cli__input"
-            placeholder="••••••••••••"
             autocomplete="current-password"
-            spellcheck="false"
             :disabled="authenticating"
             required
-            @keydown.enter.prevent="submit"
           />
-          <button type="button" class="vault-cli__eye" :aria-label="showPassword ? 'Hide' : 'Show'" @click="showPassword = !showPassword">
-            <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
-          </button>
-        </div>
-
-        <p v-if="displayError" class="vault-error">
-          <span class="vault-cli__prompt">err</span>
-          <span>{{ displayError }}</span>
-        </p>
-
+        </label>
+        <p v-if="displayError" class="vault-error">{{ displayError }}</p>
         <button type="submit" class="vault-unlock-btn" :disabled="authenticating || !password">
           <i class="fas fa-unlock-alt"></i>
-          Unlock Vault
+          Start unlock
         </button>
       </form>
 
-      <div v-else class="vault-authlog" aria-live="polite">
-        <div class="vault-authlog__scroll">
-          <p
-            v-for="(line, idx) in logLines"
-            :key="`${line.text}-${idx}`"
-            class="vault-authlog__line"
-            :class="line.tone"
-          >
-            <span class="vault-authlog__ts">{{ line.ts }}</span>
-            <span class="vault-authlog__tag">{{ line.tag }}</span>
-            <span>{{ line.text }}</span>
-            <span v-if="line.pending" class="vault-authlog__cursor">█</span>
-          </p>
-        </div>
-        <div class="vault-progress">
-          <div class="vault-progress__fill" :style="{ width: `${progress}%` }"></div>
-        </div>
+      <!-- Step 2: peer waiting / confirm -->
+      <div v-else-if="stepIndex === 1" class="vault-wait">
+        <p class="vault-wait__copy">
+          <template v-if="isInitiator">
+            Waiting for the peer EC to confirm this unlock from their Strongroom session.
+          </template>
+          <template v-else>
+            The other committee EC started an unlock. Confirm to continue.
+          </template>
+        </p>
+        <p v-if="displayError" class="vault-error">{{ displayError }}</p>
+        <button
+          v-if="!isInitiator"
+          type="button"
+          class="vault-unlock-btn"
+          :disabled="authenticating"
+          @click="$emit('peer-confirm')"
+        >
+          <i class="fas fa-check-double"></i>
+          Confirm as peer EC
+        </button>
+        <button
+          v-else
+          type="button"
+          class="vault-unlock-btn vault-unlock-btn--ghost"
+          :disabled="authenticating"
+          @click="$emit('refresh')"
+        >
+          <i class="fas fa-sync-alt" :class="{ 'fa-spin': authenticating }"></i>
+          Check status
+        </button>
       </div>
 
-      <p class="vault-footer-note">
-        Unauthorized access attempts are recorded and may trigger alerts.
-      </p>
+      <!-- Step 3: nominee key -->
+      <form v-else class="vault-cli" @submit.prevent="onNomineeKey">
+        <p class="vault-wait__copy">
+          Enter the timed custody key sent to
+          <strong>{{ challenge?.nominee_name || 'the nominee' }}</strong>.
+        </p>
+        <label class="vault-field">
+          <span>Nominee key</span>
+          <input
+            v-model="nomineeKey"
+            type="text"
+            class="vault-key"
+            placeholder="XXXX-XXXX"
+            autocomplete="one-time-code"
+            spellcheck="false"
+            :disabled="authenticating"
+            required
+          />
+        </label>
+        <p v-if="challenge?.nominee_key_expires_at" class="vault-meta-line">
+          Key valid until {{ formatMoment(challenge.nominee_key_expires_at) }}
+        </p>
+        <p v-if="displayError" class="vault-error">{{ displayError }}</p>
+        <button type="submit" class="vault-unlock-btn" :disabled="authenticating || !nomineeKey">
+          <i class="fas fa-key"></i>
+          Open audit vault
+        </button>
+      </form>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   authenticating: { type: Boolean, default: false },
   sessionError: { type: String, default: '' },
+  challenge: { type: Object, default: null },
 })
 
-const emit = defineEmits(['authenticate'])
+const emit = defineEmits(['authenticate', 'peer-confirm', 'nominee-key', 'refresh'])
 
+const authStore = useAuthStore()
 const password = ref('')
+const nomineeKey = ref('')
 const showPassword = ref(false)
 const inputRef = ref(null)
-const phase = ref('idle') // idle | verifying | error | success
-const logLines = ref([])
-const progress = ref(0)
-const localError = ref('')
-let stepTimers = []
 
-const displayError = computed(() => localError.value || props.sessionError)
+const displayError = computed(() => props.sessionError)
+
+const stepIndex = computed(() => {
+  const status = props.challenge?.status
+  if (status === 'awaiting_nominee') return 2
+  if (status === 'awaiting_peer') return 1
+  return 0
+})
+
+const isInitiator = computed(() => {
+  const initUuid = props.challenge?.initiated_by?.uuid
+  return !!initUuid && initUuid === authStore.user?.uuid
+})
 
 const sealClass = computed(() => {
-  if (phase.value === 'verifying') return 'is-spin'
-  if (phase.value === 'success') return 'is-ok'
-  if (phase.value === 'error') return 'is-err'
+  if (props.authenticating) return 'is-spin'
+  if (displayError.value) return 'is-err'
   return ''
 })
 
 const sealIcon = computed(() => {
-  if (phase.value === 'success') return 'fas fa-check'
-  if (phase.value === 'error') return 'fas fa-times'
-  if (phase.value === 'verifying') return 'fas fa-circle-notch fa-spin'
+  if (props.authenticating) return 'fas fa-circle-notch fa-spin'
+  if (displayError.value) return 'fas fa-times'
   return 'fas fa-shield-alt'
 })
 
-const clearTimers = () => {
-  stepTimers.forEach((id) => clearTimeout(id))
-  stepTimers = []
-}
-
-const stamp = () => {
-  const d = new Date()
-  return d.toLocaleTimeString('en-GB', { hour12: false })
-}
-
-const pushLine = (tag, text, tone = '', pending = false) => {
-  logLines.value = logLines.value.map((l) => ({ ...l, pending: false }))
-  logLines.value.push({ ts: stamp(), tag, text, tone, pending })
-}
-
-const runVerifySequence = () => {
-  clearTimers()
-  phase.value = 'verifying'
-  progress.value = 8
-  logLines.value = []
-  localError.value = ''
-
-  const steps = [
-    { at: 0, tag: 'auth', text: 'Receiving credentials…', progress: 12 },
-    { at: 450, tag: 'hash', text: 'Deriving challenge response…', progress: 28 },
-    { at: 950, tag: 'seal', text: 'Checking vault seal integrity…', progress: 48 },
-    { at: 1450, tag: 'audit', text: 'Writing custody evidence trail…', progress: 68 },
-    { at: 1900, tag: 'sess', text: 'Opening time-boxed vault session…', progress: 86, pending: true },
-  ]
-
-  steps.forEach((step) => {
-    const id = setTimeout(() => {
-      pushLine(step.tag, step.text, '', step.pending)
-      progress.value = step.progress
-    }, step.at)
-    stepTimers.push(id)
+function formatMoment(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
   })
-
-  const emitId = setTimeout(() => {
-    emit('authenticate', password.value)
-  }, 2100)
-  stepTimers.push(emitId)
 }
 
-const submit = () => {
-  if (!password.value || props.authenticating || phase.value === 'verifying') return
-  runVerifySequence()
+function onPassword() {
+  emit('authenticate', password.value)
+}
+
+function onNomineeKey() {
+  emit('nominee-key', nomineeKey.value.trim().toUpperCase())
 }
 
 watch(
-  () => [props.authenticating, props.sessionError],
-  ([busy, err], [wasBusy]) => {
-    if (phase.value !== 'verifying' && phase.value !== 'success') return
-
-    if (wasBusy && !busy) {
-      clearTimers()
-      if (err) {
-        phase.value = 'error'
-        progress.value = 100
-        pushLine('fail', err, 'is-fail')
-        localError.value = err
-        const id = setTimeout(() => {
-          phase.value = 'idle'
-          logLines.value = []
-          progress.value = 0
-          nextTick(() => inputRef.value?.focus())
-        }, 1600)
-        stepTimers.push(id)
-      } else {
-        phase.value = 'success'
-        progress.value = 100
-        pushLine('ok', 'Seal verified. Vault unlocked.', 'is-ok')
-      }
-    }
+  () => props.challenge?.status,
+  async () => {
+    await nextTick()
+    if (stepIndex.value === 0) inputRef.value?.focus?.()
   },
 )
 
-onMounted(() => {
-  nextTick(() => inputRef.value?.focus())
-})
+onMounted(() => inputRef.value?.focus?.())
 </script>
 
 <style scoped>
 .vault-gate {
   position: relative;
-  min-height: calc(100vh - 10rem);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.25rem 1rem;
-  overflow: hidden;
+  min-height: min(70vh, 36rem);
+  display: grid;
+  place-items: center;
+  padding: 1.5rem 1rem;
 }
 
 .vault-gate-bg {
   position: absolute;
   inset: 0;
-  border-radius: 1.25rem;
-  background: linear-gradient(160deg, #0b1220 0%, #111827 55%, #0f172a 100%);
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .vault-grid {
   position: absolute;
-  inset: 0;
-  opacity: 0.55;
-  background-image:
-    linear-gradient(rgba(16, 185, 129, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 185, 129, 0.045) 1px, transparent 1px);
+  inset: -20%;
+  background:
+    linear-gradient(rgba(61, 79, 68, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(61, 79, 68, 0.05) 1px, transparent 1px);
   background-size: 28px 28px;
+  mask-image: radial-gradient(circle at center, #000 30%, transparent 75%);
 }
 
 .vault-panel {
   position: relative;
-  z-index: 1;
-  width: 100%;
-  max-width: 32rem;
-  padding: 1.15rem 1.25rem 1rem;
-  border-radius: 1rem;
-  background: rgba(15, 23, 42, 0.92);
-  border: 1px solid rgba(16, 185, 129, 0.22);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  width: min(100%, 26rem);
+  padding: 1.5rem 1.35rem 1.35rem;
+  border-radius: 1.2rem;
+  background: #fff;
+  border: 1px solid rgba(61, 79, 68, 0.14);
+  box-shadow: 0 24px 48px rgba(28, 28, 28, 0.08);
 }
 
 .vault-panel__head {
@@ -248,244 +226,130 @@ onMounted(() => {
 }
 
 .vault-seal {
-  width: 2.65rem;
-  height: 2.65rem;
-  border-radius: 9999px;
-  border: 1.5px solid rgba(16, 185, 129, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #34d399;
-  background: rgba(16, 185, 129, 0.1);
-  flex-shrink: 0;
-  font-size: 1rem;
-  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 0.85rem;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #3d4f44, #5a6f5f);
+  color: #fff;
 }
 
-.vault-seal.is-spin {
-  border-color: rgba(52, 211, 153, 0.7);
-  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
-}
-
-.vault-seal.is-ok {
-  border-color: rgba(52, 211, 153, 0.85);
-  background: rgba(16, 185, 129, 0.22);
-  color: #6ee7b7;
-}
-
-.vault-seal.is-err {
-  border-color: rgba(248, 113, 113, 0.7);
-  background: rgba(127, 29, 29, 0.35);
-  color: #fca5a5;
-}
-
+.vault-seal.is-err { background: #b91c1c; }
 .vault-classified {
   margin: 0;
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #f59e0b;
-}
-
-.vault-title {
-  margin: 0.1rem 0 0;
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: #f8fafc;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.vault-subtitle {
-  margin: 0.65rem 0 0;
-  font-size: 0.78rem;
-  color: #94a3b8;
-  line-height: 1.45;
-}
-
-.vault-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem 0.85rem;
-  margin-top: 0.7rem;
-  font-size: 0.68rem;
-  color: #64748b;
-}
-
-.vault-meta i {
-  color: #10b981;
-  margin-right: 0.25rem;
-}
-
-.vault-cli {
-  margin-top: 0.9rem;
-}
-
-.vault-cli__bar {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.55rem 0.65rem;
-  border-radius: 0.45rem;
-  background: #020617;
-  border: 1px solid rgba(51, 65, 85, 0.9);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.78rem;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-}
-
-.vault-cli__prompt {
-  color: #34d399;
+  font-size: 0.64rem;
   font-weight: 700;
-  flex-shrink: 0;
-}
-
-.vault-cli__sep {
-  color: #64748b;
-  flex-shrink: 0;
-}
-
-.vault-cli__cmd {
-  color: #93c5fd;
-  flex-shrink: 0;
-}
-
-.vault-cli__input {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: #e2e8f0;
-  font: inherit;
-  letter-spacing: 0.08em;
-  caret-color: #34d399;
-}
-
-.vault-cli__input::placeholder {
-  color: #475569;
   letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #3d4f44;
 }
-
-.vault-cli__eye {
-  border: none;
-  background: transparent;
-  color: #64748b;
-  cursor: pointer;
-  padding: 0.15rem;
-  flex-shrink: 0;
+.vault-title {
+  margin: 0.15rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
-
-.vault-cli__eye:hover {
-  color: #94a3b8;
-}
-
-.vault-error {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin: 0.55rem 0 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.72rem;
-  color: #f87171;
-}
-
-.vault-unlock-btn {
-  margin-top: 0.75rem;
-  width: 100%;
-  padding: 0.65rem 0.9rem;
-  border: none;
-  border-radius: 0.55rem;
-  background: linear-gradient(135deg, #059669, #10b981);
-  color: #fff;
+.vault-subtitle {
+  margin: 0.85rem 0 0;
   font-size: 0.82rem;
+  line-height: 1.45;
+  color: #8a8a8a;
+}
+
+.vault-steps {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.35rem;
+}
+.vault-steps li {
+  text-align: center;
+  font-size: 0.68rem;
   font-weight: 700;
-  cursor: pointer;
+  padding: 0.45rem 0.25rem;
+  border-radius: 0.55rem;
+  background: #f7f6f2;
+  color: #8a8a8a;
+  border: 1px solid #ebeae4;
+}
+.vault-steps li.is-active {
+  background: #e8efe6;
+  color: #3d4f44;
+  border-color: #c5d4bc;
+}
+.vault-steps li.is-done {
+  background: #3d4f44;
+  color: #fff;
+  border-color: #3d4f44;
+}
+
+.vault-cli,
+.vault-wait {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.vault-field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #8a8a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.vault-field input {
+  border: 1px solid #ebeae4;
+  border-radius: 0.7rem;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #1c1c1c;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.vault-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase !important;
+}
+
+.vault-wait__copy {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: #57534e;
+}
+.vault-meta-line {
+  margin: 0;
+  font-size: 0.74rem;
+  color: #8a8a8a;
+}
+.vault-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #b91c1c;
+}
+.vault-unlock-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-}
-
-.vault-unlock-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.vault-authlog {
-  margin-top: 0.85rem;
-  border-radius: 0.45rem;
-  background: #020617;
-  border: 1px solid rgba(51, 65, 85, 0.9);
-  overflow: hidden;
-}
-
-.vault-authlog__scroll {
-  min-height: 7.5rem;
-  max-height: 8.5rem;
-  padding: 0.65rem 0.75rem;
-  overflow-y: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.72rem;
-  line-height: 1.55;
-}
-
-.vault-authlog__line {
-  margin: 0 0 0.2rem;
-  color: #cbd5e1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.vault-authlog__ts {
-  color: #475569;
-}
-
-.vault-authlog__tag {
-  color: #34d399;
+  border: none;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #1c1c1c;
+  color: #fff;
   font-weight: 700;
-  text-transform: uppercase;
-  min-width: 2.4rem;
+  cursor: pointer;
 }
-
-.vault-authlog__line.is-ok .vault-authlog__tag {
-  color: #6ee7b7;
-}
-
-.vault-authlog__line.is-fail {
-  color: #fca5a5;
-}
-
-.vault-authlog__line.is-fail .vault-authlog__tag {
-  color: #f87171;
-}
-
-.vault-authlog__cursor {
-  color: #34d399;
-  animation: blink 0.9s steps(1) infinite;
-}
-
-@keyframes blink {
-  50% { opacity: 0; }
-}
-
-.vault-progress {
-  height: 2px;
-  background: rgba(51, 65, 85, 0.8);
-}
-
-.vault-progress__fill {
-  height: 100%;
-  background: linear-gradient(90deg, #059669, #34d399);
-  transition: width 0.35s ease;
-}
-
-.vault-footer-note {
-  margin: 0.75rem 0 0;
-  font-size: 0.65rem;
-  color: #475569;
-  text-align: center;
+.vault-unlock-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.vault-unlock-btn--ghost {
+  background: #f5f5f4;
+  color: #57534e;
 }
 </style>

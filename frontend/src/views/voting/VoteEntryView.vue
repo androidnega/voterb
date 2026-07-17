@@ -41,30 +41,27 @@
       </button>
 
       <article class="svt-card">
-        <div class="svt-card__shield" aria-hidden="true">
-          <i class="fas fa-shield-alt"></i>
-        </div>
-        <p class="svt-card__eyebrow">Voting security check</p>
-        <h1 class="svt-card__title">{{ electionTitle }}</h1>
+        <header class="svt-card__head">
+          <div class="svt-card__shield" aria-hidden="true">
+            <i class="fas fa-shield-alt"></i>
+          </div>
+          <div class="svt-card__head-copy">
+            <p class="svt-card__eyebrow">Secure voting token</p>
+            <h1 class="svt-card__title">{{ electionTitle }}</h1>
+          </div>
+        </header>
         <p class="svt-card__sub">
           {{ step === 'verifying'
-            ? 'Confirming your secure voting session…'
+            ? 'Confirming your secure session…'
             : step === 'validate'
-              ? 'Enter the SVT sent to your phone. Valid for 20 minutes · one use only.'
-              : 'Your SVT is sent to your registered phone. It lasts 20 minutes, binds to your voter ID, and you may request it up to 3 times.' }}
+              ? 'Enter the SVT sent to your phone. Valid 20 minutes · one use.'
+              : 'We’ll SMS a one-time SVT to your registered phone.' }}
         </p>
 
         <div v-if="step === 'request'" class="svt-panel">
-          <div class="svt-note">
-            <i class="fas fa-lock" aria-hidden="true"></i>
-            <div>
-              <strong>Secure Voting Token (SVT)</strong>
-              <p>
-                Sent by SMS to your register phone. One live token at a time · max 3 requests ·
-                expires after use or 20 minutes. Format starts with <strong>v-</strong>.
-              </p>
-            </div>
-          </div>
+          <p class="svt-meta">
+            Starts with <strong>v-</strong> · max 3 requests · expires after use or 20 minutes.
+          </p>
           <button type="button" class="svt-btn svt-btn--primary" :disabled="requesting" @click="requestSVT">
             <i v-if="requesting" class="fas fa-spinner fa-spin" aria-hidden="true"></i>
             <span>{{ requesting ? (actionSlow ? 'Still working…' : 'Sending…') : 'Request SVT' }}</span>
@@ -74,31 +71,21 @@
         </div>
 
         <div v-else-if="step === 'validate'" class="svt-panel">
-          <div class="svt-note svt-note--ok">
-            <i class="fas fa-check-circle" aria-hidden="true"></i>
-            <div>
-              <strong>{{ phoneMasked ? `Sent to ${phoneMasked}` : 'Token issued' }}</strong>
-              <p>Enter each character of your Secure Voting Token before it expires.</p>
-            </div>
-          </div>
-
-          <div
-            v-if="svtExpiresAt"
-            class="svt-countdown"
-            :class="`is-${svtUrgency}`"
-            role="timer"
-            :aria-label="svtExpired ? 'SVT expired' : `SVT expires in ${svtCountdownDisplay}`"
-          >
-            <div class="svt-countdown__label">
-              <i class="fas fa-hourglass-half" aria-hidden="true"></i>
-              <span>{{ svtExpired ? 'Token expired' : 'Expires in' }}</span>
-            </div>
-            <div class="svt-countdown__clock" aria-hidden="true">{{ svtCountdownDisplay || '—' }}</div>
-            <p class="svt-countdown__hint">
-              {{ svtExpired
-                ? 'Request a new SVT to continue.'
-                : 'This timer beeps as time runs low — enter your code soon.' }}
+          <div class="svt-status-row">
+            <p class="svt-status">
+              <i class="fas fa-check-circle" aria-hidden="true"></i>
+              <span>{{ phoneMasked ? `Sent to ${phoneMasked}` : 'Token issued' }}</span>
             </p>
+            <div
+              v-if="svtExpiresAt"
+              class="svt-countdown"
+              :class="`is-${svtUrgency}`"
+              role="timer"
+              :aria-label="svtExpired ? 'SVT expired' : `SVT expires in ${svtCountdownDisplay}`"
+            >
+              <i class="fas fa-hourglass-half" aria-hidden="true"></i>
+              <span>{{ svtExpired ? 'Expired' : svtCountdownDisplay || '—' }}</span>
+            </div>
           </div>
 
           <div class="svt-otp" role="group" aria-label="Secure Voting Token">
@@ -568,32 +555,32 @@ onUnmounted(clearActionSlow)
 
 <style scoped>
 .svt-page {
-  width: min(28rem, 100%);
+  width: min(24.5rem, 100%);
   margin: 0 auto;
-  padding: 0.5rem 0 2rem;
+  padding: 0.35rem 0 1.5rem;
 }
 
 .svt-back {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
   border: none;
   background: transparent;
   color: #78716c;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
-  margin-bottom: 1rem;
-  padding: 0.25rem 0;
+  margin-bottom: 0.7rem;
+  padding: 0.2rem 0;
 }
 
 .svt-card {
   position: relative;
   background: #fff;
   border: 1px solid #ebe8e2;
-  border-radius: 1.25rem;
-  padding: 1.5rem 1.35rem 1.45rem;
-  box-shadow: 0 4px 14px rgba(28, 25, 23, 0.04);
+  border-radius: 1rem;
+  padding: 1rem 1.05rem 1.05rem;
+  box-shadow: 0 3px 12px rgba(28, 25, 23, 0.04);
   overflow: hidden;
 }
 
@@ -602,26 +589,36 @@ onUnmounted(clearActionSlow)
   position: absolute;
   inset: 0 auto auto 0;
   width: 100%;
-  height: 3px;
+  height: 2px;
   background: linear-gradient(90deg, #0f766e, #3d4f44 55%, #a3b18a);
 }
 
+.svt-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
 .svt-card__shield {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 9999px;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.7rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: #ecfdf5;
   color: #0f766e;
-  font-size: 1.1rem;
-  margin-bottom: 0.85rem;
+  font-size: 0.9rem;
+}
+
+.svt-card__head-copy {
+  min-width: 0;
 }
 
 .svt-card__eyebrow {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -629,135 +626,101 @@ onUnmounted(clearActionSlow)
 }
 
 .svt-card__title {
-  margin: 0.35rem 0 0;
-  font-size: 1.35rem;
+  margin: 0.1rem 0 0;
+  font-size: 1.05rem;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.025em;
   color: #1c1917;
+  line-height: 1.25;
 }
 
 .svt-card__sub {
-  margin: 0.4rem 0 0;
-  font-size: 0.88rem;
+  margin: 0.55rem 0 0;
+  font-size: 0.8rem;
   color: #78716c;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 .svt-panel {
-  margin-top: 1.25rem;
+  margin-top: 0.85rem;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
-}
-
-.svt-note {
-  display: flex;
   gap: 0.7rem;
-  padding: 0.85rem 0.9rem;
-  border-radius: 1rem;
-  background: #f8f7f4;
-  border: 1px solid #ebe8e2;
-  color: #57534e;
 }
 
-.svt-note--ok {
-  background: #ecfdf5;
-  border-color: #bbf7d0;
-  color: #166534;
-}
-
-.svt-note i {
-  margin-top: 0.15rem;
-  color: #0f766e;
-}
-
-.svt-note strong {
-  display: block;
-  font-size: 0.84rem;
-  margin-bottom: 0.15rem;
-}
-
-.svt-note p {
+.svt-meta {
   margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.45;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: #78716c;
 }
 
-.svt-countdown {
-  display: grid;
-  gap: 0.35rem;
-  justify-items: center;
-  padding: 0.85rem 0.9rem;
-  border-radius: 0.85rem;
-  border: 1px solid #d6ebe5;
-  background: linear-gradient(180deg, #f4fbf8 0%, #eef8f4 100%);
-  text-align: center;
+.svt-meta strong {
+  color: #0f766e;
+  font-weight: 700;
 }
 
-.svt-countdown__label {
+.svt-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.svt-status {
+  margin: 0;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: #166534;
+}
+
+.svt-status i {
   color: #0f766e;
 }
 
-.svt-countdown__clock {
-  font-size: 2rem;
-  font-weight: 800;
+.svt-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid #d6ebe5;
+  background: #f4fbf8;
+  font-size: 0.74rem;
+  font-weight: 750;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
   color: #134e4a;
-  line-height: 1;
-}
-
-.svt-countdown__hint {
-  margin: 0;
-  font-size: 0.72rem;
-  color: #5b716c;
+  letter-spacing: 0.02em;
 }
 
 .svt-countdown.is-warn {
   border-color: #f5d0a9;
-  background: linear-gradient(180deg, #fffaf3 0%, #fff4e6 100%);
-}
-
-.svt-countdown.is-warn .svt-countdown__label,
-.svt-countdown.is-warn .svt-countdown__clock {
+  background: #fff7ed;
   color: #c2410c;
 }
 
 .svt-countdown.is-urgent,
 .svt-countdown.is-critical {
   border-color: #fecaca;
-  background: linear-gradient(180deg, #fff5f5 0%, #fee2e2 100%);
-  animation: svt-pulse 1s ease-in-out infinite;
-}
-
-.svt-countdown.is-urgent .svt-countdown__label,
-.svt-countdown.is-urgent .svt-countdown__clock,
-.svt-countdown.is-critical .svt-countdown__label,
-.svt-countdown.is-critical .svt-countdown__clock {
+  background: #fef2f2;
   color: #b91c1c;
+  animation: svt-pulse 1s ease-in-out infinite;
 }
 
 .svt-countdown.is-expired {
   border-color: #e7e5e4;
   background: #f5f5f4;
-  animation: none;
-}
-
-.svt-countdown.is-expired .svt-countdown__label,
-.svt-countdown.is-expired .svt-countdown__clock {
   color: #78716c;
+  animation: none;
 }
 
 @keyframes svt-pulse {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.015); }
+  50% { transform: scale(1.02); }
 }
 
 .svt-otp {
@@ -765,8 +728,7 @@ onUnmounted(clearActionSlow)
   flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0;
+  gap: 0.3rem;
   width: 100%;
   overflow: hidden;
 }
@@ -774,14 +736,14 @@ onUnmounted(clearActionSlow)
 .svt-otp__prefix {
   flex-shrink: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #059669;
   background: rgba(16, 185, 129, 0.1);
   border: 1px solid rgba(16, 185, 129, 0.25);
   border-radius: 999px;
-  padding: 0.22rem 0.5rem;
+  padding: 0.18rem 0.42rem;
 }
 
 .svt-otp__dash {
@@ -789,29 +751,28 @@ onUnmounted(clearActionSlow)
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 700;
   color: #a8a29e;
-  padding: 0;
   line-height: 1;
 }
 
 .svt-otp__group {
   display: flex;
   flex-wrap: nowrap;
-  gap: 0.28rem;
+  gap: 0.22rem;
   flex-shrink: 0;
 }
 
 .svt-otp__box {
-  width: 2.2rem;
-  height: 2.55rem;
+  width: 2rem;
+  height: 2.25rem;
   flex: 0 0 auto;
   text-align: center;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
   text-transform: lowercase;
   color: #1c1917;
   background: #fafaf8;
   border: 1.5px solid #e7e5e4;
-  border-radius: 0.65rem;
+  border-radius: 0.55rem;
   outline: none;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
@@ -834,18 +795,20 @@ onUnmounted(clearActionSlow)
 
 .svt-actions {
   display: grid;
-  gap: 0.55rem;
+  grid-template-columns: 1fr auto;
+  gap: 0.45rem;
 }
 
 .svt-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
   border: none;
-  border-radius: 0.85rem;
-  padding: 0.85rem 1rem;
-  font-size: 0.88rem;
+  border-radius: 0.7rem;
+  padding: 0.65rem 0.9rem;
+  min-height: 2.45rem;
+  font-size: 0.84rem;
   font-weight: 650;
   cursor: pointer;
 }
@@ -863,32 +826,33 @@ onUnmounted(clearActionSlow)
 .svt-btn--ghost {
   background: #f5f5f4;
   color: #57534e;
+  padding-inline: 0.85rem;
 }
 
 .svt-error {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   color: #b91c1c;
 }
 
 .svt-soft {
   margin: 0;
   text-align: center;
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   color: #a8a29e;
 }
 
 .svt-verify {
-  margin-top: 1.4rem;
+  margin-top: 0.9rem;
   text-align: center;
-  padding: 0.5rem 0 0.25rem;
+  padding: 0.15rem 0 0;
 }
 
 .svt-orbit {
   position: relative;
-  width: 6.5rem;
-  height: 6.5rem;
-  margin: 0 auto 1.1rem;
+  width: 4.5rem;
+  height: 4.5rem;
+  margin: 0 auto 0.75rem;
 }
 
 .svt-orbit__ring {
@@ -902,7 +866,7 @@ onUnmounted(clearActionSlow)
 }
 
 .svt-orbit__ring--delay {
-  inset: 0.55rem;
+  inset: 0.4rem;
   animation-duration: 1.6s;
   animation-direction: reverse;
   border-top-color: #a3b18a;
@@ -910,18 +874,18 @@ onUnmounted(clearActionSlow)
 
 .svt-orbit__core {
   position: absolute;
-  inset: 1.35rem;
+  inset: 0.95rem;
   border-radius: 9999px;
   background: #ecfdf5;
   color: #0f766e;
   display: grid;
   place-items: center;
-  font-size: 1.15rem;
+  font-size: 0.95rem;
 }
 
 .svt-verify__title {
-  margin: 0 0 0.85rem;
-  font-size: 1rem;
+  margin: 0 0 0.65rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: #1c1917;
 }
@@ -931,15 +895,15 @@ onUnmounted(clearActionSlow)
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.35rem;
   text-align: left;
 }
 
 .svt-verify__log li {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  font-size: 0.8rem;
+  gap: 0.5rem;
+  font-size: 0.76rem;
   color: #a8a29e;
 }
 
@@ -958,114 +922,66 @@ onUnmounted(clearActionSlow)
 
 @media (max-width: 640px) {
   .svt-page {
-    padding: 0.25rem 0 1.25rem;
+    padding: 0.15rem 0 1rem;
   }
 
   .svt-back {
-    margin-bottom: 0.65rem;
+    margin-bottom: 0.5rem;
   }
 
   .svt-card {
-    padding: 1rem 0.9rem 1rem;
-    border-radius: 1.05rem;
-    box-shadow: 0 2px 8px rgba(28, 25, 23, 0.035);
-  }
-
-  .svt-card__shield {
-    width: 2.25rem;
-    height: 2.25rem;
-    font-size: 0.9rem;
-    margin-bottom: 0.55rem;
+    padding: 0.85rem 0.85rem 0.9rem;
+    border-radius: 0.9rem;
   }
 
   .svt-card__title {
-    font-size: 1.12rem;
+    font-size: 0.98rem;
   }
 
   .svt-card__sub {
-    margin-top: 0.25rem;
-    font-size: 0.8rem;
-    line-height: 1.35;
+    font-size: 0.76rem;
   }
 
   .svt-panel {
-    margin-top: 0.85rem;
-    gap: 0.65rem;
-  }
-
-  .svt-note {
-    padding: 0.6rem 0.7rem;
-    gap: 0.5rem;
-    border-radius: 0.75rem;
-  }
-
-  .svt-note strong {
-    font-size: 0.78rem;
-    margin-bottom: 0.05rem;
-  }
-
-  .svt-note p {
-    font-size: 0.72rem;
-    line-height: 1.35;
-  }
-
-  .svt-otp {
-    gap: 0.22rem;
-    padding: 0;
-  }
-
-  .svt-otp__prefix {
-    font-size: 0.7rem;
-    padding: 0.16rem 0.38rem;
-  }
-
-  .svt-otp__group {
-    gap: 0.18rem;
-  }
-
-  .svt-otp__box {
-    width: 1.85rem;
-    height: 2.15rem;
-    font-size: 0.88rem;
-    border-radius: 0.5rem;
-    border-width: 1.5px;
-  }
-
-  .svt-otp__box.is-filled,
-  .svt-otp__box:focus {
-    box-shadow: 0 0 0 1.5px rgba(16, 185, 129, 0.14);
+    margin-top: 0.7rem;
+    gap: 0.55rem;
   }
 
   .svt-actions {
-    gap: 0.4rem;
+    grid-template-columns: 1fr;
+  }
+
+  .svt-otp {
+    gap: 0.2rem;
+  }
+
+  .svt-otp__group {
+    gap: 0.16rem;
+  }
+
+  .svt-otp__box {
+    width: 1.75rem;
+    height: 2.05rem;
+    font-size: 0.86rem;
+    border-radius: 0.45rem;
   }
 
   .svt-btn {
-    min-height: 2.55rem;
-    padding: 0.7rem 0.9rem;
-    font-size: 0.84rem;
-    border-radius: 0.75rem;
+    min-height: 2.35rem;
+    padding: 0.58rem 0.8rem;
+    font-size: 0.82rem;
   }
 }
 
 @media (max-width: 380px) {
   .svt-otp__box {
-    width: 1.65rem;
-    height: 2rem;
+    width: 1.55rem;
+    height: 1.9rem;
     font-size: 0.8rem;
-    border-radius: 0.45rem;
-  }
-
-  .svt-otp {
-    gap: 0.16rem;
-  }
-
-  .svt-otp__group {
-    gap: 0.14rem;
   }
 
   .svt-otp__prefix {
-    font-size: 0.65rem;
+    font-size: 0.64rem;
     padding: 0.12rem 0.3rem;
   }
 }

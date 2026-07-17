@@ -4,15 +4,33 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import MFALog
-from accounts.permissions import IsAuditor
+from accounts.permissions import IsAuditor, IsStrongroomViewer
 from security.models import AuditLog
 from security.services.vote_audit import VOTER_AUDIT_EVENTS
+from strongroom.services import get_active_session
 
 from .serializers import (
     MFALogSerializer,
     VoteAuditListSerializer,
     VoteAuditDetailSerializer,
 )
+
+
+def _vault_token(request):
+    return request.headers.get('X-Vault-Token') or request.query_params.get('vault_token')
+
+
+def _require_vault(request):
+    session = get_active_session(request.user, _vault_token(request))
+    if not session:
+        return Response(
+            {
+                'error': 'Vote audits open only after the 3-party custody unlock.',
+                'code': 'vault_session_required',
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
 
 
 def _voter_audit_queryset():
@@ -53,8 +71,14 @@ class MFAHistoryView(generics.ListAPIView):
 class AuditHistoryView(generics.ListAPIView):
     """Voter vote-cast audits only (no login/logout noise)."""
 
-    permission_classes = [IsAuditor]
+    permission_classes = [IsStrongroomViewer]
     serializer_class = VoteAuditListSerializer
+
+    def list(self, request, *args, **kwargs):
+        blocked = _require_vault(request)
+        if blocked:
+            return blocked
+        return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
         return _apply_voter_audit_filters(_voter_audit_queryset(), self.request.query_params)
@@ -63,9 +87,12 @@ class AuditHistoryView(generics.ListAPIView):
 class VoteAuditDetailView(APIView):
     """Full voter audit detail — device, location, presence photo. No ballot choices."""
 
-    permission_classes = [IsAuditor]
+    permission_classes = [IsStrongroomViewer]
 
     def get(self, request, audit_id):
+        blocked = _require_vault(request)
+        if blocked:
+            return blocked
         audit = _voter_audit_queryset().filter(audit_id=audit_id).first()
         if not audit:
             return Response({'error': 'Audit record not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -76,11 +103,15 @@ class CombinedAuditView(APIView):
     """
     Voter audits only. Login/MFA events are intentionally excluded —
     this trail is for people who voted, with device/presence detail.
+    Requires completed 3-party custody unlock (vault session).
     """
 
-    permission_classes = [IsAuditor]
+    permission_classes = [IsStrongroomViewer]
 
     def get(self, request):
+        blocked = _require_vault(request)
+        if blocked:
+            return blocked
         limit = min(int(request.query_params.get('limit', 100)), 500)
         qs = _apply_voter_audit_filters(_voter_audit_queryset(), request.query_params)
         data = VoteAuditListSerializer(qs[:limit], many=True, context={'request': request}).data

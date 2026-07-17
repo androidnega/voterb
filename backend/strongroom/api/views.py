@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from accounts.permissions import IsStrongroomViewer, IsAdmin
+from accounts.permissions import IsStrongroomViewer, IsAdmin, IsStrongroomAdmin
 from elections.models import Election
 from strongroom.models import (
     ElectionSeal, BallotSeal, CustodyRecord,
@@ -18,6 +18,7 @@ from strongroom.serializers import (
     has_any_approved_committee,
 )
 from accounts.models import User
+from accounts.org import user_is_main_ec, user_is_sub_ec
 from strongroom.services import (
     create_vault_session,
     get_active_session,
@@ -25,6 +26,16 @@ from strongroom.services import (
     request_election_access,
     log_seal_reveal,
     VAULT_SESSION_TTL_MINUTES,
+)
+from strongroom.committee_service import (
+    CommitteeError,
+    nominate_committee,
+    approve_committee,
+    start_unlock_challenge,
+    confirm_unlock_peer,
+    complete_unlock_with_nominee_key,
+    active_unlock_for_viewer,
+    serialize_challenge,
 )
 
 
@@ -47,38 +58,115 @@ class CommitteeOverviewView(APIView):
     permission_classes = [IsStrongroomViewer]
 
     def get(self, request):
+        from accounts.org import user_is_main_ec, user_is_sub_ec
         elections = Election.objects.all().order_by('-created_at')
+        peers = (
+            User.objects.filter(is_active=True)
+            .exclude(pk=request.user.pk)
+            .select_related('role')
+        )
+        peer_options = []
+        for u in peers:
+            if user_is_main_ec(u) or user_is_sub_ec(u):
+                peer_options.append({
+                    'uuid': str(u.uuid),
+                    'email': u.email,
+                    'name': u.get_full_name() or u.email,
+                    'is_main_ec': user_is_main_ec(u),
+                    'is_sub_ec': user_is_sub_ec(u),
+                })
         return Response({
             'has_approved_committee': has_any_approved_committee(),
             'elections': CommitteeOverviewSerializer(elections, many=True).data,
+            'peer_ec_options': peer_options,
         })
 
 
 class VaultAuthenticateView(APIView):
-    """Step-up password verification to open the strongroom vault."""
+    """
+    EC: step 1 of 3-party unlock (peer confirm + nominee key).
+    Auditor: password step-up only (seal inspection; still no Super Admin).
+    """
     permission_classes = [IsStrongroomViewer]
 
     def post(self, request):
-        if not has_any_approved_committee():
-            return _committee_required_response(
-                'Vault opens after a custody committee is approved for at least one election'
-            )
+        from accounts.permissions import is_auditor, is_admin
+        from accounts.org import user_is_main_ec, user_is_sub_ec
 
         password = request.data.get('password', '')
         if not password:
-            return Response({'error': 'Password required for vault access'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Password required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not request.user.check_password(password):
-            return Response({'error': 'Invalid credentials'}, status=status.HTTP_403_FORBIDDEN)
+        is_ec = is_admin(request.user) or user_is_main_ec(request.user) or user_is_sub_ec(request.user)
+        if is_auditor(request.user) and not is_ec:
+            if not has_any_approved_committee():
+                return _committee_required_response(
+                    'Vault opens after a custody committee is approved for at least one election'
+                )
+            if not request.user.check_password(password):
+                return Response({'error': 'Invalid credentials', 'code': 'invalid_credentials'}, status=status.HTTP_403_FORBIDDEN)
+            token, session = create_vault_session(request.user, request)
+            return Response({
+                'vault_token': token,
+                'session_uuid': str(session.uuid),
+                'expires_at': session.expires_at.isoformat(),
+                'ttl_minutes': VAULT_SESSION_TTL_MINUTES,
+                'message': 'Vault access granted',
+            })
 
-        token, session = create_vault_session(request.user, request)
-        return Response({
-            'vault_token': token,
-            'session_uuid': str(session.uuid),
-            'expires_at': session.expires_at.isoformat(),
-            'ttl_minutes': VAULT_SESSION_TTL_MINUTES,
-            'message': 'Vault access granted',
-        })
+        try:
+            election = None
+            election_uuid = request.data.get('election_uuid')
+            if election_uuid:
+                election = get_object_or_404(Election, uuid=election_uuid)
+            payload = start_unlock_challenge(
+                actor=request.user,
+                password=password,
+                election=election,
+            )
+            return Response(payload)
+        except CommitteeError as exc:
+            return Response({'error': exc.message, 'code': exc.code}, status=exc.status)
+
+
+class VaultUnlockStatusView(APIView):
+    permission_classes = [IsStrongroomViewer]
+
+    def get(self, request):
+        challenge = active_unlock_for_viewer(request.user)
+        if not challenge:
+            return Response({'active': False})
+        return Response({'active': True, 'challenge': serialize_challenge(challenge, request.user)})
+
+
+class VaultUnlockPeerConfirmView(APIView):
+    permission_classes = [IsStrongroomViewer]
+
+    def post(self, request):
+        try:
+            payload = confirm_unlock_peer(
+                actor=request.user,
+                challenge_uuid=request.data.get('challenge_uuid'),
+            )
+            return Response(payload)
+        except CommitteeError as exc:
+            return Response({'error': exc.message, 'code': exc.code}, status=exc.status)
+
+
+class VaultUnlockNomineeKeyView(APIView):
+    permission_classes = [IsStrongroomViewer]
+
+    def post(self, request):
+        try:
+            payload = complete_unlock_with_nominee_key(
+                actor=request.user,
+                challenge_uuid=request.data.get('challenge_uuid'),
+                nominee_key=request.data.get('nominee_key') or request.data.get('key') or '',
+                request=request,
+            )
+            return Response(payload)
+        except CommitteeError as exc:
+            return Response({'error': exc.message, 'code': exc.code}, status=exc.status)
 
 
 class VaultSessionStatusView(APIView):
@@ -224,71 +312,46 @@ class LockElectionView(APIView):
 
 
 class NominateCommitteeView(APIView):
-    """Admin (EC) nominates a strongroom committee for an election."""
-    permission_classes = [IsAdmin]
+    """EC nominates a 3-person custody committee: self + peer EC + candidate nominee."""
+    permission_classes = [IsStrongroomAdmin]
 
     def post(self, request, uuid):
         election = get_object_or_404(Election, uuid=uuid)
-        members = request.data.get('members') or []
-        if not isinstance(members, list) or len(members) == 0:
-            return Response(
-                {'error': 'Provide members: [{user_uuid, role}, ...]'},
-                status=status.HTTP_400_BAD_REQUEST,
+        try:
+            committee = nominate_committee(
+                election=election,
+                actor=request.user,
+                peer_ec_uuid=request.data.get('peer_ec_uuid'),
+                nominee_full_name=request.data.get('nominee_full_name') or '',
+                nominee_phone=request.data.get('nominee_phone') or '',
+                nominee_email=request.data.get('nominee_email') or '',
             )
+        except CommitteeError as exc:
+            return Response({'error': exc.message, 'code': exc.code}, status=exc.status)
 
-        committee, _ = StrongroomCommittee.objects.get_or_create(
-            election=election,
-            defaults={'nominated_by': request.user, 'status': 'submitted'},
-        )
-        committee.nominated_by = request.user
-        committee.status = 'submitted'
-        committee.save(update_fields=['nominated_by', 'status', 'updated_at'])
-
-        for item in members:
-            user_uuid = item.get('user_uuid')
-            role = item.get('role') or 'custodian'
-            if not user_uuid:
-                continue
-            member_user = get_object_or_404(User, uuid=user_uuid)
-            StrongroomCommitteeMember.objects.update_or_create(
-                committee=committee,
-                user=member_user,
-                defaults={'role': role},
-            )
-
-        CustodyRecord.objects.create(
-            election=election,
-            action='committee_nominated',
-            actor=request.user,
-            metadata={'committee_uuid': str(committee.uuid), 'member_count': len(members)},
-        )
         committee = StrongroomCommittee.objects.prefetch_related('members__user').get(pk=committee.pk)
-        return Response(StrongroomCommitteeSerializer(committee).data, status=status.HTTP_201_CREATED)
+        data = StrongroomCommitteeSerializer(committee).data
+        data['message'] = (
+            'Committee submitted. The peer EC must approve before the nominee receives their custody key.'
+        )
+        return Response(data, status=status.HTTP_201_CREATED)
 
 
 class ApproveCommitteeView(APIView):
-    """Main EC approves a nominated custody committee."""
-    permission_classes = [IsAdmin]
+    """Peer EC approves the custody committee; nominee then receives a timed hashed key."""
+    permission_classes = [IsStrongroomAdmin]
 
     def post(self, request, uuid):
         election = get_object_or_404(Election, uuid=uuid)
-        committee = StrongroomCommittee.objects.filter(election=election).order_by('-updated_at').first()
-        if not committee:
-            return Response({'error': 'No committee nomination found'}, status=status.HTTP_404_NOT_FOUND)
-        if committee.status not in ['submitted', 'draft']:
-            return Response(
-                {'error': f'Committee cannot be approved from status={committee.status}'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        committee.status = 'approved'
-        committee.save(update_fields=['status', 'updated_at'])
-        CustodyRecord.objects.create(
-            election=election,
-            action='committee_approved',
-            actor=request.user,
-            metadata={'committee_uuid': str(committee.uuid)},
+        try:
+            committee = approve_committee(election=election, actor=request.user)
+        except CommitteeError as exc:
+            return Response({'error': exc.message, 'code': exc.code}, status=exc.status)
+        data = StrongroomCommitteeSerializer(committee).data
+        data['message'] = (
+            'Committee approved. A timed custody key was sent to the nominee.'
         )
-        return Response(StrongroomCommitteeSerializer(committee).data)
+        return Response(data)
 
 
 class PublicVerifyView(APIView):

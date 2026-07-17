@@ -44,6 +44,7 @@ class VoteAuditListSerializer(serializers.ModelSerializer):
     operating_system = serializers.SerializerMethodField()
     has_presence_photo = serializers.SerializerMethodField()
     confirmation_code = serializers.SerializerMethodField()
+    channel = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
@@ -56,6 +57,7 @@ class VoteAuditListSerializer(serializers.ModelSerializer):
             'election',
             'election_title',
             'event_type',
+            'channel',
             'ip_address',
             'device_type',
             'operating_system',
@@ -97,6 +99,10 @@ class VoteAuditListSerializer(serializers.ModelSerializer):
     def get_confirmation_code(self, obj):
         meta = sanitize_audit_metadata(obj.metadata or {})
         return meta.get('confirmation_code')
+
+    def get_channel(self, obj):
+        meta = sanitize_audit_metadata(obj.metadata or {})
+        return (meta.get('channel') or meta.get('voting_channel') or 'web').lower()
 
 
 class VoteAuditDetailSerializer(VoteAuditListSerializer):

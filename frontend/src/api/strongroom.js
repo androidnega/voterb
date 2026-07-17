@@ -21,16 +21,33 @@ export const strongroomApi = {
     return api.get('/strongroom/committees/')
   },
 
-  nominateCommittee(uuid, members) {
-    return api.post(`/strongroom/elections/${uuid}/committee/nominate/`, { members })
+  nominateCommittee(uuid, payload) {
+    return api.post(`/strongroom/elections/${uuid}/committee/nominate/`, payload)
   },
 
   approveCommittee(uuid) {
     return api.post(`/strongroom/elections/${uuid}/committee/approve/`)
   },
 
-  authenticate(password) {
-    return api.post('/strongroom/vault/authenticate/', { password })
+  authenticate(password, electionUuid = null) {
+    const body = { password }
+    if (electionUuid) body.election_uuid = electionUuid
+    return api.post('/strongroom/vault/authenticate/', body)
+  },
+
+  unlockStatus() {
+    return api.get('/strongroom/vault/unlock/status/')
+  },
+
+  peerConfirm(challengeUuid) {
+    return api.post('/strongroom/vault/unlock/peer-confirm/', { challenge_uuid: challengeUuid })
+  },
+
+  nomineeKey(challengeUuid, nomineeKey) {
+    return api.post('/strongroom/vault/unlock/nominee-key/', {
+      challenge_uuid: challengeUuid,
+      nominee_key: nomineeKey,
+    })
   },
 
   sessionStatus() {

@@ -6,6 +6,7 @@ const remainingSeconds = ref(0)
 const expiresAt = ref(null)
 const sessionError = ref('')
 const authenticating = ref(false)
+const unlockChallenge = ref(null)
 
 let countdownTimer = null
 
@@ -35,9 +36,36 @@ function stopCountdown() {
   }
 }
 
+function applyOpenSession(data) {
+  if (!data?.vault_token) return false
+  setVaultToken(data.vault_token)
+  isUnlocked.value = true
+  expiresAt.value = data.expires_at
+  remainingSeconds.value = (data.ttl_minutes || 30) * 60
+  unlockChallenge.value = null
+  startCountdown()
+  return true
+}
+
+async function refreshUnlockStatus() {
+  try {
+    const { data } = await strongroomApi.unlockStatus()
+    if (data.active) {
+      unlockChallenge.value = data.challenge
+      return data.challenge
+    }
+    unlockChallenge.value = null
+    return null
+  } catch {
+    unlockChallenge.value = null
+    return null
+  }
+}
+
 async function checkSession() {
   if (!getVaultToken()) {
     isUnlocked.value = false
+    await refreshUnlockStatus()
     return false
   }
   try {
@@ -57,19 +85,48 @@ async function checkSession() {
   }
 }
 
+/** Step 1 — EC password starts peer-confirm challenge (does not unlock yet). */
 async function authenticate(password) {
   authenticating.value = true
   sessionError.value = ''
   try {
     const { data } = await strongroomApi.authenticate(password)
-    setVaultToken(data.vault_token)
-    isUnlocked.value = true
-    expiresAt.value = data.expires_at
-    remainingSeconds.value = (data.ttl_minutes || 30) * 60
-    startCountdown()
-    return true
+    if (data.vault_token) {
+      return applyOpenSession(data)
+    }
+    unlockChallenge.value = data
+    return { challenge: data }
   } catch (error) {
     sessionError.value = error.response?.data?.error || 'Authentication failed'
+    return false
+  } finally {
+    authenticating.value = false
+  }
+}
+
+async function peerConfirm(challengeUuid) {
+  authenticating.value = true
+  sessionError.value = ''
+  try {
+    const { data } = await strongroomApi.peerConfirm(challengeUuid)
+    unlockChallenge.value = data
+    return data
+  } catch (error) {
+    sessionError.value = error.response?.data?.error || 'Peer confirmation failed'
+    return null
+  } finally {
+    authenticating.value = false
+  }
+}
+
+async function submitNomineeKey(challengeUuid, nomineeKey) {
+  authenticating.value = true
+  sessionError.value = ''
+  try {
+    const { data } = await strongroomApi.nomineeKey(challengeUuid, nomineeKey)
+    return applyOpenSession(data)
+  } catch (error) {
+    sessionError.value = error.response?.data?.error || 'Nominee key rejected'
     return false
   } finally {
     authenticating.value = false
@@ -87,6 +144,7 @@ async function lockVault() {
   isUnlocked.value = false
   remainingSeconds.value = 0
   expiresAt.value = null
+  unlockChallenge.value = null
 }
 
 export function useStrongroomVault() {
@@ -99,8 +157,12 @@ export function useStrongroomVault() {
     expiresAt,
     sessionError,
     authenticating,
+    unlockChallenge,
     checkSession,
+    refreshUnlockStatus,
     authenticate,
+    peerConfirm,
+    submitNomineeKey,
     lockVault,
   }
 }

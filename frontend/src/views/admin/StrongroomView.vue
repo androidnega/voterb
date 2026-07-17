@@ -33,7 +33,7 @@
                 type="button"
                 class="committee-btn committee-btn--primary"
                 :disabled="actionBusy === election.uuid"
-                @click="nominate(election)"
+                @click="openNominate(election)"
               >
                 <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-user-plus'"></i>
                 Nominate committee
@@ -46,9 +46,9 @@
                 @click="approve(election)"
               >
                 <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-check'"></i>
-                Approve committee
+                Approve as peer EC
               </button>
-              <span v-if="isAuditorOnly" class="committee-wait">Waiting for nomination and Super Admin approval</span>
+              <span v-if="isAuditorOnly" class="committee-wait">Waiting for EC nomination and peer approval</span>
             </div>
             <p v-if="actionError && actionTarget === election.uuid" class="committee-error">{{ actionError }}</p>
           </div>
@@ -60,7 +60,11 @@
       v-else-if="hasApprovedCommittee && !isUnlocked"
       :authenticating="authenticating"
       :session-error="sessionError"
+      :challenge="unlockChallenge"
       @authenticate="handleAuthenticate"
+      @peer-confirm="handlePeerConfirm"
+      @nominee-key="handleNomineeKey"
+      @refresh="refreshUnlockStatus"
     />
 
     <template v-else-if="isUnlocked">
@@ -290,6 +294,43 @@
       </div>
     </div>
     </Transition>
+
+    <!-- Nominate custody committee -->
+    <Transition name="app-modal">
+      <div v-if="nominateModal" class="vault-modal-overlay" @click.self="nominateModal = null">
+        <div class="vault-modal app-modal-panel">
+          <div class="vault-modal-header">
+            <i class="fas fa-users"></i>
+            <h3>Nominate custody committee</h3>
+          </div>
+          <p class="vault-modal-election">{{ nominateModal.title }}</p>
+          <p class="vault-modal-desc">
+            Committee of 3: you, a peer EC, and one candidate-nominated person. Peer approval sends a timed key to the nominee.
+          </p>
+          <label class="vault-modal-label">Peer EC</label>
+          <select v-model="nominateForm.peer_ec_uuid" class="vault-modal-input">
+            <option value="" disabled>Select peer EC</option>
+            <option v-for="peer in peerEcOptions" :key="peer.uuid" :value="peer.uuid">
+              {{ peer.name }} · {{ peer.email }}
+            </option>
+          </select>
+          <label class="vault-modal-label">Nominee full name</label>
+          <input v-model="nominateForm.nominee_full_name" class="vault-modal-input" placeholder="Person voted onto the committee" />
+          <label class="vault-modal-label">Nominee phone</label>
+          <input v-model="nominateForm.nominee_phone" class="vault-modal-input" placeholder="e.g. 024xxxxxxx" />
+          <label class="vault-modal-label">Nominee email (optional)</label>
+          <input v-model="nominateForm.nominee_email" type="email" class="vault-modal-input" placeholder="optional@email.com" />
+          <p v-if="nominateError" class="vault-modal-error">{{ nominateError }}</p>
+          <div class="vault-modal-actions">
+            <button type="button" class="vault-modal-cancel" @click="nominateModal = null">Cancel</button>
+            <button type="button" class="vault-modal-confirm" :disabled="nominateSubmitting" @click="submitNominate">
+              <i :class="nominateSubmitting ? 'fas fa-spinner fa-spin' : 'fas fa-paper-plane'"></i>
+              Submit for peer approval
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -329,14 +370,28 @@ const {
   remainingLabel,
   sessionError,
   authenticating,
+  unlockChallenge,
   checkSession,
+  refreshUnlockStatus,
   authenticate,
+  peerConfirm,
+  submitNomineeKey,
   lockVault,
 } = useStrongroomVault()
 
 const { page, size, total, totalPages, paginated, from, to, setPage, setPageSize } = usePagination(elections, 9)
 
 const isAuditorOnly = computed(() => authStore.roleName === 'auditor' && !authStore.isSuperAdmin && !authStore.isElectionManager)
+const peerEcOptions = ref([])
+const nominateModal = ref(null)
+const nominateForm = ref({
+  peer_ec_uuid: '',
+  nominee_full_name: '',
+  nominee_phone: '',
+  nominee_email: '',
+})
+const nominateError = ref('')
+const nominateSubmitting = ref(false)
 const sealedCount = computed(() => elections.value.filter((e) => e.election_seal).length)
 const totalBallotSeals = computed(() => elections.value.reduce((sum, e) => sum + (e.ballot_seals?.length || 0), 0))
 const approvedInVaultCount = computed(() => elections.value.filter((e) => isCommitteeApproved(e)).length)
@@ -372,9 +427,9 @@ const committeeBadge = (status) => {
 
 const committeeHint = (status) => {
   if (status === 'approved') return 'Custody access is available for this election.'
-  if (status === 'submitted') return 'Nomination submitted. Super Admin must approve before vault access.'
+  if (status === 'submitted') return 'Waiting for the peer EC to approve. Nominee key is sent only after approval.'
   if (status === 'rejected') return 'Previous nomination was rejected. Nominate a new committee.'
-  return 'Nominate and approve a custody committee before vault access.'
+  return 'Nominate you + peer EC + candidate nominee. Peer approval activates the custody key.'
 }
 
 const canNominate = (election) => {
@@ -384,9 +439,11 @@ const canNominate = (election) => {
 }
 
 const canApprove = (election) => {
-  if (!authStore.isSuperAdmin) return false
+  if (!authStore.isElectionManager) return false
   const status = election.committee_status
-  return status === 'submitted' || status === 'draft'
+  if (status !== 'submitted' && status !== 'draft') return false
+  const peerUuid = election.committee?.peer_ec?.uuid
+  return !!peerUuid && peerUuid === authStore.user?.uuid
 }
 
 const fetchOverview = async () => {
@@ -395,35 +452,50 @@ const fetchOverview = async () => {
     const { data } = await strongroomApi.committeeOverview()
     hasApprovedCommittee.value = !!data.has_approved_committee
     setupElections.value = data.elections || []
+    peerEcOptions.value = data.peer_ec_options || []
   } catch (error) {
     console.error('Failed to load committee overview:', error)
     hasApprovedCommittee.value = false
     setupElections.value = []
+    peerEcOptions.value = []
   } finally {
     overviewLoading.value = false
   }
 }
 
-const nominate = async (election) => {
-  const userUuid = authStore.user?.uuid
-  if (!userUuid) {
-    actionError.value = 'Your account UUID is missing. Re-login and try again.'
-    actionTarget.value = election.uuid
+const openNominate = (election) => {
+  nominateModal.value = election
+  nominateError.value = ''
+  nominateForm.value = {
+    peer_ec_uuid: peerEcOptions.value[0]?.uuid || '',
+    nominee_full_name: '',
+    nominee_phone: '',
+    nominee_email: '',
+  }
+}
+
+const submitNominate = async () => {
+  if (!nominateModal.value) return
+  if (!nominateForm.value.peer_ec_uuid || !nominateForm.value.nominee_full_name.trim() || !nominateForm.value.nominee_phone.trim()) {
+    nominateError.value = 'Peer EC, nominee name, and phone are required.'
     return
   }
-  actionBusy.value = election.uuid
-  actionError.value = ''
-  actionTarget.value = election.uuid
+  nominateSubmitting.value = true
+  nominateError.value = ''
   try {
-    await strongroomApi.nominateCommittee(election.uuid, [
-      { user_uuid: userUuid, role: 'chair' },
-    ])
+    await strongroomApi.nominateCommittee(nominateModal.value.uuid, {
+      peer_ec_uuid: nominateForm.value.peer_ec_uuid,
+      nominee_full_name: nominateForm.value.nominee_full_name.trim(),
+      nominee_phone: nominateForm.value.nominee_phone.trim(),
+      nominee_email: nominateForm.value.nominee_email.trim(),
+    })
+    nominateModal.value = null
     await fetchOverview()
     if (isUnlocked.value) await fetchData()
   } catch (error) {
-    actionError.value = error.response?.data?.error || 'Nomination failed'
+    nominateError.value = error.response?.data?.error || 'Nomination failed'
   } finally {
-    actionBusy.value = null
+    nominateSubmitting.value = false
   }
 }
 
@@ -443,7 +515,20 @@ const approve = async (election) => {
 }
 
 const handleAuthenticate = async (password) => {
-  const ok = await authenticate(password)
+  const result = await authenticate(password)
+  if (result === true) await fetchData()
+}
+
+const handlePeerConfirm = async () => {
+  const uuid = unlockChallenge.value?.uuid
+  if (!uuid) return
+  await peerConfirm(uuid)
+}
+
+const handleNomineeKey = async (key) => {
+  const uuid = unlockChallenge.value?.uuid
+  if (!uuid) return
+  const ok = await submitNomineeKey(uuid, key)
   if (ok) await fetchData()
 }
 
@@ -528,6 +613,7 @@ onMounted(async () => {
   }
   const active = await checkSession()
   if (active) await fetchData()
+  else await refreshUnlockStatus()
 })
 </script>
 
@@ -972,6 +1058,31 @@ onMounted(async () => {
   font-size: 0.82rem;
   color: #64748b;
   margin-bottom: 0.85rem;
+}
+
+.vault-modal-label {
+  display: block;
+  margin: 0.65rem 0 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #78716c;
+}
+
+.vault-modal-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.55rem;
+  font-size: 0.88rem;
+  outline: none;
+  background: #fff;
+}
+
+.vault-modal-input:focus {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
 }
 
 .vault-modal-textarea {

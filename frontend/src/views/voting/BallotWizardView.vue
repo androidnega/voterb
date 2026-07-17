@@ -166,7 +166,7 @@
       <div class="review-list">
         <div v-for="pos in positions" :key="pos.uuid" class="review-item">
           <p class="review-item__pos">{{ pos.title }}</p>
-          <div v-if="getSelections(pos.uuid).length === 0" class="review-item__empty">Skipped</div>
+          <div v-if="getSelections(pos.uuid).length === 0" class="review-item__empty">Skipped — nothing cast</div>
           <div v-else class="review-picks">
             <div v-for="candidate in getSelections(pos.uuid)" :key="candidate.uuid" class="review-pick">
               <img
@@ -464,20 +464,32 @@ function sealCurrentPosition() {
     return
   }
 
-  // Selections are optional per position — empty means abstain/skip.
   submitError.value = ''
+  const picks = getSelections(pos.uuid)
   const nextIdx = activeStepIndex.value + 1
   const isLast = nextIdx >= positions.value.length
-  ceremonyMeta.value = {
-    positionTitle: pos.title,
-    nextTitle: isLast ? 'Review' : (positions.value[nextIdx]?.title || 'Next'),
-    isLast,
-  }
 
   const next = new Set(sealedIds.value)
   next.add(pos.uuid)
   sealedIds.value = next
   persistDraft()
+
+  // Skip = confirm with no ballot entry (no seal ceremony, nothing submitted for this race).
+  if (!picks.length) {
+    if (isLast) {
+      openReviewIfReady()
+    } else {
+      setStep(nextIdx)
+      persistDraft()
+    }
+    return
+  }
+
+  ceremonyMeta.value = {
+    positionTitle: pos.title,
+    nextTitle: isLast ? 'Review' : (positions.value[nextIdx]?.title || 'Next'),
+    isLast,
+  }
   phase.value = 'ceremony'
 }
 
@@ -521,10 +533,19 @@ const submitVote = async () => {
   }, 3500)
   try {
     const payload = {
-      selections: positions.value.map((pos) => ({
-        position_uuid: pos.uuid,
-        candidate_uuids: selections.value[pos.uuid] || [],
-      })),
+      // Only races with a real pick — skipped positions send nothing.
+      selections: positions.value
+        .map((pos) => ({
+          position_uuid: pos.uuid,
+          candidate_uuids: selections.value[pos.uuid] || [],
+        }))
+        .filter((sel) => (sel.candidate_uuids || []).length > 0),
+    }
+    if (!payload.selections.length) {
+      submitError.value = 'Select at least one candidate on any position before submitting.'
+      submitting.value = false
+      clearSubmitSlow()
+      return
     }
     const session = readSvtSession(electionUuid)
     const svtCode = session?.code || ''

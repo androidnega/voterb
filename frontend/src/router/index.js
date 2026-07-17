@@ -7,7 +7,9 @@ const ecRoles = ['admin', 'sub_ec']
 const electionViewerRoles = ['admin', 'sub_ec', 'auditor']
 /** Election custody belongs to EC and auditors, never platform Super Admin. */
 const strongroomRoles = ['admin', 'sub_ec', 'auditor']
-/** Platform + election oversight dashboards and audit */
+/** Vote-cast audits require vault unlock — Super Admin excluded. */
+const auditVaultRoles = ['admin', 'sub_ec', 'auditor']
+/** Platform + election oversight dashboards */
 const staffDashboardRoles = ['auditor', 'admin', 'sub_ec', 'super_admin']
 const studentRoles = ['student', 'candidate']
 const publicPaths = new Set(['/', '/login', '/otp'])
@@ -117,8 +119,8 @@ const routes = [
   ], { roles: ecRoles }),
 
   layoutRoute('/audit', [
-    { path: '', component: () => import('../views/admin/AuditLogsView.vue'), meta: { roles: staffDashboardRoles } },
-  ], { roles: staffDashboardRoles }),
+    { path: '', component: () => import('../views/admin/AuditLogsView.vue'), meta: { roles: auditVaultRoles } },
+  ], { roles: auditVaultRoles }),
 
   layoutRoute('/operations', [
     { path: '', component: () => import('../views/admin/OperationsCenterView.vue'), meta: { roles: ['super_admin'] } },

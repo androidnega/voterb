@@ -5,6 +5,9 @@ from .views import (
     LockElectionView,
     PublicVerifyView,
     VaultAuthenticateView,
+    VaultUnlockStatusView,
+    VaultUnlockPeerConfirmView,
+    VaultUnlockNomineeKeyView,
     VaultSessionStatusView,
     VaultSessionCloseView,
     ElectionVaultAccessView,
@@ -16,6 +19,9 @@ from .views import (
 
 urlpatterns = [
     path('vault/authenticate/', VaultAuthenticateView.as_view(), name='vault-authenticate'),
+    path('vault/unlock/status/', VaultUnlockStatusView.as_view(), name='vault-unlock-status'),
+    path('vault/unlock/peer-confirm/', VaultUnlockPeerConfirmView.as_view(), name='vault-unlock-peer-confirm'),
+    path('vault/unlock/nominee-key/', VaultUnlockNomineeKeyView.as_view(), name='vault-unlock-nominee-key'),
     path('vault/session/status/', VaultSessionStatusView.as_view(), name='vault-session-status'),
     path('vault/session/close/', VaultSessionCloseView.as_view(), name='vault-session-close'),
     path('committees/', CommitteeOverviewView.as_view(), name='strongroom-committee-overview'),

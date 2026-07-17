@@ -869,7 +869,10 @@ class SubmitVoteView(APIView):
         votes_created = []
         for sel in selections:
             position_uuid = sel.get('position_uuid')
-            candidate_uuids = sel.get('candidate_uuids', [])
+            candidate_uuids = [c for c in (sel.get('candidate_uuids') or []) if c]
+            # Skipped races must not create ballot entries.
+            if not candidate_uuids:
+                continue
 
             position = get_object_or_404(Position, uuid=position_uuid, election=election)
             if not position.is_votable:
@@ -921,6 +924,12 @@ class SubmitVoteView(APIView):
                 )
                 votes_created.append(vote)
 
+        if not votes_created:
+            return Response(
+                {'error': 'Select at least one candidate before submitting your ballot.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         svt.status = 'used'
         svt.used_at = timezone.now()
         svt.expires_at = timezone.now()
@@ -946,7 +955,10 @@ class SubmitVoteView(APIView):
         from strongroom.services import seal_vote_cast
         from elections.ws import broadcast_election_monitor
 
-        positions_count = len({sel.get('position_uuid') for sel in selections if sel.get('position_uuid')})
+        positions_count = len({
+            str(vote.position_id)
+            for vote in votes_created
+        })
         audit_log = record_vote_cast_audit(
             request=request,
             user=user,

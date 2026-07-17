@@ -75,11 +75,12 @@ class IsAdminOrSuperAdmin(BasePermission):
 
 class IsAuditor(BasePermission):
     def has_permission(self, request, view):
-        return is_auditor(request.user) or is_admin(request.user) or is_super_admin(request.user)
+        # Super Admin is intentionally excluded from vote-cast audit trails.
+        return is_auditor(request.user) or is_admin(request.user) or _main_ec(request.user) or _sub_ec(request.user)
 
 class IsAuditorViewOnly(BasePermission):
     def has_permission(self, request, view):
-        return is_auditor(request.user) or is_admin(request.user) or is_super_admin(request.user)
+        return is_auditor(request.user) or is_admin(request.user) or _main_ec(request.user) or _sub_ec(request.user)
 
     def has_object_permission(self, request, view, obj):
         if is_auditor(request.user):
@@ -121,13 +122,23 @@ class IsMainECOrSubEC(BasePermission):
 
 # ─── STRONGROOM PERMISSIONS ───
 class IsStrongroomViewer(BasePermission):
+    """Main EC, Sub EC, and auditors — never Super Admin."""
     def has_permission(self, request, view):
+        if is_super_admin(request.user):
+            return False
         role = get_role_name(request.user)
-        return role in ['admin', 'auditor']
+        return (
+            role in ['admin', 'sub_ec', 'auditor']
+            or _main_ec(request.user)
+            or _sub_ec(request.user)
+        )
 
 class IsStrongroomAdmin(BasePermission):
+    """EC managers who can nominate/approve custody committees."""
     def has_permission(self, request, view):
-        return is_admin(request.user) or _main_ec(request.user)
+        if is_super_admin(request.user):
+            return False
+        return is_admin(request.user) or _main_ec(request.user) or is_sub_ec(request.user) or _sub_ec(request.user)
 
 # ─── STUDENT PERMISSIONS ───
 class IsStudentOrCandidate(BasePermission):

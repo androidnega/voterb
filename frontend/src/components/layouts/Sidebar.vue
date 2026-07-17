@@ -119,7 +119,6 @@ const menuItems = computed(() => {
       { path: '/institutions', label: 'Institutions', icon: 'fas fa-university' },
       { path: '/users', label: 'Users', icon: 'fas fa-users' },
       { path: '/categories', label: 'Categories', icon: 'fas fa-layer-group' },
-      { path: '/audit', label: 'Audit', icon: 'fas fa-clipboard-list' },
       { path: '/operations', label: 'Operations', icon: 'fas fa-server' },
     ]
   }
@@ -134,7 +133,6 @@ const menuItems = computed(() => {
       { path: '/elections', label: 'Elections', icon: 'fas fa-calendar-check' },
       { path: '/results', label: 'Results', icon: 'fas fa-chart-bar' },
       { path: '/strongroom', label: 'Strongroom', icon: 'fas fa-shield-alt' },
-      { path: '/fraud', label: 'Fraud', icon: 'fas fa-user-shield' },
       { path: '/ussd', label: 'USSD', icon: 'fas fa-phone' },
       { path: '/audit', label: 'Audit', icon: 'fas fa-clipboard-list' },
     ]
@@ -145,6 +143,7 @@ const menuItems = computed(() => {
       { path: '/dashboard', label: 'Dashboard', icon: 'fas fa-th-large' },
       { path: '/elections', label: 'Elections', icon: 'fas fa-calendar-check' },
       { path: '/results', label: 'Results', icon: 'fas fa-chart-bar' },
+      { path: '/strongroom', label: 'Strongroom', icon: 'fas fa-shield-alt' },
       { path: '/audit', label: 'Audit', icon: 'fas fa-clipboard-list' },
     ]
   }

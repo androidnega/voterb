@@ -58,11 +58,38 @@ class CommitteeMemberSerializer(serializers.ModelSerializer):
 class StrongroomCommitteeSerializer(serializers.ModelSerializer):
     members = CommitteeMemberSerializer(many=True, read_only=True)
     nominated_by = UserBasicSerializer(read_only=True)
+    peer_ec = UserBasicSerializer(read_only=True)
+    peer_approved_by = UserBasicSerializer(read_only=True)
+    nominee_key_active = serializers.SerializerMethodField()
 
     class Meta:
         model = StrongroomCommittee
-        fields = ['uuid', 'election', 'status', 'nominated_by', 'members', 'created_at', 'updated_at']
+        fields = [
+            'uuid', 'election', 'status', 'nominated_by', 'members',
+            'peer_ec', 'peer_approved_by', 'peer_approved_at',
+            'nominee_full_name', 'nominee_phone', 'nominee_email',
+            'nominee_key_expires_at', 'nominee_key_sent_at', 'nominee_key_active',
+            'created_at', 'updated_at',
+        ]
         read_only_fields = ['uuid', 'created_at', 'updated_at']
+
+    def get_nominee_key_active(self, obj):
+        from django.utils import timezone
+        if not obj.nominee_key_hash or not obj.nominee_key_expires_at:
+            return False
+        return obj.nominee_key_expires_at > timezone.now()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Never expose the hashed key material.
+        data.pop('nominee_key_hash', None)
+        # Mask phone for display.
+        phone = data.get('nominee_phone') or ''
+        if len(phone) >= 4:
+            data['nominee_phone_masked'] = f'***{phone[-4:]}'
+        else:
+            data['nominee_phone_masked'] = '****'
+        return data
 
 # ---------- Vault Access ----------
 class VaultAccessRequestSerializer(serializers.ModelSerializer):

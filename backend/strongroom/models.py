@@ -100,6 +100,28 @@ class StrongroomCommittee(models.Model):
     election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='committees')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     nominated_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='nominated_committees')
+    peer_ec = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='peer_committees',
+        help_text='Second EC who must approve this custody committee.',
+    )
+    peer_approved_at = models.DateTimeField(null=True, blank=True)
+    peer_approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_committees',
+    )
+    nominee_full_name = models.CharField(max_length=255, blank=True)
+    nominee_phone = models.CharField(max_length=32, blank=True)
+    nominee_email = models.EmailField(blank=True)
+    nominee_key_hash = models.CharField(max_length=128, blank=True)
+    nominee_key_expires_at = models.DateTimeField(null=True, blank=True)
+    nominee_key_sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -111,6 +133,9 @@ class StrongroomCommitteeMember(models.Model):
         ('chair', 'Chair'),
         ('custodian', 'Custodian'),
         ('observer', 'Observer'),
+        ('main_ec', 'Main EC'),
+        ('peer_ec', 'Peer EC'),
+        ('nominee', 'Candidate Nominee'),
     ]
 
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -190,3 +215,63 @@ class StrongroomAccessSession(models.Model):
 
     def __str__(self):
         return f"Strongroom session for {self.user.email}"
+
+
+class VaultUnlockChallenge(models.Model):
+    """
+    Three-party unlock for the vote audit vault:
+    1) initiating EC password
+    2) peer EC confirm
+    3) nominee hashed key
+    """
+    STATUS_CHOICES = [
+        ('awaiting_peer', 'Awaiting peer EC'),
+        ('awaiting_nominee', 'Awaiting nominee key'),
+        ('open', 'Open'),
+        ('expired', 'Expired'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    election = models.ForeignKey(
+        Election,
+        on_delete=models.CASCADE,
+        related_name='vault_unlock_challenges',
+        null=True,
+        blank=True,
+    )
+    committee = models.ForeignKey(
+        StrongroomCommittee,
+        on_delete=models.CASCADE,
+        related_name='unlock_challenges',
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='awaiting_peer')
+    initiated_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='vault_unlocks_started')
+    peer_confirmed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='vault_unlocks_confirmed',
+    )
+    peer_confirmed_at = models.DateTimeField(null=True, blank=True)
+    nominee_verified_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+    access_session = models.ForeignKey(
+        StrongroomAccessSession,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='unlock_challenges',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['status', 'expires_at']),
+            models.Index(fields=['committee', 'status']),
+        ]
+
+    def __str__(self):
+        return f"VaultUnlock {self.uuid} ({self.status})"
