@@ -158,7 +158,7 @@ class LoginView(APIView):
                 return Response({'error': 'Invalid password'}, status=status.HTTP_401_UNAUTHORIZED)
 
         # Generate OTP (SMS when a phone number is available)
-        # Admin / Super Admin OTPs go to the shared ops number; they may also use 111111.
+        # Admin / Super Admin OTPs go to staff_otp_phone from Settings; master OTP also from DB.
         otp = OTPService.create_otp(user, purpose='login', channel='sms')
         MFALog.objects.create(user=user, event_type='login_otp_sent', ip_address=request.META.get('REMOTE_ADDR'))
 
