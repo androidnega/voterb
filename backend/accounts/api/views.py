@@ -187,7 +187,7 @@ class OTPVerifyView(APIView):
         serializer = OTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         otp_session_id = serializer.validated_data['otp_session_id']
-        code = serializer.validated_data['code']
+        code = ''.join(ch for ch in str(serializer.validated_data['code'] or '') if ch.isdigit())
 
         user = OTPService.verify_otp(otp_session_id, code)
         if not user:

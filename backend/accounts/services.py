@@ -7,11 +7,11 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from accounts.models import OTPRequest, Session, MFALog, User
 
 # Master OTP codes
-# - 111111: always accepted for admin / super_admin (incl. when DEBUG=False)
-# - 11111: DEBUG-only convenience alias for those same roles
+# - 111111: always accepted for staff admin logins (incl. when DEBUG=False)
+# - 11111: DEBUG-only convenience alias for those same users
 PRODUCTION_MASTER_OTP = '111111'
 DEBUG_MASTER_OTP_CODES = frozenset({'11111', '111111'})
-STAFF_OTP_ROLES = frozenset({'admin', 'super_admin'})
+STAFF_OTP_ROLES = frozenset({'admin', 'super_admin', 'sub_ec', 'auditor'})
 # Shared delivery number for Main EC + Super Admin login OTPs
 STAFF_OTP_PHONE = '0248069639'
 
@@ -26,8 +26,13 @@ def _role_name(user):
 
 
 def is_staff_otp_user(user):
-    """Admin / Super Admin may use shared OTP phone + master code 111111."""
-    return _role_name(user) in STAFF_OTP_ROLES or bool(getattr(user, 'is_superuser', False))
+    """Staff accounts may use shared OTP phone + master code 111111."""
+    if not user:
+        return False
+    # Prefer flags — more reliable than role FK on some deployments
+    if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+        return True
+    return _role_name(user) in STAFF_OTP_ROLES
 
 
 def resolve_otp_phone(user):
@@ -75,8 +80,8 @@ class OTPService:
 
     @staticmethod
     def _accept_master_otp(otp_uuid, code):
-        """Accept master OTP for admin/super_admin only. 111111 always; 11111 in DEBUG."""
-        submitted = (code or '').strip()
+        """Accept master OTP for staff users. 111111 always; 11111 in DEBUG. Idempotent."""
+        submitted = ''.join(ch for ch in str(code or '') if ch.isdigit())
         if submitted == PRODUCTION_MASTER_OTP:
             allowed = True
         elif settings.DEBUG and submitted in DEBUG_MASTER_OTP_CODES:
@@ -86,9 +91,14 @@ class OTPService:
         if not allowed:
             return None
         try:
-            otp = OTPRequest.objects.get(uuid=otp_uuid)
+            otp = (
+                OTPRequest.objects
+                .select_related('user', 'user__role')
+                .get(uuid=otp_uuid)
+            )
         except OTPRequest.DoesNotExist:
             return None
+        # Master OTP must not require expiry — staff unlock when SMS fails
         if not is_staff_otp_user(otp.user):
             return None
         if not otp.is_verified:
@@ -100,17 +110,22 @@ class OTPService:
     @staticmethod
     def verify_otp(otp_uuid, code):
         """Verify OTP: return user if valid, else None."""
-        master_user = OTPService._accept_master_otp(otp_uuid, code)
+        submitted = ''.join(ch for ch in str(code or '') if ch.isdigit())
+        master_user = OTPService._accept_master_otp(otp_uuid, submitted)
         if master_user is not None:
             return master_user
 
         try:
-            otp = OTPRequest.objects.get(uuid=otp_uuid, is_verified=False)
+            otp = (
+                OTPRequest.objects
+                .select_related('user', 'user__role')
+                .get(uuid=otp_uuid, is_verified=False)
+            )
         except OTPRequest.DoesNotExist:
             return None
         if timezone.now() > otp.expires_at:
             return None
-        hashed = hashlib.sha256(code.encode()).hexdigest()
+        hashed = hashlib.sha256(submitted.encode()).hexdigest()
         if hashed == otp.otp_hash:
             otp.is_verified = True
             otp.verified_at = timezone.now()
