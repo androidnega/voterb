@@ -23,8 +23,8 @@
           v-if="!loading"
           :labels="userGrowth.labels"
           :data="userGrowth.new_users"
+          :theme="appChartTheme"
           label="New users"
-          color="#3d4f44"
           height="14rem"
           aria-label="New users over recent months"
         />
@@ -36,6 +36,7 @@
           v-if="!loading && roleBreakdown.labels.length"
           :labels="roleBreakdown.labels"
           :data="roleBreakdown.values"
+          :theme="appChartTheme"
           height="14rem"
           aria-label="Users by role"
         />
@@ -48,16 +49,12 @@
       <DataPanel title="Platform controls" subtitle="Structure and feature posture">
         <ul class="sa-control-list">
           <li>
-            <span>Academic faculties</span>
+            <span>Categories (faculties)</span>
             <strong>{{ loading ? '—' : formatNumber(stats.faculties) }}</strong>
           </li>
           <li>
             <span>Departments</span>
             <strong>{{ loading ? '—' : formatNumber(stats.departments) }}</strong>
-          </li>
-          <li>
-            <span>Levels</span>
-            <strong>{{ loading ? '—' : formatNumber(stats.levels) }}</strong>
           </li>
           <li>
             <span>Feature flags on</span>
@@ -87,39 +84,28 @@
       </DataPanel>
     </div>
 
-    <section class="page-section">
-      <div class="section-head">
-        <h2 class="section-title">Quick access</h2>
-        <p class="section-subtitle">Platform governance tools</p>
-      </div>
-      <div class="quick-link-grid">
-        <router-link
-          v-for="link in shortcuts"
-          :key="link.path"
-          :to="link.path"
-          class="quick-link-card"
-        >
-          <div class="quick-link-icon tone-slate">
-            <i :class="link.icon"></i>
-          </div>
-          <div class="quick-link-body">
-            <h3 class="quick-link-title">{{ link.title }}</h3>
-            <p class="quick-link-desc">{{ link.description }}</p>
-          </div>
-          <i class="fas fa-arrow-right quick-link-arrow"></i>
-        </router-link>
-      </div>
-    </section>
+    <QuickAccessSection
+      title="Quick access"
+      subtitle="Platform governance tools"
+      :links="shortcuts"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { dashboardApi } from '@/api/dashboard'
+import { useThemeStore } from '@/stores/theme'
 import AreaChart from '@/components/charts/AreaChart.vue'
 import DonutChart from '@/components/charts/DonutChart.vue'
 import StatCard from '@/components/admin/StatCard.vue'
 import DataPanel from '@/components/admin/DataPanel.vue'
+import QuickAccessSection from '@/components/admin/QuickAccessSection.vue'
+
+const themeStore = useThemeStore()
+const { theme: uiTheme } = storeToRefs(themeStore)
+const appChartTheme = computed(() => `app-${uiTheme.value}`)
 
 const REFRESH_MS = 30000
 
@@ -132,7 +118,6 @@ const stats = ref({
   student_users: 0,
   faculties: 0,
   departments: 0,
-  levels: 0,
   flags_enabled: 0,
   flags_total: 0,
   maintenance_active: false,
@@ -190,7 +175,15 @@ const applyDashboardData = (data) => {
     cumulative: data.user_growth?.cumulative || [],
   }
   recentActivities.value = data.recent_activities || []
-  shortcuts.value = data.shortcuts || []
+  shortcuts.value = [
+    {
+      path: '/institutions',
+      title: 'Institutions',
+      description: 'Create institutions and Main EC accounts',
+      icon: 'fas fa-university',
+    },
+    ...(data.shortcuts || []).filter((link) => link?.path),
+  ]
 }
 
 const fetchDashboard = async (options = {}) => {
@@ -202,13 +195,13 @@ const fetchDashboard = async (options = {}) => {
   try {
     const { data } = await dashboardApi.getSuperAdminDashboard()
     applyDashboardData(data)
-    if (!silent) loading.value = false
   } catch (error) {
     console.error('Failed to load super admin dashboard:', error)
     if (!silent) {
       errorMessage.value = error.response?.data?.error || 'Failed to load platform dashboard.'
-      loading.value = false
     }
+  } finally {
+    if (!silent) loading.value = false
   }
 }
 
@@ -332,83 +325,5 @@ onUnmounted(() => {
 .sa-activity span {
   font-size: 0.72rem;
   color: var(--vb-muted);
-}
-
-.section-head {
-  margin-bottom: 0.85rem;
-}
-
-.section-title {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 800;
-  color: var(--vb-ink);
-}
-
-.section-subtitle {
-  margin: 0.25rem 0 0;
-  font-size: 0.82rem;
-  color: var(--vb-muted);
-}
-
-.quick-link-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.75rem;
-}
-
-@media (min-width: 720px) {
-  .quick-link-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1100px) {
-  .quick-link-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-.quick-link-card {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.05rem;
-  border-radius: 1.15rem;
-  background: #fff;
-  box-shadow: var(--vb-card-shadow);
-  text-decoration: none;
-  color: inherit;
-}
-
-.quick-link-icon {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 9999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: var(--vb-accent-soft);
-  color: var(--vb-accent);
-}
-
-.quick-link-title {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 800;
-  color: var(--vb-ink);
-}
-
-.quick-link-desc {
-  margin: 0.15rem 0 0;
-  font-size: 0.75rem;
-  color: var(--vb-muted);
-}
-
-.quick-link-arrow {
-  margin-left: auto;
-  color: #c5c2b6;
-  font-size: 0.75rem;
 }
 </style>

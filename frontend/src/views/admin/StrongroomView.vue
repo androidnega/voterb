@@ -1,13 +1,69 @@
 <template>
   <div class="strongroom-page">
+    <!-- Phase 1: committee must be approved before vault unlock -->
+    <template v-if="!overviewLoading && !hasApprovedCommittee">
+      <DataPanel
+        title="Custody committee required"
+        subtitle="Strongroom vault unlock and custody inspection open only after a committee is nominated and approved"
+      >
+        <div v-if="setupElections.length === 0" class="committee-empty">
+          <EmptyState
+            icon="fas fa-users-cog"
+            title="No elections yet"
+            message="Create an election first, then nominate a custody committee here."
+          />
+        </div>
+
+        <div v-else class="committee-list">
+          <div
+            v-for="election in setupElections"
+            :key="election.uuid"
+            class="committee-row"
+          >
+            <div class="committee-row-main">
+              <p class="committee-election">{{ election.title }}</p>
+              <span class="admin-badge" :class="committeeBadge(election.committee_status)">
+                {{ committeeLabel(election.committee_status) }}
+              </span>
+            </div>
+            <p class="committee-hint">{{ committeeHint(election.committee_status) }}</p>
+            <div class="committee-actions">
+              <button
+                v-if="canNominate(election)"
+                type="button"
+                class="committee-btn committee-btn--primary"
+                :disabled="actionBusy === election.uuid"
+                @click="nominate(election)"
+              >
+                <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-user-plus'"></i>
+                Nominate committee
+              </button>
+              <button
+                v-if="canApprove(election)"
+                type="button"
+                class="committee-btn committee-btn--approve"
+                :disabled="actionBusy === election.uuid"
+                @click="approve(election)"
+              >
+                <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-check'"></i>
+                Approve committee
+              </button>
+              <span v-if="isAuditorOnly" class="committee-wait">Waiting for nomination and Super Admin approval</span>
+            </div>
+            <p v-if="actionError && actionTarget === election.uuid" class="committee-error">{{ actionError }}</p>
+          </div>
+        </div>
+      </DataPanel>
+    </template>
+
     <StrongroomVaultGate
-      v-if="!isUnlocked"
+      v-else-if="hasApprovedCommittee && !isUnlocked"
       :authenticating="authenticating"
       :session-error="sessionError"
       @authenticate="handleAuthenticate"
     />
 
-    <template v-else>
+    <template v-else-if="isUnlocked">
       <div class="vault-secure-bar">
         <div class="vault-secure-left">
           <span class="vault-secure-badge"><i class="fas fa-lock-open"></i> Vault Unlocked</span>
@@ -23,28 +79,88 @@
       </div>
 
       <PageHeader
-        title="Strongroom"
-        subtitle="Secured custody registry — election seals, ballot integrity, and vault evidence."
-        icon="fas fa-shield-alt"
-        icon-tone="tone-teal"
         :loading="loading"
         @refresh="fetchData"
       />
 
-      <div class="stat-grid page-section">
-        <StatCard label="Elections" :value="elections.length" icon="fas fa-box-archive" tone="tone-slate" />
-        <StatCard label="Sealed" :value="sealedCount" hint="Election seals present" icon="fas fa-stamp" tone="tone-teal" value-tone="text-teal-700" />
-        <StatCard label="Ballot Seals" :value="totalBallotSeals" icon="fas fa-layer-group" tone="tone-blue" value-tone="text-blue-700" />
-        <StatCard label="Locked" :value="lockedCount" hint="Custody locked" icon="fas fa-lock" tone="tone-amber" value-tone="text-amber-700" />
+      <div class="kpi-strip">
+        <div class="kpi-item">
+          <p class="kpi-label">Elections</p>
+          <p class="kpi-value">{{ elections.length }}</p>
+        </div>
+        <div class="kpi-item">
+          <p class="kpi-label">Sealed</p>
+          <p class="kpi-value is-ok">{{ sealedCount }}</p>
+          <p class="kpi-hint">Election seals present</p>
+        </div>
+        <div class="kpi-item">
+          <p class="kpi-label">Ballot seals</p>
+          <p class="kpi-value is-info">{{ totalBallotSeals }}</p>
+        </div>
+        <div class="kpi-item">
+          <p class="kpi-label">Committee ready</p>
+          <p class="kpi-value is-ok">{{ approvedInVaultCount }}</p>
+          <p class="kpi-hint">Approved for custody access</p>
+        </div>
       </div>
 
-      <DataPanel title="Custody registry" subtitle="Select an election to request vault access and inspect seals" no-padding>
+      <DataPanel
+        class="page-section"
+        title="Verify seal hash"
+        subtitle="Paste an election or ballot seal hash from this vault to confirm authenticity. This is not a voter receipt code."
+      >
+        <div class="verify-row">
+          <input
+            v-model="sealHashInput"
+            type="text"
+            class="verify-input"
+            placeholder="Paste full seal hash…"
+            spellcheck="false"
+            autocomplete="off"
+            @keydown.enter="verifySealHash"
+          />
+          <button
+            type="button"
+            class="verify-btn"
+            :disabled="!sealHashInput.trim() || verifying"
+            @click="verifySealHash"
+          >
+            <i :class="verifying ? 'fas fa-spinner fa-spin' : 'fas fa-check-double'"></i>
+            {{ verifying ? 'Checking…' : 'Verify' }}
+          </button>
+        </div>
+
+        <div
+          v-if="verifyResult"
+          class="verify-result"
+          :class="verifyResult.valid ? 'is-valid' : 'is-invalid'"
+        >
+          <div class="verify-result__head">
+            <i :class="verifyResult.valid ? 'fas fa-check-circle' : 'fas fa-times-circle'"></i>
+            <strong>{{ verifyResult.valid ? 'Valid seal' : 'No matching seal' }}</strong>
+          </div>
+          <template v-if="verifyResult.valid">
+            <p><span>Type</span> {{ formatSealType(verifyResult.type) }}</p>
+            <p><span>Election</span> {{ verifyResult.election }}</p>
+            <p><span>Status</span> {{ verifyResult.status }}</p>
+            <p><span>Created</span> {{ formatVerifyDate(verifyResult.created_at) }}</p>
+          </template>
+          <p v-else class="verify-result__msg">
+            {{ verifyResult.message || 'That hash is not in the Strongroom registry.' }}
+          </p>
+        </div>
+      </DataPanel>
+
+      <DataPanel title="Custody registry" subtitle="Request vault access only for elections with an approved custody committee" no-padding>
         <div class="custody-grid">
           <div
             v-for="election in paginated"
             :key="election.uuid"
             class="custody-card"
-            :class="{ 'is-sealed': election.election_seal }"
+            :class="{
+              'is-sealed': election.election_seal,
+              'is-blocked': !isCommitteeApproved(election),
+            }"
           >
             <div class="custody-card-header">
               <div class="custody-shield">
@@ -52,7 +168,12 @@
               </div>
               <div>
                 <p class="custody-title">{{ election.title }}</p>
-                <span class="admin-badge" :class="statusBadge(election.status)">{{ election.status }}</span>
+                <div class="custody-badges">
+                  <span class="admin-badge" :class="statusBadge(election.status)">{{ election.status }}</span>
+                  <span class="admin-badge" :class="committeeBadge(election.committee_status)">
+                    {{ committeeLabel(election.committee_status) }}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -73,14 +194,45 @@
               </div>
             </div>
 
-            <button type="button" class="custody-access-btn" @click="openAccessModal(election)">
-              <i class="fas fa-key"></i>
-              Request Vault Access
-            </button>
+            <template v-if="isCommitteeApproved(election)">
+              <button type="button" class="custody-access-btn" @click="openAccessModal(election)">
+                <i class="fas fa-key"></i>
+                Request Vault Access
+              </button>
+            </template>
+            <template v-else>
+              <p class="custody-blocked">{{ committeeHint(election.committee_status) }}</p>
+              <div class="custody-card-actions">
+                <button
+                  v-if="canNominate(election)"
+                  type="button"
+                  class="committee-btn committee-btn--primary"
+                  :disabled="actionBusy === election.uuid"
+                  @click="nominate(election)"
+                >
+                  <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-user-plus'"></i>
+                  Nominate
+                </button>
+                <button
+                  v-if="canApprove(election)"
+                  type="button"
+                  class="committee-btn committee-btn--approve"
+                  :disabled="actionBusy === election.uuid"
+                  @click="approve(election)"
+                >
+                  <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-check'"></i>
+                  Approve
+                </button>
+              </div>
+            </template>
           </div>
 
           <div v-if="!loading && elections.length === 0" class="custody-empty">
-            <EmptyState icon="fas fa-shield-alt" title="No strongroom records" message="Election custody data will appear here." />
+            <EmptyState
+              icon="fas fa-shield-alt"
+              title="No strongroom records"
+              message="Election custody data will appear here once elections exist."
+            />
           </div>
         </div>
 
@@ -98,6 +250,11 @@
         </template>
       </DataPanel>
     </template>
+
+    <div v-else-if="overviewLoading" class="committee-loading">
+      <i class="fas fa-spinner fa-spin"></i>
+      Checking custody committee…
+    </div>
 
     <!-- Access request modal -->
     <Transition name="app-modal">
@@ -140,22 +297,32 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { strongroomApi } from '@/api/strongroom'
+import { useAuthStore } from '@/stores/auth'
 import { useStrongroomVault } from '@/composables/useStrongroomVault'
 import { usePagination } from '@/composables/usePagination'
 import StrongroomVaultGate from '@/components/strongroom/StrongroomVaultGate.vue'
 import PageHeader from '@/components/admin/PageHeader.vue'
-import StatCard from '@/components/admin/StatCard.vue'
 import DataPanel from '@/components/admin/DataPanel.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
 import TablePagination from '@/components/admin/TablePagination.vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const elections = ref([])
+const setupElections = ref([])
+const hasApprovedCommittee = ref(false)
+const overviewLoading = ref(true)
 const loading = ref(false)
 const accessModal = ref(null)
 const accessReason = ref('')
 const accessError = ref('')
 const accessSubmitting = ref(false)
+const sealHashInput = ref('')
+const verifying = ref(false)
+const verifyResult = ref(null)
+const actionBusy = ref(null)
+const actionError = ref('')
+const actionTarget = ref(null)
 
 const {
   isUnlocked,
@@ -169,13 +336,110 @@ const {
 
 const { page, size, total, totalPages, paginated, from, to, setPage, setPageSize } = usePagination(elections, 9)
 
+const isAuditorOnly = computed(() => authStore.roleName === 'auditor' && !authStore.isSuperAdmin && !authStore.isElectionManager)
 const sealedCount = computed(() => elections.value.filter((e) => e.election_seal).length)
 const totalBallotSeals = computed(() => elections.value.reduce((sum, e) => sum + (e.ballot_seals?.length || 0), 0))
-const lockedCount = computed(() => elections.value.filter((e) => e.custody_records?.some((r) => r.action === 'election_locked')).length)
+const approvedInVaultCount = computed(() => elections.value.filter((e) => isCommitteeApproved(e)).length)
 
 const statusBadge = (status) => {
   const map = { draft: 'neutral', scheduled: 'info', open: 'success', paused: 'warning', closed: 'danger', archived: 'neutral' }
   return map[status] || 'neutral'
+}
+
+const isCommitteeApproved = (election) => election?.committee_status === 'approved'
+
+const committeeLabel = (status) => {
+  const map = {
+    none: 'No committee',
+    draft: 'Draft',
+    submitted: 'Awaiting approval',
+    approved: 'Committee approved',
+    rejected: 'Rejected',
+  }
+  return map[status] || status || 'No committee'
+}
+
+const committeeBadge = (status) => {
+  const map = {
+    none: 'neutral',
+    draft: 'neutral',
+    submitted: 'warning',
+    approved: 'success',
+    rejected: 'danger',
+  }
+  return map[status] || 'neutral'
+}
+
+const committeeHint = (status) => {
+  if (status === 'approved') return 'Custody access is available for this election.'
+  if (status === 'submitted') return 'Nomination submitted. Super Admin must approve before vault access.'
+  if (status === 'rejected') return 'Previous nomination was rejected. Nominate a new committee.'
+  return 'Nominate and approve a custody committee before vault access.'
+}
+
+const canNominate = (election) => {
+  if (!authStore.isElectionManager) return false
+  const status = election.committee_status || 'none'
+  return status === 'none' || status === 'draft' || status === 'rejected'
+}
+
+const canApprove = (election) => {
+  if (!authStore.isSuperAdmin) return false
+  const status = election.committee_status
+  return status === 'submitted' || status === 'draft'
+}
+
+const fetchOverview = async () => {
+  overviewLoading.value = true
+  try {
+    const { data } = await strongroomApi.committeeOverview()
+    hasApprovedCommittee.value = !!data.has_approved_committee
+    setupElections.value = data.elections || []
+  } catch (error) {
+    console.error('Failed to load committee overview:', error)
+    hasApprovedCommittee.value = false
+    setupElections.value = []
+  } finally {
+    overviewLoading.value = false
+  }
+}
+
+const nominate = async (election) => {
+  const userUuid = authStore.user?.uuid
+  if (!userUuid) {
+    actionError.value = 'Your account UUID is missing. Re-login and try again.'
+    actionTarget.value = election.uuid
+    return
+  }
+  actionBusy.value = election.uuid
+  actionError.value = ''
+  actionTarget.value = election.uuid
+  try {
+    await strongroomApi.nominateCommittee(election.uuid, [
+      { user_uuid: userUuid, role: 'chair' },
+    ])
+    await fetchOverview()
+    if (isUnlocked.value) await fetchData()
+  } catch (error) {
+    actionError.value = error.response?.data?.error || 'Nomination failed'
+  } finally {
+    actionBusy.value = null
+  }
+}
+
+const approve = async (election) => {
+  actionBusy.value = election.uuid
+  actionError.value = ''
+  actionTarget.value = election.uuid
+  try {
+    await strongroomApi.approveCommittee(election.uuid)
+    await fetchOverview()
+    if (isUnlocked.value) await fetchData()
+  } catch (error) {
+    actionError.value = error.response?.data?.error || 'Approval failed'
+  } finally {
+    actionBusy.value = null
+  }
 }
 
 const handleAuthenticate = async (password) => {
@@ -205,6 +469,7 @@ const fetchData = async () => {
 }
 
 const openAccessModal = (election) => {
+  if (!isCommitteeApproved(election)) return
   accessModal.value = election
   accessReason.value = ''
   accessError.value = ''
@@ -226,7 +491,41 @@ const submitAccess = async () => {
   }
 }
 
+const formatSealType = (type) => {
+  if (type === 'election_seal') return 'Election seal'
+  if (type === 'ballot_seal') return 'Ballot seal'
+  return type || '—'
+}
+
+const formatVerifyDate = (date) => {
+  if (!date) return '—'
+  return new Date(date).toLocaleString()
+}
+
+const verifySealHash = async () => {
+  const hash = sealHashInput.value.trim()
+  if (!hash || verifying.value) return
+  verifying.value = true
+  verifyResult.value = null
+  try {
+    const { data } = await strongroomApi.verifySeal(hash)
+    verifyResult.value = data
+  } catch (error) {
+    verifyResult.value = {
+      valid: false,
+      message: error.response?.data?.error || 'Verification failed. Try again.',
+    }
+  } finally {
+    verifying.value = false
+  }
+}
+
 onMounted(async () => {
+  await fetchOverview()
+  if (!hasApprovedCommittee.value) {
+    await lockVault()
+    return
+  }
   const active = await checkSession()
   if (active) await fetchData()
 })
@@ -235,6 +534,227 @@ onMounted(async () => {
 <style scoped>
 .strongroom-page {
   min-height: 100%;
+}
+
+.committee-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 3rem 1rem;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.committee-empty {
+  padding: 0.5rem 0;
+}
+
+.committee-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.committee-row {
+  border: 1px solid #e7e5e4;
+  border-radius: 0.85rem;
+  padding: 1rem 1.1rem;
+  background: #fafaf9;
+}
+
+.committee-row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+}
+
+.committee-election {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.committee-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: #78716c;
+}
+
+.committee-actions,
+.custody-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.committee-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  border-radius: 0.55rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.committee-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.committee-btn--primary {
+  background: #0f172a;
+  color: #fff;
+}
+
+.committee-btn--approve {
+  background: #0f766e;
+  color: #fff;
+}
+
+.committee-wait {
+  font-size: 0.78rem;
+  color: #a8a29e;
+}
+
+.committee-error {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  color: #dc2626;
+}
+
+.custody-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.custody-blocked {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #a8a29e;
+  line-height: 1.4;
+}
+
+.custody-card.is-blocked {
+  border-color: #e7e5e4;
+  background: #fafaf9;
+}
+
+.custody-card.is-blocked:hover {
+  border-color: #d6d3d1;
+  box-shadow: none;
+}
+
+.verify-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: stretch;
+}
+
+.verify-input {
+  flex: 1 1 16rem;
+  min-width: 0;
+  border: 1px solid #e7e5e4;
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #1c1917;
+  background: #fafaf9;
+}
+
+.verify-input:focus {
+  outline: none;
+  border-color: #99f6e4;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+  background: #fff;
+}
+
+.verify-btn {
+  border: none;
+  background: #0f766e;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 650;
+  padding: 0.7rem 1.05rem;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.verify-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.verify-btn:hover:not(:disabled) {
+  background: #0d6b64;
+}
+
+.verify-result {
+  margin-top: 0.85rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.8rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: #44403c;
+}
+
+.verify-result.is-valid {
+  background: #f0fdf9;
+  border: 1px solid #bbf7d0;
+}
+
+.verify-result.is-invalid {
+  background: #fffbeb;
+  border: 1px solid #f5e6d3;
+}
+
+.verify-result__head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.15rem;
+}
+
+.verify-result.is-valid .verify-result__head {
+  color: #0f766e;
+}
+
+.verify-result.is-invalid .verify-result__head {
+  color: #b45309;
+}
+
+.verify-result p {
+  margin: 0;
+  display: flex;
+  gap: 0.65rem;
+}
+
+.verify-result p span {
+  min-width: 4.5rem;
+  color: #a8a29e;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.verify-result__msg {
+  color: #92400e;
 }
 
 .vault-secure-bar {

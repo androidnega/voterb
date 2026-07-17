@@ -6,10 +6,7 @@ function buildCandidateFormData(data, photoFile) {
   const formData = new FormData()
   if (data.position_uuid) formData.append('position_uuid', data.position_uuid)
   if (data.full_name) formData.append('full_name', data.full_name)
-  if (data.faculty_uuid) formData.append('faculty_uuid', data.faculty_uuid)
-  if (data.department_uuid) formData.append('department_uuid', data.department_uuid)
-  if (data.department) formData.append('department', data.department)
-  if (data.manifesto) formData.append('manifesto', data.manifesto)
+  if (data.manifesto != null) formData.append('manifesto', data.manifesto)
   if (data.ballot_number != null && data.ballot_number !== '') {
     formData.append('ballot_number', String(data.ballot_number))
   }
@@ -50,8 +47,17 @@ export const candidateApi = {
     )
   },
 
-  update(electionUuid, candidateUuid, data) {
-    return api.put(`/elections/${electionUuid}/candidates/${candidateUuid}/`, data)
+  update(electionUuid, candidateUuid, data, photoFile = null) {
+    if (photoFile) {
+      const formData = buildCandidateFormData(data, photoFile)
+      return uploadQueue.enqueue(
+        () => uploadClient.patch(`/elections/${electionUuid}/candidates/${candidateUuid}/`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }),
+        { label: 'candidate-update' }
+      )
+    }
+    return api.patch(`/elections/${electionUuid}/candidates/${candidateUuid}/`, data)
   },
 
   approve(electionUuid, candidateUuid) {

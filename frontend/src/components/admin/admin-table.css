@@ -97,6 +97,12 @@
   border-color: #e2e8f0;
 }
 
+.admin-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+  pointer-events: none;
+}
+
 .admin-icon-btn.danger:hover {
   color: #be123c;
   background: #fff1f2;

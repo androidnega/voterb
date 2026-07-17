@@ -5,7 +5,7 @@ export const academicApi = {
     return api.get('/elections/faculties/', { params })
   },
   createFaculty(data) {
-    return api.post('/elections/faculties/', data)
+    return api.post('/elections/faculties/create/', data)
   },
   updateFaculty(uuid, data) {
     return api.patch(`/elections/faculties/${uuid}/`, data)
@@ -18,26 +18,13 @@ export const academicApi = {
     return api.get('/elections/departments/', { params })
   },
   createDepartment(data) {
-    return api.post('/elections/departments/', data)
+    return api.post('/elections/departments/create/', data)
   },
   updateDepartment(uuid, data) {
     return api.patch(`/elections/departments/${uuid}/`, data)
   },
   deleteDepartment(uuid) {
     return api.delete(`/elections/departments/${uuid}/`)
-  },
-
-  levels() {
-    return api.get('/elections/levels/')
-  },
-  createLevel(data) {
-    return api.post('/elections/levels/', data)
-  },
-  updateLevel(uuid, data) {
-    return api.patch(`/elections/levels/${uuid}/`, data)
-  },
-  deleteLevel(uuid) {
-    return api.delete(`/elections/levels/${uuid}/`)
   },
 }
 

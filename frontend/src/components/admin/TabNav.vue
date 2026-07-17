@@ -1,29 +1,27 @@
 <template>
-  <div class="tab-nav">
+  <nav class="section-switch" aria-label="Sections">
     <button
       v-for="tab in tabs"
       :key="tab.key"
       type="button"
-      class="tab-btn"
+      class="section-tile"
       :class="[
-        tab.tone ? `tab-btn--${tab.tone}` : '',
-        { active: modelValue === tab.key },
+        tab.tone ? `section-tile--${tab.tone}` : '',
+        { 'is-active': modelValue === tab.key },
       ]"
+      :aria-current="modelValue === tab.key ? 'page' : undefined"
       @click="$emit('update:modelValue', tab.key)"
     >
-      <span class="tab-icon" :class="tab.tone ? `tab-icon--${tab.tone}` : ''">
+      <span class="section-tile__icon" aria-hidden="true">
         <i :class="tab.icon"></i>
       </span>
-      <span class="tab-label">{{ tab.label }}</span>
-      <span
-        v-if="tab.count != null"
-        class="tab-count"
-        :class="tab.tone ? `tab-count--${tab.tone}` : ''"
-      >
-        {{ tab.count }}
+      <span class="section-tile__body">
+        <span class="section-tile__label">{{ tab.label }}</span>
+        <span v-if="tab.count != null" class="section-tile__meta">{{ tab.count }}</span>
       </span>
+      <span class="section-tile__mark" aria-hidden="true"></span>
     </button>
-  </div>
+  </nav>
 </template>
 
 <script setup>
@@ -36,125 +34,115 @@ defineEmits(['update:modelValue'])
 </script>
 
 <style scoped>
-.tab-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-  padding: 0.4rem;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.875rem;
+.section-switch {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 1.35rem;
 }
 
-.tab-btn {
+.section-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid var(--vb-line, #ebeae4);
+  background: var(--vb-surface, #fff);
+  color: var(--vb-muted, #8a8a8a);
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    box-shadow 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.section-tile:hover {
+  color: var(--vb-ink, #1c1c1c);
+  border-color: var(--vb-accent-border, #c5d4bc);
+  transform: translateY(-1px);
+}
+
+.section-tile.is-active {
+  color: var(--vb-ink, #1c1c1c);
+  border-color: transparent;
+  background: var(--vb-panel, #f7f6f2);
+  box-shadow: inset 0 0 0 1.5px var(--section-accent, var(--vb-accent, #3d4f44));
+}
+
+.section-tile__icon {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.75rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.85rem 0.5rem 0.5rem;
-  border-radius: 0.65rem;
-  border: 1px solid transparent;
-  background: #fff;
-  color: #64748b;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-
-.tab-btn:hover {
-  border-color: #e2e8f0;
-  color: #334155;
-}
-
-.tab-icon {
-  width: 1.85rem;
-  height: 1.85rem;
-  border-radius: 0.5rem;
-  display: flex;
-  align-items: center;
   justify-content: center;
-  font-size: 0.78rem;
-  background: #f1f5f9;
-  color: #64748b;
-  transition: all 0.18s ease;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  background: var(--vb-panel, #f7f6f2);
+  color: var(--vb-muted, #8a8a8a);
+  transition: background 0.16s ease, color 0.16s ease;
 }
 
-.tab-label {
-  line-height: 1;
-}
-
-.tab-count {
-  min-width: 1.35rem;
-  padding: 0.15rem 0.45rem;
-  border-radius: 9999px;
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 0.68rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Indigo — Positions */
-.tab-icon--indigo { background: #eef2ff; color: #4338ca; }
-.tab-btn--indigo:hover { border-color: #c7d2fe; }
-.tab-btn--indigo.active {
-  background: #eef2ff;
-  border-color: #a5b4fc;
-  color: #3730a3;
-  box-shadow: 0 4px 12px rgba(67, 56, 202, 0.12);
-}
-.tab-btn--indigo.active .tab-icon--indigo { background: #4338ca; color: #fff; }
-.tab-count--indigo { background: #e0e7ff; color: #4338ca; }
-.tab-btn--indigo.active .tab-count--indigo { background: #4338ca; color: #fff; }
-
-/* Amber — Candidates */
-.tab-icon--amber { background: #fffbeb; color: #b45309; }
-.tab-btn--amber:hover { border-color: #fde68a; }
-.tab-btn--amber.active {
-  background: #fffbeb;
-  border-color: #fcd34d;
-  color: #92400e;
-  box-shadow: 0 4px 12px rgba(180, 83, 9, 0.12);
-}
-.tab-btn--amber.active .tab-icon--amber { background: #d97706; color: #fff; }
-.tab-count--amber { background: #fef3c7; color: #b45309; }
-.tab-btn--amber.active .tab-count--amber { background: #d97706; color: #fff; }
-
-/* Teal — Voters */
-.tab-icon--teal { background: #ecfdf5; color: #0f766e; }
-.tab-btn--teal:hover { border-color: #99f6e4; }
-.tab-btn--teal.active {
-  background: #ecfdf5;
-  border-color: #5eead4;
-  color: #0f766e;
-  box-shadow: 0 4px 12px rgba(15, 118, 110, 0.12);
-}
-.tab-btn--teal.active .tab-icon--teal { background: #0f766e; color: #fff; }
-.tab-count--teal { background: #d1fae5; color: #047857; }
-.tab-btn--teal.active .tab-count--teal { background: #0f766e; color: #fff; }
-
-/* Blue — generic fallback */
-.tab-icon--blue { background: #eff6ff; color: #1d4ed8; }
-.tab-btn--blue.active {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  color: #1d4ed8;
-}
-.tab-btn--blue.active .tab-icon--blue { background: #1d4ed8; color: #fff; }
-.tab-count--blue { background: #dbeafe; color: #1d4ed8; }
-.tab-btn--blue.active .tab-count--blue { background: #1d4ed8; color: #fff; }
-
-/* Default active (no tone) */
-.tab-btn.active:not([class*='tab-btn--']) {
-  background: #ecfdf5;
-  border-color: #99f6e4;
-  color: #0f766e;
-}
-
-.tab-btn.active:not([class*='tab-btn--']) .tab-count {
-  background: #0f766e;
+.section-tile.is-active .section-tile__icon {
+  background: var(--section-accent, var(--vb-accent, #3d4f44));
   color: #fff;
+}
+
+.section-tile__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.section-tile__label {
+  font-size: 0.88rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.section-tile__meta {
+  font-size: 0.72rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--vb-muted, #8a8a8a);
+}
+
+.section-tile.is-active .section-tile__meta {
+  color: var(--section-accent, var(--vb-accent, #3d4f44));
+}
+
+.section-tile__mark {
+  position: absolute;
+  left: 0;
+  top: 0.85rem;
+  bottom: 0.85rem;
+  width: 3px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background 0.16s ease;
+}
+
+.section-tile.is-active .section-tile__mark {
+  background: var(--section-accent, var(--vb-accent, #3d4f44));
+}
+
+.section-tile--indigo { --section-accent: #4338ca; }
+.section-tile--amber { --section-accent: #d97706; }
+.section-tile--teal { --section-accent: var(--vb-accent, #3d4f44); }
+.section-tile--slate { --section-accent: #334155; }
+.section-tile--blue { --section-accent: #1d4ed8; }
+
+@media (max-width: 640px) {
+  .section-switch {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

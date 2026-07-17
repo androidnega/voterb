@@ -48,5 +48,13 @@ export const electionApi = {
   // Create position
   createPosition(electionUuid, data) {
     return api.post(`/elections/${electionUuid}/positions/`, data)
-  }
+  },
+
+  updatePosition(electionUuid, positionUuid, data) {
+    return api.patch(`/elections/${electionUuid}/positions/${positionUuid}/`, data)
+  },
+
+  deletePosition(electionUuid, positionUuid) {
+    return api.delete(`/elections/${electionUuid}/positions/${positionUuid}/`)
+  },
 }

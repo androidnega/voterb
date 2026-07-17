@@ -116,16 +116,21 @@ const menuItems = computed(() => {
   if (role === 'super_admin' || authStore.isSuperAdmin) {
     return [
       { path: '/dashboard', label: 'Dashboard', icon: 'fas fa-th-large' },
+      { path: '/institutions', label: 'Institutions', icon: 'fas fa-university' },
       { path: '/users', label: 'Users', icon: 'fas fa-users' },
-      { path: '/academic', label: 'Academic', icon: 'fas fa-university' },
+      { path: '/categories', label: 'Categories', icon: 'fas fa-layer-group' },
       { path: '/audit', label: 'Audit', icon: 'fas fa-clipboard-list' },
       { path: '/operations', label: 'Operations', icon: 'fas fa-server' },
     ]
   }
 
-  if (role === 'admin') {
+  if (role === 'admin' || authStore.isMainEC) {
     return [
       { path: '/dashboard', label: 'Dashboard', icon: 'fas fa-th-large' },
+      { path: '/approvals', label: 'Dual Approvals', icon: 'fas fa-check-double' },
+      { path: '/categories', label: 'Categories', icon: 'fas fa-layer-group' },
+      { path: '/register', label: 'Register', icon: 'fas fa-book' },
+      { path: '/sub-ec', label: 'Sub ECs', icon: 'fas fa-sitemap' },
       { path: '/elections', label: 'Elections', icon: 'fas fa-calendar-check' },
       { path: '/results', label: 'Results', icon: 'fas fa-chart-bar' },
       { path: '/strongroom', label: 'Strongroom', icon: 'fas fa-shield-alt' },
@@ -135,22 +140,22 @@ const menuItems = computed(() => {
     ]
   }
 
-  if (role === 'auditor') {
+  if (role === 'sub_ec' || authStore.isSubEC) {
+    return [
+      { path: '/dashboard', label: 'Dashboard', icon: 'fas fa-th-large' },
+      { path: '/elections', label: 'Elections', icon: 'fas fa-calendar-check' },
+      { path: '/results', label: 'Results', icon: 'fas fa-chart-bar' },
+      { path: '/audit', label: 'Audit', icon: 'fas fa-clipboard-list' },
+    ]
+  }
+
+  if (role === 'auditor' || authStore.isAuditor) {
     return [
       { path: '/dashboard', label: 'Dashboard', icon: 'fas fa-th-large' },
       { path: '/elections', label: 'Elections', icon: 'fas fa-calendar-check' },
       { path: '/results', label: 'Results', icon: 'fas fa-chart-bar' },
       { path: '/strongroom', label: 'Strongroom', icon: 'fas fa-shield-alt' },
       { path: '/audit', label: 'Audit', icon: 'fas fa-clipboard-list' },
-    ]
-  }
-
-  if (authStore.isAdmin) {
-    return [
-      { path: '/dashboard', label: 'Dashboard', icon: 'fas fa-th-large' },
-      { path: '/elections', label: 'Elections', icon: 'fas fa-calendar-check' },
-      { path: '/results', label: 'Results', icon: 'fas fa-chart-bar' },
-      { path: '/strongroom', label: 'Strongroom', icon: 'fas fa-shield-alt' },
     ]
   }
 
@@ -252,6 +257,14 @@ const closeMobileMenu = () => {
   overflow-y: auto;
   min-height: 0;
   padding: 0.15rem 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.soft-sidebar__nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .soft-sidebar__list {

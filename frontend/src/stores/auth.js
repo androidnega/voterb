@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import api from '@/api/client'
 
+/** Normalize role from API payloads (string, { name }, role_name, flags). */
 export function resolveRoleName(user) {
   if (!user) return ''
   if (typeof user.role_name === 'string' && user.role_name) return user.role_name
@@ -14,89 +15,76 @@ export function resolveRoleName(user) {
   return ''
 }
 
-function isAdminRole(role, user) {
-  return ['admin', 'super_admin', 'auditor'].includes(role) ||
-    !!user?.is_staff || !!user?.is_superuser
+function isStaffRole(role, user) {
+  return ['admin', 'sub_ec', 'super_admin', 'auditor'].includes(role) ||
+    !!user?.is_staff ||
+    !!user?.is_superuser
 }
 
 function isStudentRole(role, user) {
   return role === 'student' || role === 'candidate' ||
-    (!!user?.index_number && !isAdminRole(role, user))
+    (!!user?.index_number && !isStaffRole(role, user))
 }
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
     isAuthenticated: false,
+    initialized: false,
+    bootstrapping: false,
     pendingOtp: null,
     isNewUser: false,
-    requiresOnboarding: false,
-    initialized: false,
-    initPromise: null,
-    bootstrapping: false,
+    needsOnboarding: false,
+    roleName: null,
+    isSuperAdmin: false,
+    isElectionManager: false,
+    isMainEC: false,
+    isSubEC: false,
+    isAuditor: false,
+    isStudent: false,
+    institution: null,
+    ecMemberships: [],
+    governance: null,
   }),
 
   getters: {
-    roleName: (state) => resolveRoleName(state.user),
-    needsOnboarding: (state) => {
-      if (!isStudentRole(resolveRoleName(state.user), state.user)) return false
-      // Only the server flag matters — never re-onboard completed students
-      if (state.user?.onboarding_completed === true) return false
-      return state.user?.onboarding_completed === false
-    },
-    isSuperAdmin: (state) => {
-      const role = resolveRoleName(state.user)
-      return role === 'super_admin' || !!state.user?.is_superuser
-    },
-    isElectionManager: (state) => resolveRoleName(state.user) === 'admin',
-    isAuditor: (state) => resolveRoleName(state.user) === 'auditor',
-    isAdmin: (state) => isAdminRole(resolveRoleName(state.user), state.user),
-    isStudent: (state) => isStudentRole(resolveRoleName(state.user), state.user),
+    isAdmin: (state) => state.isElectionManager || state.isSuperAdmin || state.isAuditor,
     homeRoute: (state) => {
-      const role = resolveRoleName(state.user)
-      if (isStudentRole(role, state.user)) {
-        if (state.user?.onboarding_completed === false) return '/onboarding'
+      if (isStudentRole(state.roleName, state.user)) {
+        if (state.needsOnboarding) return '/onboarding'
         return '/student'
       }
-      if (isAdminRole(role, state.user)) return '/dashboard'
+      if (isStaffRole(state.roleName, state.user)) return '/dashboard'
       return '/login'
     },
   },
 
   actions: {
-    syncOnboardingFlag(user = this.user) {
-      const needs = isStudentRole(resolveRoleName(user), user) && user?.onboarding_completed === false
-      this.requiresOnboarding = needs
-      if (needs) localStorage.setItem('requires_onboarding', 'true')
-      else localStorage.removeItem('requires_onboarding')
-      return needs
-    },
-
     async login(identifier, password = null) {
-      const requestData = { identifier }
-      if (password) requestData.password = password
+      try {
+        const requestData = { identifier }
+        if (password) requestData.password = password
 
-      const response = await api.post('/accounts/auth/login/', requestData)
+        const response = await api.post('/accounts/auth/login/', requestData)
 
-      if (response.data.requires_password) {
-        return { requires_password: true }
-      }
-
-      if (response.data.requires_otp) {
-        this.pendingOtp = response.data.otp_session_id
-        this.isNewUser = response.data.is_new_user || false
-        this.requiresOnboarding = !!response.data.requires_onboarding
-        if (!this.requiresOnboarding) localStorage.removeItem('requires_onboarding')
-        return {
-          requires_otp: true,
-          is_staff: response.data.is_staff,
-          requires_onboarding: this.requiresOnboarding,
+        if (response.data.requires_password) {
+          return { requires_password: true }
         }
-      }
 
-      this.setTokens(response.data)
-      await this.fetchMe()
-      return { success: true, homeRoute: this.homeRoute }
+        if (response.data.requires_otp) {
+          this.pendingOtp = response.data.otp_session_id
+          this.isNewUser = response.data.is_new_user || false
+          return { requires_otp: true }
+        }
+
+        await this.applyAuthResponse(response.data)
+        return { success: true, homeRoute: this.homeRoute }
+      } catch (error) {
+        if (error.response?.data?.requires_password) {
+          return { requires_password: true }
+        }
+        throw error
+      }
     },
 
     async verifyOtp(otpSessionId, code) {
@@ -104,15 +92,16 @@ export const useAuthStore = defineStore('auth', {
         otp_session_id: otpSessionId,
         code,
       })
-      this.isNewUser = response.data.is_new_user || false
-      this.requiresOnboarding = !!response.data.requires_onboarding
       await this.applyAuthResponse(response.data)
-      this.syncOnboardingFlag(this.user)
-      return {
-        success: true,
-        homeRoute: this.homeRoute,
-        requires_onboarding: this.needsOnboarding,
-      }
+      return { success: true, homeRoute: this.homeRoute }
+    },
+
+    async resendOtp(otpSessionId) {
+      const response = await api.post('/accounts/auth/otp/resend/', {
+        otp_session_id: otpSessionId,
+      })
+      this.pendingOtp = response.data.otp_session_id
+      return { success: true }
     },
 
     async applyAuthResponse(data) {
@@ -120,71 +109,116 @@ export const useAuthStore = defineStore('auth', {
       try {
         await this.fetchMe()
       } catch (error) {
-        // Keep session from OTP/login payload if /me is temporarily unavailable
-        console.warn('Profile fetch failed after auth; using token payload.', error)
-        this.hydrateUserFromTokenPayload(data)
-        this.syncOnboardingFlag(this.user)
+        // Tokens are valid enough to keep session; role already set from OTP payload.
+        console.warn('Failed to hydrate /me after auth:', error)
       }
-    },
-
-    hydrateUserFromTokenPayload(data) {
-      const completed =
-        data.onboarding_completed === true
-          ? true
-          : data.onboarding_completed === false
-            ? false
-            : data.requires_onboarding !== true
-      this.user = {
-        uuid: data.user_uuid,
-        role_name: data.role_name || data.role || localStorage.getItem('user_role'),
-        role: data.role_name || data.role ? { name: data.role_name || data.role } : null,
-        is_staff: data.is_staff,
-        is_superuser: data.is_superuser,
-        index_number: data.index_number || null,
-        onboarding_completed: completed,
-      }
-      this.isAuthenticated = true
-      this.syncOnboardingFlag(this.user)
     },
 
     setTokens(data) {
       localStorage.setItem('access_token', data.access)
       localStorage.setItem('refresh_token', data.refresh)
-      localStorage.setItem('user_uuid', data.user_uuid)
-      localStorage.setItem('session_uuid', data.session_uuid)
+      if (data.user_uuid) localStorage.setItem('user_uuid', data.user_uuid)
+      if (data.session_uuid) localStorage.setItem('session_uuid', data.session_uuid)
 
-      const role = data.role_name || data.role
-      if (role) localStorage.setItem('user_role', role)
+      const roleRaw = data.role ?? data.role_name
+      const roleName = typeof roleRaw === 'string'
+        ? roleRaw
+        : (roleRaw?.name || '')
 
-      if (this.isNewUser) {
+      if (roleName) localStorage.setItem('user_role', roleName)
+
+      if (data.is_new_user || this.isNewUser) {
+        this.isNewUser = true
         localStorage.setItem('is_new_user', 'true')
-      }
-
-      // Prefer explicit server onboarding flag over sticky localStorage
-      if (data.onboarding_completed === true) {
-        this.requiresOnboarding = false
-        localStorage.removeItem('requires_onboarding')
-      } else if (data.requires_onboarding === true) {
-        this.requiresOnboarding = true
-        localStorage.setItem('requires_onboarding', 'true')
-      } else if (data.requires_onboarding === false) {
-        this.requiresOnboarding = false
-        localStorage.removeItem('requires_onboarding')
       }
 
       this.isAuthenticated = true
       this.pendingOtp = null
-      this.hydrateUserFromTokenPayload(data)
+
+      // OTP returns role as a plain string — normalize before resolveRoles()
+      this.user = {
+        uuid: data.user_uuid,
+        role: roleName ? { name: roleName } : null,
+        role_name: roleName || null,
+        is_superuser: !!data.is_superuser,
+        is_staff: !!data.is_staff,
+        index_number: data.index_number || null,
+        onboarding_completed: data.onboarding_completed,
+      }
+
+      this.resolveRoles()
+      this.syncOnboardingFlag()
     },
 
     async fetchMe() {
       const response = await api.get('/accounts/auth/me/')
       this.user = response.data
       this.isAuthenticated = true
-      this.syncOnboardingFlag(this.user)
-      const role = resolveRoleName(this.user)
-      if (role) localStorage.setItem('user_role', role)
+      this.resolveRoles()
+      this.syncOnboardingFlag()
       return this.user
+    },
+
+    resolveRoles() {
+      const role = resolveRoleName(this.user)
+      this.roleName = role || null
+      this.isSuperAdmin = role === 'super_admin' || !!this.user?.is_superuser
+      this.isMainEC = role === 'admin' || !!this.user?.is_main_ec
+      this.isSubEC = role === 'sub_ec' || !!this.user?.is_sub_ec
+      // Main EC and Sub EC can each manage elections in their own scope
+      this.isElectionManager = this.isMainEC || this.isSubEC
+      this.isAuditor = role === 'auditor'
+      this.isStudent = isStudentRole(role, this.user)
+      this.institution = this.user?.institution || null
+      this.ecMemberships = Array.isArray(this.user?.ec_memberships) ? this.user.ec_memberships : []
+      this.governance = this.user?.governance || null
+      if (role) localStorage.setItem('user_role', role)
+    },
+
+    syncOnboardingFlag() {
+      if (!this.isStudent) {
+        this.needsOnboarding = false
+        localStorage.removeItem('requires_onboarding')
+        localStorage.removeItem('needs_onboarding')
+        return false
+      }
+      // Prefer explicit server flag; fall back to is_new_user only when unknown
+      if (this.user?.onboarding_completed === true) {
+        this.needsOnboarding = false
+      } else if (this.user?.onboarding_completed === false) {
+        this.needsOnboarding = true
+      } else {
+        this.needsOnboarding = this.isNewUser || localStorage.getItem('is_new_user') === 'true'
+      }
+      if (this.needsOnboarding) {
+        localStorage.setItem('requires_onboarding', 'true')
+        localStorage.setItem('needs_onboarding', 'true')
+      } else {
+        localStorage.removeItem('requires_onboarding')
+        localStorage.removeItem('needs_onboarding')
+      }
+      return this.needsOnboarding
+    },
+
+    clearLocalStorage() {
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      localStorage.removeItem('user_uuid')
+      localStorage.removeItem('session_uuid')
+      localStorage.removeItem('user_role')
+      localStorage.removeItem('is_new_user')
+      localStorage.removeItem('needs_onboarding')
+      localStorage.removeItem('requires_onboarding')
+      this.isAuthenticated = false
+      this.user = null
+      this.pendingOtp = null
+      this.isNewUser = false
+      this.needsOnboarding = false
+      this.roleName = null
+      this.isSuperAdmin = false
+      this.isElectionManager = false
+      this.isAuditor = false
+      this.isStudent = false
     },
 
     async logout() {
@@ -196,68 +230,25 @@ export const useAuthStore = defineStore('auth', {
         // Ignore logout errors
       }
       this.clearLocalStorage()
-    },
-
-    clearLocalStorage() {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      localStorage.removeItem('user_uuid')
-      localStorage.removeItem('session_uuid')
-      localStorage.removeItem('user_role')
-      localStorage.removeItem('is_new_user')
-      localStorage.removeItem('requires_onboarding')
-      this.isAuthenticated = false
-      this.user = null
-      this.pendingOtp = null
-      this.isNewUser = false
-      this.requiresOnboarding = false
-      this.initialized = false
-      this.initPromise = null
-      this.bootstrapping = false
-    },
-
-    async resendOtp() {
-      return { success: false, error: 'Resend is not available yet. Please log in again.' }
+      this.initialized = true
     },
 
     async initialize() {
       if (this.initialized) return
-      if (this.initPromise) return this.initPromise
-
       const token = localStorage.getItem('access_token')
       if (!token) {
         this.initialized = true
         return
       }
-
-      this.initPromise = (async () => {
-        try {
-          await this.fetchMe()
-        } catch {
-          const role = localStorage.getItem('user_role')
-          const userUuid = localStorage.getItem('user_uuid')
-          if (token && userUuid) {
-            this.isAuthenticated = true
-            this.user = {
-              uuid: userUuid,
-              role_name: role,
-              role: role ? { name: role } : null,
-              is_staff: ['admin', 'super_admin', 'auditor'].includes(role),
-              is_superuser: role === 'super_admin',
-              // Unknown until /me succeeds — do not force onboarding from stale cache
-              onboarding_completed: localStorage.getItem('requires_onboarding') === 'true' ? false : true,
-            }
-            this.syncOnboardingFlag(this.user)
-          } else {
-            this.clearLocalStorage()
-          }
-        } finally {
-          this.initialized = true
-          this.initPromise = null
-        }
-      })()
-
-      return this.initPromise
+      try {
+        await this.fetchMe()
+        this.isNewUser = localStorage.getItem('is_new_user') === 'true'
+        this.syncOnboardingFlag()
+      } catch (error) {
+        console.error('Token validation failed:', error)
+        this.clearLocalStorage()
+      }
+      this.initialized = true
     },
   },
 })

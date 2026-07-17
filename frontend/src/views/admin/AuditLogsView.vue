@@ -1,13 +1,6 @@
 <template>
   <div class="audit-page">
-    <header class="audit-hero">
-      <div>
-        <h1 class="audit-hero__title">Voter audit trail</h1>
-        <p class="audit-hero__sub">
-          Device, location, and presence records for voters who cast a ballot.
-          Ballot choices are never shown.
-        </p>
-      </div>
+    <header class="audit-hero audit-hero--actions">
       <button type="button" class="audit-icon-btn" :disabled="loading" title="Refresh" @click="fetchLogs">
         <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
       </button>
@@ -391,6 +384,11 @@ onMounted(fetchLogs)
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.35rem;
+}
+
+.audit-hero--actions {
+  justify-content: flex-end;
+  margin-bottom: 1rem;
 }
 
 .audit-hero__title {

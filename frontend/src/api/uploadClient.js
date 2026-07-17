@@ -3,7 +3,7 @@ import axios from 'axios'
 /** Axios client for multipart uploads — longer timeout, no JSON default header */
 const uploadClient = axios.create({
   baseURL: '/api/v1',
-  timeout: 120000,
+  timeout: 300000, // 5 min — large register CSV chunks
 })
 
 const NO_REFRESH_PATHS = [

@@ -1,10 +1,6 @@
 <template>
   <div class="admin-page">
     <PageHeader
-      title="Settings"
-      subtitle="Platform appearance, feature flags, and maintenance controls."
-      icon="fas fa-sliders-h"
-      icon-tone="tone-teal"
       :show-refresh="false"
     >
       <template #actions>
@@ -136,33 +132,82 @@
         </label>
       </DataPanel>
 
-      <DataPanel title="Institution" subtitle="Profile used across the platform">
-        <div class="info-grid">
-          <div class="info-item"><span>Name</span><strong>{{ institution.name || '—' }}</strong></div>
-          <div class="info-item"><span>Short name</span><strong>{{ institution.short_name || '—' }}</strong></div>
-          <div class="info-item"><span>Signed in as</span><strong>{{ userLabel }}</strong></div>
-          <div class="info-item"><span>Role</span><strong class="capitalize">{{ roleName.replace('_', ' ') }}</strong></div>
+      <DataPanel title="Institution" subtitle="Name and logo shown on ballot boxes and platform branding">
+        <div class="inst-editor">
+          <div class="inst-logo-block">
+            <div class="inst-logo-preview">
+              <img
+                v-if="institutionLogoPreview"
+                :src="institutionLogoPreview"
+                alt="Institution logo"
+              />
+              <span v-else class="inst-logo-empty">No logo</span>
+            </div>
+            <label class="inst-upload">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                :disabled="institutionSaving"
+                @change="onLogoSelected"
+              />
+              <span>{{ institutionSaving ? 'Saving…' : 'Change logo' }}</span>
+            </label>
+            <p class="inst-hint">Used next to the EC badge on the sealed ballot box.</p>
+          </div>
+
+          <div class="inst-fields">
+            <label class="inst-field">
+              <span>Institution name</span>
+              <input v-model="institutionForm.name" type="text" maxlength="255" />
+            </label>
+            <label class="inst-field">
+              <span>Short name</span>
+              <input v-model="institutionForm.short_name" type="text" maxlength="50" />
+            </label>
+            <button
+              type="button"
+              class="btn btn-primary"
+              :disabled="institutionSaving"
+              @click="saveInstitution"
+            >
+              {{ institutionSaving ? 'Saving…' : 'Save institution' }}
+            </button>
+          </div>
         </div>
       </DataPanel>
     </div>
 
-    <p v-if="saveMessage" class="save-toast"><i class="fas fa-check-circle"></i> {{ saveMessage }}</p>
+    <Transition name="save-toast">
+      <p
+        v-if="saveMessage"
+        class="save-toast"
+        :class="{ 'is-error': saveTone === 'error' }"
+        role="status"
+        aria-live="polite"
+      >
+        <i :class="saveTone === 'error' ? 'fas fa-exclamation-circle' : 'fas fa-check-circle'"></i>
+        {{ saveMessage }}
+      </p>
+    </Transition>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useToast } from 'primevue/usetoast'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { systemApi } from '@/api/system'
-import { formatIndexDisplay } from '@/utils/index'
+import { resolveMediaUrl } from '@/utils/media'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import DataPanel from '@/components/admin/DataPanel.vue'
 
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
+const toast = useToast()
 
 const saveMessage = ref('')
+const saveTone = ref('success')
 const saving = ref(false)
 const selectedTheme = ref(themeStore.theme)
 const selectedDashboard = ref(themeStore.dashboard)
@@ -174,6 +219,9 @@ const securitySettings = ref([])
 const securityLoading = ref(false)
 const securitySavingKey = ref('')
 const institution = ref({})
+const institutionForm = ref({ name: '', short_name: '' })
+const institutionSaving = ref(false)
+const logoObjectUrl = ref('')
 const maintenance = ref({ is_active: false, message: '' })
 const maintenanceSaving = ref(false)
 
@@ -198,25 +246,24 @@ const FLAG_LABELS = {
 }
 
 const SECURITY_LABELS = {
-  otp_length: 'OTP digits (after rte-)',
+  otp_length: 'OTP digits',
   otp_expiry_minutes: 'OTP expiry (minutes)',
-  svt_expiry_minutes: 'SVT expiry (minutes)',
-  svt_max_requests_per_hour: 'SVT max requests / hour',
+  svt_expiry_minutes: 'SVT lifetime (minutes)',
+  svt_max_requests_total: 'SVT max requests / voter',
   svt_resend_cooldown_seconds: 'SVT resend cooldown (seconds)',
   svt_max_validation_attempts: 'SVT max failed attempts',
+  svt_cross_user_block_minutes: 'SVT cross-user block (minutes)',
   session_timeout_minutes: 'Session timeout (minutes)',
   max_login_attempts: 'Max login attempts',
 }
 
 const SECURITY_KEYS = Object.keys(SECURITY_LABELS)
 
-const roleName = computed(() => authStore.roleName)
 const isSuperAdmin = computed(() => authStore.isSuperAdmin)
-const userLabel = computed(() => {
-  const user = authStore.user
-  if (!user) return 'Unknown'
-  if (user.index_number) return formatIndexDisplay(user.index_number)
-  return user.email || 'Unknown'
+
+const institutionLogoPreview = computed(() => {
+  if (logoObjectUrl.value) return logoObjectUrl.value
+  return resolveMediaUrl(institution.value?.logo) || '/images/institution-logo.png'
 })
 
 const themeOptions = computed(() => (
@@ -239,9 +286,18 @@ const dashboardOptions = computed(() => (
 const flagLabel = (flag) => FLAG_LABELS[flag.key] || flag.key.replaceAll('_', ' ')
 const securityLabel = (key) => SECURITY_LABELS[key] || key.replaceAll('_', ' ')
 
-const flash = (message) => {
+const flash = (message, tone = 'success') => {
+  saveTone.value = tone
   saveMessage.value = message
-  setTimeout(() => { saveMessage.value = '' }, 3000)
+  window.clearTimeout(flash._timer)
+  flash._timer = window.setTimeout(() => { saveMessage.value = '' }, 3200)
+
+  toast.add({
+    severity: tone === 'error' ? 'error' : 'success',
+    summary: tone === 'error' ? 'Could not save' : 'Appearance saved',
+    detail: message,
+    life: 3200,
+  })
 }
 
 const selectTheme = (themeId) => {
@@ -257,12 +313,16 @@ const selectDashboard = (dashboardId) => {
 const saveAppearance = async () => {
   saving.value = true
   try {
+    // Apply locally first, then persist both keys in one request
     await themeStore.setTheme(selectedTheme.value)
-    await themeStore.setDashboard(selectedDashboard.value, { persistRemote: true })
-    flash('Appearance saved for all users.')
+    await themeStore.setDashboard(selectedDashboard.value)
+    await themeStore.saveAppearance()
+    const themeLabel = themeOptions.value.find((o) => o.id === selectedTheme.value)?.label || selectedTheme.value
+    const dashLabel = dashboardOptions.value.find((o) => o.id === selectedDashboard.value)?.label || selectedDashboard.value
+    flash(`${themeLabel} · ${dashLabel} applied for all users.`)
   } catch (error) {
     console.error(error)
-    flash('Could not sync appearance to the server.')
+    flash('Could not sync appearance to the server.', 'error')
   } finally {
     saving.value = false
   }
@@ -300,8 +360,61 @@ const loadInstitution = async () => {
   try {
     const { data } = await systemApi.getInstitution()
     institution.value = data || {}
+    institutionForm.value = {
+      name: data?.name || '',
+      short_name: data?.short_name || '',
+    }
   } catch (error) {
     console.error(error)
+  }
+}
+
+const saveInstitution = async () => {
+  institutionSaving.value = true
+  try {
+    const { data } = await systemApi.updateInstitution({
+      name: institutionForm.value.name.trim() || 'VoterB',
+      short_name: institutionForm.value.short_name.trim() || 'VoterB',
+    })
+    institution.value = data || {}
+    institutionForm.value = {
+      name: data?.name || institutionForm.value.name,
+      short_name: data?.short_name || institutionForm.value.short_name,
+    }
+    flash('Institution profile saved.')
+  } catch (error) {
+    console.error(error)
+    flash('Failed to save institution profile.')
+  } finally {
+    institutionSaving.value = false
+  }
+}
+
+const onLogoSelected = async (event) => {
+  const file = event.target?.files?.[0]
+  event.target.value = ''
+  if (!file) return
+
+  if (logoObjectUrl.value) URL.revokeObjectURL(logoObjectUrl.value)
+  logoObjectUrl.value = URL.createObjectURL(file)
+
+  institutionSaving.value = true
+  try {
+    const { data } = await systemApi.updateInstitutionLogo(file, {
+      name: institutionForm.value.name.trim() || institution.value.name || 'VoterB',
+      short_name: institutionForm.value.short_name.trim() || institution.value.short_name || 'VoterB',
+    })
+    institution.value = data || {}
+    flash('Institution logo updated.')
+  } catch (error) {
+    console.error(error)
+    flash('Failed to upload logo.')
+    if (logoObjectUrl.value) {
+      URL.revokeObjectURL(logoObjectUrl.value)
+      logoObjectUrl.value = ''
+    }
+  } finally {
+    institutionSaving.value = false
   }
 }
 
@@ -512,5 +625,143 @@ onMounted(async () => {
   font: inherit;
   color: var(--vb-ink, #1c1c1c);
   resize: vertical;
+}
+
+.inst-editor {
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (min-width: 720px) {
+  .inst-editor {
+    grid-template-columns: auto 1fr;
+    align-items: start;
+  }
+}
+
+.inst-logo-block {
+  display: grid;
+  gap: 0.65rem;
+  justify-items: start;
+}
+
+.inst-logo-preview {
+  width: 5.5rem;
+  height: 5.5rem;
+  border-radius: 1rem;
+  border: 1px solid var(--vb-line, #ebeae4);
+  background: #fafaf9;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.inst-logo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 0.45rem;
+}
+
+.inst-logo-empty {
+  font-size: 0.75rem;
+  color: var(--vb-muted, #8a8a8a);
+}
+
+.inst-upload {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.inst-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.inst-upload span {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  background: #1c1917;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.inst-upload input:disabled + span {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.inst-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--vb-muted, #8a8a8a);
+  max-width: 14rem;
+  line-height: 1.4;
+}
+
+.inst-fields {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.inst-field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--vb-muted, #8a8a8a);
+}
+
+.inst-field input {
+  border: 1px solid var(--vb-line, #ebeae4);
+  border-radius: 0.7rem;
+  padding: 0.65rem 0.8rem;
+  font: inherit;
+  font-weight: 650;
+  color: var(--vb-ink, #1c1c1c);
+  background: #fafaf9;
+}
+
+.save-toast {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  max-width: min(24rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.85rem 1.05rem;
+  border-radius: 1rem;
+  background: var(--vb-ink, #1c1c1c);
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 650;
+  box-shadow: 0 16px 40px rgba(28, 28, 28, 0.22);
+}
+
+.save-toast i {
+  color: #9fdfb3;
+}
+
+.save-toast.is-error i {
+  color: #f5b5b5;
+}
+
+.save-toast-enter-active,
+.save-toast-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.save-toast-enter-from,
+.save-toast-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
 }
 </style>

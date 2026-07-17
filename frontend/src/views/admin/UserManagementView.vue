@@ -1,10 +1,6 @@
 <template>
   <div class="admin-page">
     <PageHeader
-      title="Users"
-      subtitle="Create accounts, assign roles, and manage platform access."
-      icon="fas fa-users-cog"
-      icon-tone="tone-slate"
       :loading="loading"
       :show-refresh="true"
       @refresh="fetchUsers"
@@ -16,11 +12,23 @@
       </template>
     </PageHeader>
 
-    <div class="stat-grid page-section">
-      <StatCard label="Total Users" :value="stats.total" icon="fas fa-users" tone="tone-slate" />
-      <StatCard label="Active" :value="stats.active" icon="fas fa-user-check" tone="tone-teal" value-tone="text-teal-700" />
-      <StatCard label="Students" :value="stats.students" icon="fas fa-graduation-cap" tone="tone-blue" value-tone="text-blue-700" />
-      <StatCard label="Staff" :value="stats.admins" icon="fas fa-id-badge" tone="tone-indigo" value-tone="text-indigo-700" />
+    <div class="kpi-strip">
+      <div class="kpi-item">
+        <p class="kpi-label">Total users</p>
+        <p class="kpi-value">{{ stats.total }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Active</p>
+        <p class="kpi-value is-ok">{{ stats.active }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Students</p>
+        <p class="kpi-value is-info">{{ stats.students }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Staff</p>
+        <p class="kpi-value">{{ stats.admins }}</p>
+      </div>
     </div>
 
     <div class="filter-bar page-section">
@@ -38,7 +46,7 @@
       <button type="button" class="btn btn-ghost" @click="clearFilters">Clear</button>
     </div>
 
-    <DataPanel title="User directory" subtitle="All platform accounts" no-padding>
+    <section class="table-surface">
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -82,7 +90,7 @@
           </tbody>
         </table>
       </div>
-      <template #footer>
+      <div class="table-surface__foot">
         <TablePagination
           :page="page"
           :page-size="size"
@@ -93,8 +101,8 @@
           @update:page="setPage"
           @update:page-size="setPageSize"
         />
-      </template>
-    </DataPanel>
+      </div>
+    </section>
 
     <Dialog v-model:visible="showDialog" :header="isEditing ? 'Edit User' : 'Add User'" :modal="true" class="w-full max-w-lg">
       <form @submit.prevent="submitUser" class="dialog-form">
@@ -108,6 +116,12 @@
           <div><label>Phone</label><InputText v-model="form.phone_number" class="w-full" /></div>
         </div>
         <div><label>Role</label><Dropdown v-model="form.role_uuid" :options="roles" optionLabel="name" optionValue="uuid" placeholder="Select role" class="w-full" required /></div>
+        <template v-if="isStudentRole">
+          <FacultyDepartmentSelect
+            v-model:faculty-uuid="form.faculty_uuid"
+            v-model:department-uuid="form.department_uuid"
+          />
+        </template>
         <div v-if="!isEditing"><label>Password</label><InputText v-model="form.password" type="password" class="w-full" required /></div>
         <div v-if="isEditing">
           <label>Reset Password</label>
@@ -131,14 +145,13 @@ import { usersApi } from '@/api/users'
 import { formatIndexDisplay } from '@/utils/index'
 import { usePagination } from '@/composables/usePagination'
 import PageHeader from '@/components/admin/PageHeader.vue'
-import StatCard from '@/components/admin/StatCard.vue'
-import DataPanel from '@/components/admin/DataPanel.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
 import TablePagination from '@/components/admin/TablePagination.vue'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Dropdown from 'primevue/dropdown'
+import FacultyDepartmentSelect from '@/components/academic/FacultyDepartmentSelect.vue'
 
 const users = ref([])
 const roles = ref([])
@@ -158,9 +171,24 @@ const statusOptions = [
   { label: 'Inactive', value: 'false' },
 ]
 
-const form = ref({
-  email: '', first_name: '', last_name: '', index_number: '', phone_number: '',
-  role_uuid: null, password: '', new_password: '',
+const emptyForm = () => ({
+  email: '',
+  first_name: '',
+  last_name: '',
+  index_number: '',
+  phone_number: '',
+  role_uuid: null,
+  password: '',
+  new_password: '',
+  faculty_uuid: null,
+  department_uuid: null,
+})
+
+const form = ref(emptyForm())
+
+const isStudentRole = computed(() => {
+  const role = roles.value.find((r) => r.uuid === form.value.role_uuid)
+  return role?.name === 'student'
 })
 
 const stats = computed(() => {
@@ -213,7 +241,7 @@ const formatDate = (date) => date ? new Date(date).toLocaleDateString('en-US', {
 const openCreateDialog = () => {
   isEditing.value = false
   editingUser.value = null
-  form.value = { email: '', first_name: '', last_name: '', index_number: '', phone_number: '', role_uuid: null, password: '', new_password: '' }
+  form.value = emptyForm()
   showDialog.value = true
 }
 
@@ -221,9 +249,15 @@ const editUser = (user) => {
   isEditing.value = true
   editingUser.value = user
   form.value = {
-    email: user.email, first_name: user.first_name || '', last_name: user.last_name || '',
-    index_number: user.index_number || '', phone_number: user.phone_number || '',
-    role_uuid: user.role?.uuid || null, password: '', new_password: '',
+    ...emptyForm(),
+    email: user.email,
+    first_name: user.first_name || '',
+    last_name: user.last_name || '',
+    index_number: user.index_number || '',
+    phone_number: user.phone_number || '',
+    role_uuid: user.role?.uuid || null,
+    faculty_uuid: user.faculty?.uuid || null,
+    department_uuid: user.department?.uuid || null,
   }
   showDialog.value = true
 }
@@ -238,8 +272,16 @@ const submitUser = async () => {
   submitting.value = true
   try {
     const data = {
-      email: form.value.email, first_name: form.value.first_name, last_name: form.value.last_name,
-      index_number: form.value.index_number, phone_number: form.value.phone_number, role_uuid: form.value.role_uuid,
+      email: form.value.email,
+      first_name: form.value.first_name,
+      last_name: form.value.last_name,
+      index_number: form.value.index_number,
+      phone_number: form.value.phone_number,
+      role_uuid: form.value.role_uuid,
+    }
+    if (isStudentRole.value) {
+      data.faculty_uuid = form.value.faculty_uuid
+      data.department_uuid = form.value.department_uuid
     }
     if (!isEditing.value) {
       data.password = form.value.password

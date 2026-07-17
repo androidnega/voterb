@@ -1,10 +1,6 @@
 <template>
   <div class="admin-page">
     <PageHeader
-      title="Academic structure"
-      subtitle="Manage faculties, departments, and study levels for student onboarding and election scoping."
-      icon="fas fa-university"
-      icon-tone="tone-indigo"
       :loading="loading"
       :show-refresh="true"
       @refresh="fetchAll"
@@ -24,7 +20,7 @@
         <i class="fas fa-search"></i>
         <input v-model="searchQuery" type="text" :placeholder="searchPlaceholder" />
       </div>
-      <label v-if="activeTab !== 'levels'" class="filter-check">
+      <label class="filter-check">
         <input v-model="activeOnly" type="checkbox" @change="fetchAll" />
         <span>Active only</span>
       </label>
@@ -42,16 +38,11 @@
               <th>Status</th>
               <th class="text-center">Actions</th>
             </tr>
-            <tr v-else-if="activeTab === 'departments'">
+            <tr v-else>
               <th>Department</th>
               <th>Code</th>
               <th>Faculty</th>
               <th>Status</th>
-              <th class="text-center">Actions</th>
-            </tr>
-            <tr v-else>
-              <th>Level</th>
-              <th>Order</th>
               <th class="text-center">Actions</th>
             </tr>
           </thead>
@@ -60,29 +51,33 @@
               <tr v-for="row in filteredFaculties" :key="row.uuid">
                 <td><span class="cell-title">{{ row.name }}</span></td>
                 <td class="mono">{{ row.code }}</td>
-                <td class="mono">{{ row.department_count ?? 0 }}</td>
-                <td><span class="admin-badge" :class="row.is_active ? 'success' : 'neutral'">{{ row.is_active ? 'Active' : 'Inactive' }}</span></td>
                 <td>
-                  <div class="row-actions">
-                    <button type="button" class="admin-icon-btn" title="Edit" @click="editFaculty(row)"><i class="fas fa-pen"></i></button>
-                    <button type="button" class="admin-icon-btn" :title="row.is_active ? 'Deactivate' : 'Activate'" @click="toggleFaculty(row)">
-                      <i :class="row.is_active ? 'fas fa-ban' : 'fas fa-check'"></i>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    class="dept-count-btn"
+                    :disabled="!(row.department_count > 0)"
+                    :title="row.department_count > 0 ? 'View departments' : 'No departments linked'"
+                    @click="openFacultyDepartments(row)"
+                  >
+                    {{ row.department_count ?? 0 }}
+                  </button>
                 </td>
-              </tr>
-            </template>
-
-            <template v-else-if="activeTab === 'departments'">
-              <tr v-for="row in filteredDepartments" :key="row.uuid">
-                <td><span class="cell-title">{{ row.name }}</span></td>
-                <td class="mono">{{ row.code }}</td>
-                <td class="text-muted">{{ row.faculty_name || row.faculty?.name }}</td>
-                <td><span class="admin-badge" :class="row.is_active ? 'success' : 'neutral'">{{ row.is_active ? 'Active' : 'Inactive' }}</span></td>
+                <td>
+                  <span class="admin-badge" :class="row.is_active ? 'success' : 'neutral'">
+                    {{ row.is_active ? 'Active' : 'Inactive' }}
+                  </span>
+                </td>
                 <td>
                   <div class="row-actions">
-                    <button type="button" class="admin-icon-btn" title="Edit" @click="editDepartment(row)"><i class="fas fa-pen"></i></button>
-                    <button type="button" class="admin-icon-btn" :title="row.is_active ? 'Deactivate' : 'Activate'" @click="toggleDepartment(row)">
+                    <button type="button" class="admin-icon-btn" title="Edit" @click="editFaculty(row)">
+                      <i class="fas fa-pen"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="admin-icon-btn"
+                      :title="row.is_active ? 'Deactivate' : 'Activate'"
+                      @click="toggleFaculty(row)"
+                    >
                       <i :class="row.is_active ? 'fas fa-ban' : 'fas fa-check'"></i>
                     </button>
                   </div>
@@ -91,21 +86,42 @@
             </template>
 
             <template v-else>
-              <tr v-for="row in filteredLevels" :key="row.uuid">
+              <tr v-for="row in filteredDepartments" :key="row.uuid">
                 <td><span class="cell-title">{{ row.name }}</span></td>
-                <td class="mono">{{ row.display_order }}</td>
+                <td class="mono">{{ row.code }}</td>
+                <td>
+                  <span class="faculty-link">{{ row.faculty_name || row.faculty?.name || '—' }}</span>
+                </td>
+                <td>
+                  <span class="admin-badge" :class="row.is_active ? 'success' : 'neutral'">
+                    {{ row.is_active ? 'Active' : 'Inactive' }}
+                  </span>
+                </td>
                 <td>
                   <div class="row-actions">
-                    <button type="button" class="admin-icon-btn" title="Edit" @click="editLevel(row)"><i class="fas fa-pen"></i></button>
-                    <button type="button" class="admin-icon-btn danger" title="Delete" @click="confirmDeleteLevel(row)"><i class="fas fa-trash"></i></button>
+                    <button type="button" class="admin-icon-btn" title="Edit" @click="editDepartment(row)">
+                      <i class="fas fa-pen"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="admin-icon-btn"
+                      :title="row.is_active ? 'Deactivate' : 'Activate'"
+                      @click="toggleDepartment(row)"
+                    >
+                      <i :class="row.is_active ? 'fas fa-ban' : 'fas fa-check'"></i>
+                    </button>
                   </div>
                 </td>
               </tr>
             </template>
 
             <tr v-if="!loading && currentRows.length === 0">
-              <td :colspan="activeTab === 'levels' ? 3 : 5">
-                <EmptyState icon="fas fa-university" title="Nothing found" message="Adjust your search or add a new entry." />
+              <td colspan="5">
+                <EmptyState
+                  icon="fas fa-university"
+                  title="Nothing found"
+                  message="Adjust your search or add a new entry."
+                />
               </td>
             </tr>
           </tbody>
@@ -116,25 +132,58 @@
     <Dialog v-model:visible="showDialog" :header="dialogTitle" :modal="true" class="w-full max-w-lg">
       <form class="dialog-form" @submit.prevent="submitForm">
         <template v-if="dialogType === 'faculty'">
-          <div><label>Name</label><InputText v-model="form.name" class="w-full" required /></div>
-          <div><label>Code</label><InputText v-model="form.code" class="w-full mono" required maxlength="20" /></div>
-          <div><label>Description</label><Textarea v-model="form.description" rows="2" class="w-full" /></div>
-          <label class="check-row"><input v-model="form.is_active" type="checkbox" /><span>Active</span></label>
-        </template>
-
-        <template v-else-if="dialogType === 'department'">
-          <div><label>Faculty</label>
-            <Dropdown v-model="form.faculty_uuid" :options="faculties" optionLabel="name" optionValue="uuid" placeholder="Select faculty" class="w-full" required />
+          <div>
+            <label>Name</label>
+            <InputText v-model="form.name" class="w-full" required placeholder="e.g. Faculty of Engineering" />
           </div>
-          <div><label>Name</label><InputText v-model="form.name" class="w-full" required /></div>
-          <div><label>Code</label><InputText v-model="form.code" class="w-full mono" required maxlength="20" /></div>
-          <div><label>Description</label><Textarea v-model="form.description" rows="2" class="w-full" /></div>
-          <label class="check-row"><input v-model="form.is_active" type="checkbox" /><span>Active</span></label>
+          <div>
+            <label>Code</label>
+            <InputText v-model="form.code" class="w-full mono" required maxlength="20" placeholder="e.g. FOE" />
+          </div>
+          <div>
+            <label>Description</label>
+            <Textarea v-model="form.description" rows="2" class="w-full" placeholder="Optional description" />
+          </div>
+          <label class="check-row">
+            <input v-model="form.is_active" type="checkbox" />
+            <span>Active</span>
+          </label>
         </template>
 
         <template v-else>
-          <div><label>Name</label><InputText v-model="form.name" class="w-full" required placeholder="Level 100" /></div>
-          <div><label>Display order</label><InputNumber v-model="form.display_order" class="w-full" :min="0" /></div>
+          <div>
+            <label>Faculty</label>
+            <Dropdown
+              v-model="form.faculty_uuid"
+              :options="faculties"
+              optionLabel="name"
+              optionValue="uuid"
+              placeholder="Select faculty"
+              class="w-full"
+              required
+            />
+          </div>
+          <div>
+            <label>Name</label>
+            <InputText
+              v-model="form.name"
+              class="w-full"
+              required
+              placeholder="e.g. Computer Science Department"
+            />
+          </div>
+          <div>
+            <label>Code</label>
+            <InputText v-model="form.code" class="w-full mono" required maxlength="20" placeholder="e.g. CS" />
+          </div>
+          <div>
+            <label>Description</label>
+            <Textarea v-model="form.description" rows="2" class="w-full" placeholder="Optional description" />
+          </div>
+          <label class="check-row">
+            <input v-model="form.is_active" type="checkbox" />
+            <span>Active</span>
+          </label>
         </template>
 
         <p v-if="formError" class="form-error">{{ formError }}</p>
@@ -158,14 +207,20 @@ import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
-import InputNumber from 'primevue/inputnumber'
 import Dropdown from 'primevue/dropdown'
+import { usePageHeading } from '@/composables/usePageHeading'
+
+const { setPageHeading } = usePageHeading()
+setPageHeading({
+  title: 'Categories',
+  subtitle: 'Faculties and departments — organisational categories for Sub ECs and registers',
+})
 
 const loading = ref(false)
 const submitting = ref(false)
 const activeTab = ref('faculties')
 const searchQuery = ref('')
-const activeOnly = ref(false)
+const activeOnly = ref(true)
 const showDialog = ref(false)
 const dialogType = ref('faculty')
 const editingId = ref(null)
@@ -173,7 +228,6 @@ const formError = ref('')
 
 const faculties = ref([])
 const departments = ref([])
-const levels = ref([])
 
 const form = ref({
   name: '',
@@ -181,37 +235,31 @@ const form = ref({
   description: '',
   is_active: true,
   faculty_uuid: null,
-  display_order: 0,
 })
 
 const tabs = computed(() => [
   { key: 'faculties', label: 'Faculties', icon: 'fas fa-university', count: faculties.value.length, tone: 'indigo' },
   { key: 'departments', label: 'Departments', icon: 'fas fa-book', count: departments.value.length, tone: 'blue' },
-  { key: 'levels', label: 'Levels', icon: 'fas fa-layer-group', count: levels.value.length, tone: 'teal' },
 ])
 
 const panelTitle = computed(() => ({
   faculties: 'Faculties',
   departments: 'Departments',
-  levels: 'Study levels',
 }[activeTab.value]))
 
 const panelSubtitle = computed(() => ({
-  faculties: 'School-wide academic divisions',
-  departments: 'Programs under each faculty',
-  levels: 'Year of study options for onboarding',
+  faculties: 'Faculty categories (e.g. FAS, FAAT) used for Sub EC assignment',
+  departments: 'Department categories under each faculty (e.g. Hospitality, Comp. Sci.)',
 }[activeTab.value]))
 
 const searchPlaceholder = computed(() => ({
   faculties: 'Search faculties…',
   departments: 'Search departments…',
-  levels: 'Search levels…',
 }[activeTab.value]))
 
 const createLabel = computed(() => ({
   faculties: 'Add faculty',
   departments: 'Add department',
-  levels: 'Add level',
 }[activeTab.value]))
 
 const dialogTitle = computed(() => {
@@ -227,35 +275,43 @@ const filterRows = (rows, fields) => {
 
 const filteredFaculties = computed(() => filterRows(faculties.value, ['name', 'code']))
 const filteredDepartments = computed(() => filterRows(departments.value, ['name', 'code', 'faculty_name']))
-const filteredLevels = computed(() => filterRows(levels.value, ['name']))
 
-const currentRows = computed(() => {
-  if (activeTab.value === 'faculties') return filteredFaculties.value
-  if (activeTab.value === 'departments') return filteredDepartments.value
-  return filteredLevels.value
-})
+const currentRows = computed(() => (
+  activeTab.value === 'faculties' ? filteredFaculties.value : filteredDepartments.value
+))
 
-const listParams = computed(() => (activeOnly.value ? { active_only: 'true' } : {}))
+const listParams = computed(() => (
+  activeOnly.value ? {} : { include_inactive: 'true' }
+))
 
 const fetchAll = async () => {
   loading.value = true
   try {
-    const [fRes, dRes, lRes] = await Promise.all([
+    const [fRes, dRes] = await Promise.all([
       academicApi.faculties(listParams.value),
       academicApi.departments(listParams.value),
-      academicApi.levels(),
     ])
-    faculties.value = fRes.data
-    departments.value = dRes.data.map((d) => ({
-      ...d,
-      faculty_name: d.faculty_name || d.faculty?.name,
+    const facultyRows = Array.isArray(fRes.data) ? fRes.data : []
+    const departmentRows = Array.isArray(dRes.data) ? dRes.data : []
+    faculties.value = facultyRows.map((f) => ({
+      ...f,
+      department_count: Number(f.department_count ?? 0),
     }))
-    levels.value = lRes.data
+    departments.value = departmentRows.map((d) => ({
+      ...d,
+      faculty_name: d.faculty_name || d.faculty?.name || '—',
+      faculty_uuid: d.faculty?.uuid || d.faculty_uuid,
+    }))
   } catch (error) {
     console.error('Failed to load academic structure:', error)
   } finally {
     loading.value = false
   }
+}
+
+const openFacultyDepartments = (faculty) => {
+  activeTab.value = 'departments'
+  searchQuery.value = faculty.name || ''
 }
 
 const resetForm = () => {
@@ -265,16 +321,13 @@ const resetForm = () => {
     description: '',
     is_active: true,
     faculty_uuid: null,
-    display_order: levels.value.length + 1,
   }
   formError.value = ''
   editingId.value = null
 }
 
 const openCreate = () => {
-  if (activeTab.value === 'faculties') dialogType.value = 'faculty'
-  else if (activeTab.value === 'departments') dialogType.value = 'department'
-  else dialogType.value = 'level'
+  dialogType.value = activeTab.value === 'faculties' ? 'faculty' : 'department'
   resetForm()
   showDialog.value = true
 }
@@ -287,7 +340,12 @@ const closeDialog = () => {
 const editFaculty = (row) => {
   dialogType.value = 'faculty'
   editingId.value = row.uuid
-  form.value = { name: row.name, code: row.code, description: row.description || '', is_active: row.is_active }
+  form.value = {
+    name: row.name,
+    code: row.code,
+    description: row.description || '',
+    is_active: row.is_active,
+  }
   showDialog.value = true
 }
 
@@ -304,13 +362,6 @@ const editDepartment = (row) => {
   showDialog.value = true
 }
 
-const editLevel = (row) => {
-  dialogType.value = 'level'
-  editingId.value = row.uuid
-  form.value = { name: row.name, display_order: row.display_order }
-  showDialog.value = true
-}
-
 const submitForm = async () => {
   submitting.value = true
   formError.value = ''
@@ -324,7 +375,7 @@ const submitForm = async () => {
       }
       if (editingId.value) await academicApi.updateFaculty(editingId.value, payload)
       else await academicApi.createFaculty(payload)
-    } else if (dialogType.value === 'department') {
+    } else {
       const payload = {
         name: form.value.name.trim(),
         code: form.value.code.trim().toUpperCase(),
@@ -334,10 +385,6 @@ const submitForm = async () => {
       }
       if (editingId.value) await academicApi.updateDepartment(editingId.value, payload)
       else await academicApi.createDepartment(payload)
-    } else {
-      const payload = { name: form.value.name.trim(), display_order: form.value.display_order }
-      if (editingId.value) await academicApi.updateLevel(editingId.value, payload)
-      else await academicApi.createLevel(payload)
     }
     closeDialog()
     await fetchAll()
@@ -358,16 +405,6 @@ const toggleFaculty = async (row) => {
 const toggleDepartment = async (row) => {
   await academicApi.updateDepartment(row.uuid, { is_active: !row.is_active })
   await fetchAll()
-}
-
-const confirmDeleteLevel = async (row) => {
-  if (!confirm(`Delete "${row.name}"?`)) return
-  try {
-    await academicApi.deleteLevel(row.uuid)
-    await fetchAll()
-  } catch (error) {
-    alert(error.response?.data?.error || 'Could not delete level.')
-  }
 }
 
 onMounted(fetchAll)
@@ -396,5 +433,31 @@ onMounted(fetchAll)
   margin: 0;
   font-size: 0.8125rem;
   color: #dc2626;
+}
+
+.dept-count-btn {
+  min-width: 2rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--vb-line, #ebeae4);
+  border-radius: 0.45rem;
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  color: var(--vb-ink, #1f2937);
+  cursor: pointer;
+}
+.dept-count-btn:hover:not(:disabled) {
+  border-color: var(--vb-accent, #3d4f44);
+  color: var(--vb-accent, #3d4f44);
+}
+.dept-count-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.faculty-link {
+  color: var(--vb-ink, #1f2937);
+  font-weight: 550;
 }
 </style>

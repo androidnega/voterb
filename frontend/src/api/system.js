@@ -1,4 +1,5 @@
 import api from './client'
+import uploadClient from './uploadClient'
 
 export const systemApi = {
   getTheme() {
@@ -24,6 +25,19 @@ export const systemApi = {
   },
   getInstitution() {
     return api.get('/system/institution/')
+  },
+  updateInstitution(payload) {
+    return api.put('/system/institution/', payload)
+  },
+  updateInstitutionLogo(file, fields = {}) {
+    const formData = new FormData()
+    Object.entries(fields).forEach(([key, value]) => {
+      if (value != null && value !== '') formData.append(key, String(value))
+    })
+    if (file) formData.append('logo', file)
+    return uploadClient.put('/system/institution/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
   },
   getMaintenance() {
     return api.get('/system/maintenance/')

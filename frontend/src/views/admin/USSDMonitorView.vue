@@ -1,85 +1,94 @@
 <template>
   <div class="admin-page">
-    <PageHeader
-      title="USSD Monitor"
-      subtitle="Live view of USSD voting sessions, steps, and channel errors."
-      icon="fas fa-mobile-alt"
-      icon-tone="tone-blue"
-      :loading="loading"
-      @refresh="fetchAll"
-    />
+    <PageHeader :loading="loading" @refresh="fetchAll" />
 
-    <div class="stat-grid page-section">
-      <StatCard label="Total Sessions" :value="stats.total_sessions || 0" icon="fas fa-phone" tone="tone-slate" />
-      <StatCard label="Active" :value="stats.active_sessions || 0" icon="fas fa-signal" tone="tone-teal" value-tone="text-teal-700" />
-      <StatCard label="Completed" :value="stats.completed_sessions || 0" icon="fas fa-check-circle" tone="tone-blue" value-tone="text-blue-700" />
-      <StatCard label="Errors" :value="stats.error_sessions || 0" icon="fas fa-times-circle" tone="tone-rose" value-tone="text-rose-700" />
+    <div class="kpi-strip">
+      <div class="kpi-item">
+        <p class="kpi-label">Total sessions</p>
+        <p class="kpi-value">{{ stats.total_sessions || 0 }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Active</p>
+        <p class="kpi-value is-ok">{{ stats.active_sessions || 0 }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Completed</p>
+        <p class="kpi-value is-info">{{ stats.completed_sessions || 0 }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Errors</p>
+        <p class="kpi-value is-danger">{{ stats.error_sessions || 0 }}</p>
+      </div>
     </div>
 
-    <div class="ussd-layout page-section">
-      <DataPanel title="Session status" subtitle="Channel funnel from live stats">
-        <DonutChart
-          :labels="chartLabels"
-          :data="chartValues"
-          :empty="!chartValues.some((v) => v > 0)"
-          height="13rem"
-          empty-text="No USSD sessions yet"
-          aria-label="USSD session status breakdown"
+    <div class="section-toolbar">
+      <div>
+        <h2 class="section-toolbar__title">Session feed</h2>
+        <p class="section-toolbar__sub">Auto-refreshes every 15s</p>
+      </div>
+      <div v-if="statusSeries.length" class="severity-chips">
+        <span
+          v-for="row in statusSeries"
+          :key="row.label"
+          class="status-chip"
+        >
+          {{ row.label }}
+          <strong>{{ row.value }}</strong>
+        </span>
+      </div>
+    </div>
+
+    <section class="table-surface">
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>MSISDN</th>
+              <th>User</th>
+              <th>Election</th>
+              <th>Status</th>
+              <th>Step</th>
+              <th>Created</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="session in paginated" :key="session.uuid">
+              <td class="mono">{{ session.msisdn }}</td>
+              <td>{{ session.user_email || '—' }}</td>
+              <td>{{ session.election_title || '—' }}</td>
+              <td><span class="admin-badge" :class="statusBadge(session.status)">{{ session.status }}</span></td>
+              <td>{{ session.current_step || '—' }}</td>
+              <td class="text-muted">{{ formatDate(session.created_at) }}</td>
+              <td>
+                <div class="row-actions">
+                  <button type="button" class="admin-icon-btn" title="View session" @click="viewSession(session.uuid)">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!loading && sessions.length === 0">
+              <td colspan="7">
+                <EmptyState icon="fas fa-mobile-alt" title="No USSD sessions" message="Sessions will appear when voters use the USSD channel." />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-surface__foot">
+        <TablePagination
+          :page="page"
+          :page-size="size"
+          :total="total"
+          :total-pages="totalPages"
+          :from="from"
+          :to="to"
+          @update:page="setPage"
+          @update:page-size="setPageSize"
         />
-      </DataPanel>
-
-      <DataPanel title="Session feed" subtitle="Auto-refreshes every 15s" no-padding>
-        <div class="admin-table-wrap">
-          <table class="admin-table">
-            <thead>
-              <tr>
-                <th>MSISDN</th>
-                <th>User</th>
-                <th>Election</th>
-                <th>Status</th>
-                <th>Step</th>
-                <th>Created</th>
-                <th class="text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="session in paginated" :key="session.uuid">
-                <td class="mono">{{ session.msisdn }}</td>
-                <td>{{ session.user_email || '—' }}</td>
-                <td>{{ session.election_title || '—' }}</td>
-                <td><span class="admin-badge" :class="statusBadge(session.status)">{{ session.status }}</span></td>
-                <td>{{ session.current_step || '—' }}</td>
-                <td class="text-muted">{{ formatDate(session.created_at) }}</td>
-                <td>
-                  <div class="row-actions">
-                    <button type="button" class="admin-icon-btn" title="View session" @click="viewSession(session.uuid)">
-                      <i class="fas fa-eye"></i>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="!loading && sessions.length === 0">
-                <td colspan="7">
-                  <EmptyState icon="fas fa-mobile-alt" title="No USSD sessions" message="Sessions will appear when voters use the USSD channel." />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <template #footer>
-          <TablePagination
-            :page="page"
-            :page-size="size"
-            :total="total"
-            :total-pages="totalPages"
-            :from="from"
-            :to="to"
-            @update:page="setPage"
-            @update:page-size="setPageSize"
-          />
-        </template>
-      </DataPanel>
-    </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -89,11 +98,8 @@ import { useRouter } from 'vue-router'
 import { ussdApi } from '@/api/ussd'
 import { usePagination } from '@/composables/usePagination'
 import PageHeader from '@/components/admin/PageHeader.vue'
-import StatCard from '@/components/admin/StatCard.vue'
-import DataPanel from '@/components/admin/DataPanel.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
 import TablePagination from '@/components/admin/TablePagination.vue'
-import DonutChart from '@/components/charts/DonutChart.vue'
 
 const REFRESH_MS = 15000
 const router = useRouter()
@@ -110,9 +116,6 @@ const statusSeries = computed(() => ([
   { label: 'Errors', value: stats.value.error_sessions || 0 },
   { label: 'Expired', value: stats.value.expired_sessions || 0 },
 ]).filter((row) => row.value > 0))
-
-const chartLabels = computed(() => statusSeries.value.map((row) => row.label))
-const chartValues = computed(() => statusSeries.value.map((row) => row.value))
 
 const fetchAll = async (options = {}) => {
   const { silent = false } = options
@@ -144,15 +147,25 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.ussd-layout {
-  display: grid;
-  gap: 1rem;
+.severity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 
-@media (min-width: 1000px) {
-  .ussd-layout {
-    grid-template-columns: 0.85fr 1.15fr;
-    align-items: start;
-  }
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  background: var(--vb-panel);
+  color: var(--vb-ink);
+}
+
+.status-chip strong {
+  font-weight: 800;
 }
 </style>

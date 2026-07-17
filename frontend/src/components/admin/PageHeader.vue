@@ -1,7 +1,7 @@
 <template>
-  <header class="page-header">
-    <div class="page-header-main">
-      <div class="page-header-icon" :class="iconTone">
+  <header class="page-header" :class="{ 'is-actions-only': !title }">
+    <div v-if="title" class="page-header-main">
+      <div v-if="icon" class="page-header-icon" :class="iconTone">
         <i :class="icon"></i>
       </div>
       <div>
@@ -28,9 +28,9 @@
 
 <script setup>
 defineProps({
-  title: { type: String, required: true },
+  title: { type: String, default: '' },
   subtitle: { type: String, default: '' },
-  icon: { type: String, default: 'fas fa-layer-group' },
+  icon: { type: String, default: '' },
   iconTone: { type: String, default: 'tone-teal' },
   showRefresh: { type: Boolean, default: true },
   loading: { type: Boolean, default: false },
@@ -46,7 +46,12 @@ defineEmits(['refresh'])
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.25rem;
+}
+
+.page-header.is-actions-only {
+  justify-content: flex-end;
+  margin-bottom: 1rem;
 }
 
 .page-header-main {

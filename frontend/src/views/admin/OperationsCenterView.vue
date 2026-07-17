@@ -1,63 +1,78 @@
 <template>
   <div class="admin-page">
-    <PageHeader
-      title="Operations Center"
-      subtitle="Platform health, infrastructure metrics, queues, and system logs."
-      icon="fas fa-server"
-      icon-tone="tone-slate"
-      :loading="loading"
-      @refresh="fetchAll"
-    />
+    <PageHeader :loading="loading" @refresh="fetchAll" />
 
-    <div class="stat-grid page-section">
-      <StatCard label="Total Users" :value="overview.total_users || 0" icon="fas fa-users" tone="tone-slate" />
-      <StatCard label="Active Sessions" :value="overview.active_sessions || 0" icon="fas fa-plug" tone="tone-teal" value-tone="text-teal-700" />
-      <StatCard label="Active Queue" :value="queues.active_tasks || 0" hint="Background jobs" icon="fas fa-tasks" tone="tone-blue" value-tone="text-blue-700" />
-      <StatCard
-        label="System Status"
-        :value="health.status === 'healthy' ? 'Healthy' : 'Degraded'"
-        icon="fas fa-heartbeat"
-        :tone="health.status === 'healthy' ? 'tone-teal' : 'tone-rose'"
-        :value-tone="health.status === 'healthy' ? 'text-teal-700' : 'text-rose-700'"
-      />
+    <div class="kpi-strip">
+      <div class="kpi-item">
+        <p class="kpi-label">Total users</p>
+        <p class="kpi-value">{{ overview.total_users || 0 }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Active sessions</p>
+        <p class="kpi-value is-ok">{{ overview.active_sessions || 0 }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Active queue</p>
+        <p class="kpi-value is-info">{{ queues.active_tasks || 0 }}</p>
+        <p class="kpi-hint">Background jobs</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">System status</p>
+        <p class="kpi-value" :class="health.status === 'healthy' ? 'is-ok' : 'is-danger'">
+          {{ health.status === 'healthy' ? 'Healthy' : (health.status || 'Unknown') }}
+        </p>
+      </div>
     </div>
 
-    <div class="ops-grid page-section">
-      <DataPanel title="System health" subtitle="Service availability">
-        <div class="metric-card-grid">
+    <div class="ops-columns page-section">
+      <section class="ops-block">
+        <h2 class="ops-block__title">System health</h2>
+        <p class="ops-block__sub">Service availability</p>
+        <dl class="metric-list">
           <div class="metric-row">
-            <span>Overall</span>
-            <span class="admin-badge" :class="health.status === 'healthy' ? 'success' : 'danger'">{{ health.status || 'unknown' }}</span>
+            <dt>Overall</dt>
+            <dd><span class="admin-badge" :class="health.status === 'healthy' ? 'success' : 'danger'">{{ health.status || 'unknown' }}</span></dd>
           </div>
           <div v-for="(status, service) in health.services || {}" :key="service" class="metric-row">
-            <span class="capitalize">{{ service }}</span>
-            <span class="admin-badge" :class="status === 'healthy' ? 'success' : 'danger'">{{ status }}</span>
+            <dt class="capitalize">{{ service }}</dt>
+            <dd><span class="admin-badge" :class="status === 'healthy' ? 'success' : 'danger'">{{ status }}</span></dd>
           </div>
-        </div>
-        <p class="panel-foot">Last checked: {{ formatTime(health.timestamp) }}</p>
-      </DataPanel>
+        </dl>
+        <p class="ops-block__foot">Last checked: {{ formatTime(health.timestamp) }}</p>
+      </section>
 
-      <DataPanel title="Infrastructure" subtitle="Runtime resources">
-        <div class="metric-card-grid">
-          <div class="metric-row"><span>CPU Usage</span><strong>{{ infra.cpu?.percent || 0 }}%</strong></div>
-          <div class="metric-row"><span>Memory Usage</span><strong>{{ infra.memory?.percent || 0 }}%</strong></div>
-          <div class="metric-row"><span>DB Connections</span><strong>{{ infra.database?.connections || 0 }}</strong></div>
-          <div class="metric-row"><span>Redis Clients</span><strong>{{ infra.redis?.clients || 0 }}</strong></div>
-        </div>
-        <p class="panel-foot">Uptime: {{ formatUptime(infra.uptime) }}</p>
-      </DataPanel>
+      <section class="ops-block">
+        <h2 class="ops-block__title">Infrastructure</h2>
+        <p class="ops-block__sub">Runtime resources</p>
+        <dl class="metric-list">
+          <div class="metric-row"><dt>CPU usage</dt><dd><strong>{{ infra.cpu?.percent || 0 }}%</strong></dd></div>
+          <div class="metric-row"><dt>Memory usage</dt><dd><strong>{{ infra.memory?.percent || 0 }}%</strong></dd></div>
+          <div class="metric-row"><dt>DB connections</dt><dd><strong>{{ infra.database?.connections || 0 }}</strong></dd></div>
+          <div class="metric-row"><dt>Redis clients</dt><dd><strong>{{ infra.redis?.clients || 0 }}</strong></dd></div>
+        </dl>
+        <p class="ops-block__foot">Uptime: {{ formatUptime(infra.uptime) }}</p>
+      </section>
 
-      <DataPanel title="Queue status" subtitle="Background job throughput">
-        <div class="metric-card-grid">
-          <div class="metric-row"><span>Active</span><strong>{{ queues.active_tasks || 0 }}</strong></div>
-          <div class="metric-row"><span>Scheduled</span><strong>{{ queues.scheduled_tasks || 0 }}</strong></div>
-          <div class="metric-row"><span>Reserved</span><strong>{{ queues.reserved_tasks || 0 }}</strong></div>
-          <div class="metric-row"><span>Celery</span><strong>{{ queues.celery_enabled ? 'Enabled' : 'Off' }}</strong></div>
-        </div>
-      </DataPanel>
+      <section class="ops-block">
+        <h2 class="ops-block__title">Queue status</h2>
+        <p class="ops-block__sub">Background job throughput</p>
+        <dl class="metric-list">
+          <div class="metric-row"><dt>Active</dt><dd><strong>{{ queues.active_tasks || 0 }}</strong></dd></div>
+          <div class="metric-row"><dt>Scheduled</dt><dd><strong>{{ queues.scheduled_tasks || 0 }}</strong></dd></div>
+          <div class="metric-row"><dt>Reserved</dt><dd><strong>{{ queues.reserved_tasks || 0 }}</strong></dd></div>
+          <div class="metric-row"><dt>Celery</dt><dd><strong>{{ queues.celery_enabled ? 'Enabled' : 'Off' }}</strong></dd></div>
+        </dl>
+      </section>
     </div>
 
-    <DataPanel title="Recent system logs" subtitle="Latest platform events" no-padding class="page-section">
+    <div class="section-toolbar">
+      <div>
+        <h2 class="section-toolbar__title">Recent system logs</h2>
+        <p class="section-toolbar__sub">Latest platform events</p>
+      </div>
+    </div>
+
+    <section class="table-surface">
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -81,7 +96,7 @@
           </tbody>
         </table>
       </div>
-      <template #footer>
+      <div class="table-surface__foot">
         <TablePagination
           :page="page"
           :page-size="size"
@@ -92,8 +107,8 @@
           @update:page="setPage"
           @update:page-size="setPageSize"
         />
-      </template>
-    </DataPanel>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -102,8 +117,6 @@ import { ref, onMounted } from 'vue'
 import { operationsApi } from '@/api/operations'
 import { usePagination } from '@/composables/usePagination'
 import PageHeader from '@/components/admin/PageHeader.vue'
-import StatCard from '@/components/admin/StatCard.vue'
-import DataPanel from '@/components/admin/DataPanel.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
 import TablePagination from '@/components/admin/TablePagination.vue'
 
@@ -141,7 +154,9 @@ const fetchAll = async () => {
 const formatTime = (ts) => ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'
 const formatUptime = (s) => {
   if (!s) return '—'
-  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60)
+  const d = Math.floor(s / 86400)
+  const h = Math.floor((s % 86400) / 3600)
+  const m = Math.floor((s % 3600) / 60)
   return `${d}d ${h}h ${m}m`
 }
 const logBadge = (l) => l === 'error' ? 'danger' : l === 'warning' ? 'warning' : 'info'
@@ -149,3 +164,73 @@ const logBadge = (l) => l === 'error' ? 'danger' : l === 'warning' ? 'warning' :
 onMounted(fetchAll)
 </script>
 
+<style scoped>
+.ops-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (min-width: 900px) {
+  .ops-columns {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.ops-block__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--vb-ink);
+}
+
+.ops-block__sub {
+  margin: 0.2rem 0 0.85rem;
+  font-size: 0.78rem;
+  color: var(--vb-muted);
+}
+
+.ops-block__foot {
+  margin: 0.75rem 0 0;
+  font-size: 0.72rem;
+  color: var(--vb-muted);
+}
+
+.metric-list {
+  margin: 0;
+  padding: 0;
+}
+
+.metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--vb-line);
+  font-size: 0.84rem;
+}
+
+.metric-row:last-child {
+  border-bottom: none;
+}
+
+.metric-row dt {
+  margin: 0;
+  color: var(--vb-muted);
+}
+
+.metric-row dd {
+  margin: 0;
+  color: var(--vb-ink);
+}
+
+.metric-row strong {
+  font-weight: 800;
+}
+
+.capitalize {
+  text-transform: capitalize;
+}
+</style>

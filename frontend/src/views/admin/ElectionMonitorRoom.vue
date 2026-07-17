@@ -40,7 +40,7 @@
           <div class="header-stat">
             <span class="header-stat-label">Feed</span>
             <span class="header-stat-value feed-live">
-              <span class="live-dot"></span> Live
+              <span class="live-dot"></span> {{ liveSocketConnected ? 'Live' : 'Sync' }}
             </span>
           </div>
         </div>
@@ -49,10 +49,10 @@
           <button
             type="button"
             class="header-icon-btn"
-            :title="isMonokai ? 'Switch to Normal theme' : 'Switch to Monokai theme'"
+            :title="`Theme: ${theme.label} — switch to ${nextThemeLabel}`"
             @click="toggleTheme"
           >
-            <i class="fas fa-cog"></i>
+            <i :class="themeIcon"></i>
           </button>
           <button
             type="button"
@@ -185,7 +185,10 @@
                     <div
                       class="candidate-card-bar-fill"
                       :class="{ 'is-leader': index === 0 }"
-                      :style="{ width: `${candidate.percentage}%` }"
+                      :style="{
+                        width: `${candidate.percentage}%`,
+                        background: colorAt(index),
+                      }"
                     ></div>
                   </div>
                 </div>
@@ -263,7 +266,7 @@
                 </div>
                 <div class="chart-wrap chart-wrap-sm">
                   <LineChart
-                    :labels="hourlyTrend.labels"
+                    :labels="votesPerHourLabels"
                     :datasets="momentumDatasets"
                     :theme="chartTheme"
                     :theme-container="monitorContainer"
@@ -348,7 +351,13 @@ const router = useRouter()
 const authStore = useAuthStore()
 const electionUuid = computed(() => route.params.uuid)
 
-const { isMonokai, themeStyle, toggleTheme } = useMonitorTheme()
+const { themeId, theme, themeStyle, nextThemeLabel, toggleTheme, colorAt } = useMonitorTheme()
+
+const themeIcon = computed(() => {
+  if (themeId.value === 'normal') return 'fas fa-sun'
+  if (themeId.value === 'monokai') return 'fas fa-palette'
+  return 'fas fa-moon'
+})
 
 const monitorContainer = ref(null)
 const isFullscreen = ref(false)
@@ -372,24 +381,46 @@ const positions = ref([])
 const candidates = ref([])
 const leader = ref(null)
 const selectedPositionVotes = ref(0)
-const hourlyTrend = ref({ labels: [], datasets: [] })
+const hourlyTrend = ref({ labels: [], datasets: [], votes_cast: [] })
+const voteThroughput = ref({ labels: [], votes_cast: [], ballots_submitted: [] })
 const cumulativeTurnout = ref({ labels: [], turnout: [] })
 
 let countdownInterval = null
 let refreshInterval = null
+let monitorSocket = null
+let socketReconnectTimer = null
+let socketRetryCount = 0
+const liveSocketConnected = ref(false)
 
 const sortedCandidates = computed(() => [...candidates.value].sort((a, b) => b.votes - a.votes))
 const gridCandidates = computed(() => sortedCandidates.value)
 const currentPositionTitle = computed(() => currentPosition.value?.title || 'President')
-const chartTheme = computed(() => (isMonokai.value ? 'monokai' : 'normal'))
+const chartTheme = computed(() => themeId.value)
 const chartCandidateLabels = computed(() => sortedCandidates.value.map((c) => c.full_name))
 const chartCandidateVotes = computed(() => sortedCandidates.value.map((c) => c.votes))
-const momentumDatasets = computed(() =>
-  (hourlyTrend.value.datasets || []).map((series) => ({
+const momentumDatasets = computed(() => {
+  const labels = hourlyTrend.value.labels || []
+  const cast = hourlyTrend.value.votes_cast
+  // Prefer race-level hourly totals (matches “Votes arriving each hour”)
+  if (labels.length && Array.isArray(cast) && cast.length) {
+    return [{ label: 'Votes', data: cast }]
+  }
+  // Fallback: election-wide throughput
+  const throughput = voteThroughput.value
+  if ((throughput.labels || []).length && Array.isArray(throughput.votes_cast)) {
+    return [{ label: 'Votes', data: throughput.votes_cast }]
+  }
+  // Last resort: per-candidate series
+  return (hourlyTrend.value.datasets || []).map((series) => ({
     label: series.full_name,
     data: series.data || [],
   }))
-)
+})
+
+const votesPerHourLabels = computed(() => {
+  if ((hourlyTrend.value.labels || []).length) return hourlyTrend.value.labels
+  return voteThroughput.value.labels || []
+})
 const turnoutLabels = computed(() => cumulativeTurnout.value.labels || [])
 const turnoutData = computed(() => cumulativeTurnout.value.turnout || [])
 
@@ -416,7 +447,7 @@ const applyPositionData = (positionUuid) => {
   currentPosition.value = pos
   candidates.value = pos.candidates || []
   selectedPositionVotes.value = pos.total_votes || 0
-  hourlyTrend.value = pos.hourly_trend || { labels: [], datasets: [] }
+  hourlyTrend.value = pos.hourly_trend || { labels: [], datasets: [], votes_cast: [] }
   leader.value = pos.leader || (sortedCandidates.value[0]?.votes > 0 ? sortedCandidates.value[0] : null)
 }
 
@@ -495,6 +526,33 @@ const updateCountdown = () => {
   countdown.value = `${d}d ${h}h ${m}m ${s}s`
 }
 
+const applyMonitorPayload = (data) => {
+  if (!data || typeof data !== 'object') return
+  electionTitle.value = data.election?.title || electionTitle.value || 'Election Monitor'
+  electionStatus.value = data.election?.status || electionStatus.value || ''
+  electionEndDate.value = data.election?.end_date || electionEndDate.value || null
+  totalVotes.value = data.stats?.total_votes ?? totalVotes.value
+  turnout.value = data.stats?.turnout ?? turnout.value
+  uniqueVoters.value = data.stats?.unique_voters ?? uniqueVoters.value
+  eligibleVoters.value = data.stats?.eligible_voters ?? eligibleVoters.value
+  lastUpdated.value = formatTime(data.updated_at)
+  if (data.cumulative_turnout) cumulativeTurnout.value = data.cumulative_turnout
+  if (data.vote_throughput) voteThroughput.value = data.vote_throughput
+  if (Array.isArray(data.positions)) {
+    positions.value = data.positions
+    if (positions.value.length > 0) {
+      const activeUuid = currentPosition.value?.uuid
+      const stillExists = activeUuid && positions.value.some((p) => p.uuid === activeUuid)
+      const defaultPos = positions.value.find((p) => /president/i.test(p.title)) || positions.value[0]
+      applyPositionData(stillExists ? activeUuid : defaultPos.uuid)
+    } else {
+      candidates.value = []
+      leader.value = null
+    }
+  }
+  updateCountdown()
+}
+
 const fetchMonitorData = async (silent = false) => {
   try {
     if (!silent) {
@@ -506,29 +564,7 @@ const fetchMonitorData = async (silent = false) => {
     if (!ready) return
 
     const { data } = await fetchLivePayload()
-
-    electionTitle.value = data.election?.title || 'Election Monitor'
-    electionStatus.value = data.election?.status || ''
-    electionEndDate.value = data.election?.end_date || null
-    totalVotes.value = data.stats?.total_votes || 0
-    turnout.value = data.stats?.turnout || 0
-    uniqueVoters.value = data.stats?.unique_voters || 0
-    eligibleVoters.value = data.stats?.eligible_voters || 0
-    lastUpdated.value = formatTime(data.updated_at)
-    cumulativeTurnout.value = data.cumulative_turnout || { labels: [], turnout: [] }
-    positions.value = data.positions || []
-
-    if (positions.value.length > 0) {
-      const activeUuid = currentPosition.value?.uuid
-      const stillExists = activeUuid && positions.value.some((p) => p.uuid === activeUuid)
-      const defaultPos = positions.value.find((p) => /president/i.test(p.title)) || positions.value[0]
-      applyPositionData(stillExists ? activeUuid : defaultPos.uuid)
-    } else {
-      candidates.value = []
-      leader.value = null
-    }
-
-    updateCountdown()
+    applyMonitorPayload(data)
   } catch (error) {
     console.error('Failed to fetch monitor data:', error)
     if (!silent) {
@@ -540,8 +576,95 @@ const fetchMonitorData = async (silent = false) => {
   }
 }
 
+const stopMonitorSocket = () => {
+  if (monitorSocket) {
+    try {
+      monitorSocket.onopen = null
+      monitorSocket.onmessage = null
+      monitorSocket.onerror = null
+      monitorSocket.onclose = null
+      if (monitorSocket.readyState === WebSocket.OPEN || monitorSocket.readyState === WebSocket.CONNECTING) {
+        monitorSocket.close()
+      }
+    } catch {
+      /* ignore */
+    }
+    monitorSocket = null
+  }
+  liveSocketConnected.value = false
+}
+
+const scheduleSocketReconnect = () => {
+  if (socketReconnectTimer) clearTimeout(socketReconnectTimer)
+  socketReconnectTimer = setTimeout(() => {
+    connectMonitorSocket()
+  }, Math.min(15000, 1500 * Math.max(1, socketRetryCount)))
+}
+
+const connectMonitorSocket = async () => {
+  const uuid = electionUuid.value
+  if (!uuid) return
+  const ready = await ensureAuthReady()
+  if (!ready) return
+
+  const token = localStorage.getItem('access_token')
+  if (!token) return
+
+  stopMonitorSocket()
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const url = `${protocol}://${window.location.host}/ws/elections/${uuid}/monitor/?token=${encodeURIComponent(token)}`
+  try {
+    monitorSocket = new WebSocket(url)
+  } catch (error) {
+    console.warn('Monitor websocket unavailable, using silent polling', error)
+    liveSocketConnected.value = false
+    return
+  }
+
+  monitorSocket.onopen = () => {
+    liveSocketConnected.value = true
+    socketRetryCount = 0
+    // Prefer socket; keep a slow poll only as integrity fallback
+    if (refreshInterval) clearInterval(refreshInterval)
+    refreshInterval = setInterval(() => fetchMonitorData(true), 45000)
+  }
+
+  monitorSocket.onmessage = (event) => {
+    try {
+      const message = JSON.parse(event.data)
+      if (message?.type === 'monitor.snapshot' && message.payload) {
+        applyMonitorPayload(message.payload)
+        loading.value = false
+      }
+    } catch (error) {
+      console.warn('Invalid monitor socket payload', error)
+    }
+  }
+
+  monitorSocket.onerror = () => {
+    liveSocketConnected.value = false
+  }
+
+  monitorSocket.onclose = () => {
+    liveSocketConnected.value = false
+    monitorSocket = null
+    // Faster poll while reconnecting
+    if (refreshInterval) clearInterval(refreshInterval)
+    refreshInterval = setInterval(() => fetchMonitorData(true), 12000)
+    socketRetryCount += 1
+    scheduleSocketReconnect()
+  }
+}
+
 const manualRefresh = async () => {
   refreshing.value = true
+  if (monitorSocket && monitorSocket.readyState === WebSocket.OPEN) {
+    try {
+      monitorSocket.send(JSON.stringify({ type: 'monitor.refresh' }))
+    } catch {
+      /* fall through to HTTP */
+    }
+  }
   await fetchMonitorData(true)
 }
 
@@ -578,21 +701,29 @@ const goToLogin = () => {
   router.push('/login')
 }
 
-watch(() => route.params.uuid, () => {
-  if (route.params.uuid) fetchMonitorData()
+watch(() => route.params.uuid, async () => {
+  if (!route.params.uuid) return
+  stopMonitorSocket()
+  if (socketReconnectTimer) clearTimeout(socketReconnectTimer)
+  await fetchMonitorData()
+  await connectMonitorSocket()
 })
 
 onMounted(async () => {
   countdownInterval = setInterval(updateCountdown, 1000)
-  refreshInterval = setInterval(() => fetchMonitorData(true), 5000)
+  // Silent HTTP poll as fallback; websocket becomes primary when connected
+  refreshInterval = setInterval(() => fetchMonitorData(true), 15000)
   document.addEventListener('fullscreenchange', handleFullscreenChange)
   document.addEventListener('keydown', handleKeydown)
   await fetchMonitorData()
+  await connectMonitorSocket()
 })
 
 onUnmounted(() => {
   if (countdownInterval) clearInterval(countdownInterval)
   if (refreshInterval) clearInterval(refreshInterval)
+  if (socketReconnectTimer) clearTimeout(socketReconnectTimer)
+  stopMonitorSocket()
   document.removeEventListener('fullscreenchange', handleFullscreenChange)
   document.removeEventListener('keydown', handleKeydown)
 })
@@ -603,10 +734,11 @@ onUnmounted(() => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--mr-bg);
+  /* Solid color only — gradients flash white when transitioning */
+  background-color: var(--mr-bg);
   color: var(--mr-text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  transition: background 0.35s ease, color 0.35s ease;
+  transition: background-color 0.28s ease, color 0.22s ease;
 }
 
 .monitor-room.is-fullscreen {
@@ -620,9 +752,9 @@ onUnmounted(() => {
 .monitor-header {
   flex-shrink: 0;
   padding: 0.85rem 1.25rem;
-  background: var(--mr-topbar);
+  background-color: var(--mr-topbar);
   border-bottom: 1px solid var(--mr-topbar-border);
-  backdrop-filter: blur(10px);
+  transition: background-color 0.28s ease, border-color 0.28s ease, color 0.22s ease;
 }
 
 .header-main {
@@ -891,10 +1023,11 @@ onUnmounted(() => {
 }
 
 .panel {
-  background: var(--mr-panel);
+  background-color: var(--mr-panel);
   border: 1px solid var(--mr-panel-border);
   border-radius: 0.9rem;
   padding: 1rem 1.1rem;
+  transition: background-color 0.28s ease, border-color 0.28s ease, color 0.22s ease;
 }
 
 .panel-eyebrow {
@@ -998,7 +1131,7 @@ onUnmounted(() => {
   padding: 0.12rem 0.4rem;
   border-radius: 9999px;
   background: var(--mr-accent);
-  color: #0f172a;
+  color: var(--mr-on-accent);
 }
 
 .leader-hero-name {
@@ -1125,12 +1258,12 @@ onUnmounted(() => {
 .candidate-card-bar-fill {
   height: 100%;
   border-radius: 9999px;
-  background: var(--mr-subtle);
-  transition: width 0.6s ease;
+  opacity: 0.9;
+  transition: width 0.6s ease, background 0.35s ease, opacity 0.35s ease;
 }
 
 .candidate-card-bar-fill.is-leader {
-  background: linear-gradient(90deg, var(--mr-accent), var(--mr-accent-soft));
+  opacity: 1;
 }
 
 /* Charts */
@@ -1255,7 +1388,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.55);
+  background: color-mix(in srgb, var(--mr-bg) 72%, transparent);
   border-radius: 0.5rem;
   color: var(--mr-subtle);
   font-size: 0.75rem;
@@ -1343,7 +1476,7 @@ onUnmounted(() => {
   border-radius: 0.5rem;
   border: none;
   background: var(--mr-accent);
-  color: #0f172a;
+  color: var(--mr-on-accent);
   font-weight: 600;
   cursor: pointer;
 }

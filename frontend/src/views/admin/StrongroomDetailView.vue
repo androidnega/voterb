@@ -14,14 +14,6 @@
       </button>
     </div>
 
-    <PageHeader
-      :title="election.title"
-      subtitle="Secured custody vault — seals are masked until explicitly revealed."
-      icon="fas fa-shield-alt"
-      icon-tone="tone-teal"
-      :show-refresh="false"
-    />
-
     <div class="security-notice">
       <i class="fas fa-exclamation-triangle"></i>
       <span>All seal reveals are logged as vault evidence. Handle cryptographic hashes with care.</span>
@@ -131,18 +123,31 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { strongroomApi } from '@/api/strongroom'
 import { useStrongroomVault } from '@/composables/useStrongroomVault'
-import PageHeader from '@/components/admin/PageHeader.vue'
+import { usePageHeading } from '@/composables/usePageHeading'
 import StatCard from '@/components/admin/StatCard.vue'
 import DataPanel from '@/components/admin/DataPanel.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { setPageHeading } = usePageHeading()
 const election = ref(null)
+
+watch(
+  election,
+  (value) => {
+    if (!value) return
+    setPageHeading({
+      title: value.title,
+      subtitle: 'Secured custody vault — seals are masked until explicitly revealed.',
+    })
+  },
+  { immediate: true },
+)
 const revealedElectionSeal = ref('')
 const revealedBallots = reactive({})
 const revealing = ref(false)

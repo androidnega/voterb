@@ -1,38 +1,54 @@
 <template>
   <div class="admin-page">
-    <PageHeader
-      title="Fraud Monitor"
-      subtitle="Track security alerts and investigate flagged activity across the platform."
-      icon="fas fa-user-shield"
-      icon-tone="tone-rose"
-      :loading="loading"
-      @refresh="fetchAll"
-    />
+    <PageHeader :loading="loading" @refresh="fetchAll" />
 
-    <div class="stat-grid page-section">
-      <StatCard label="Total Alerts" :value="stats.total_alerts" icon="fas fa-bell" tone="tone-slate" />
-      <StatCard label="Open Alerts" :value="stats.open_alerts" icon="fas fa-exclamation-circle" tone="tone-amber" value-tone="text-amber-700" />
-      <StatCard label="High Risk" :value="stats.high_risk" icon="fas fa-radiation" tone="tone-rose" value-tone="text-rose-700" />
-      <StatCard label="Open Cases" :value="stats.open_cases" icon="fas fa-search" tone="tone-blue" value-tone="text-blue-700" />
-    </div>
-
-    <div class="fraud-layout page-section">
-      <DataPanel title="Severity mix" subtitle="Open and recent alerts by severity">
-        <DonutChart
-          :labels="severityLabels"
-          :data="severityValues"
-          :empty="!severityValues.some((v) => v > 0)"
-          height="13rem"
-          empty-text="No alerts to chart"
-          aria-label="Alert severity breakdown"
-        />
-      </DataPanel>
-      <div>
-        <TabNav v-model="activeTab" :tabs="tabs" />
+    <div class="kpi-strip">
+      <div class="kpi-item">
+        <p class="kpi-label">Total alerts</p>
+        <p class="kpi-value">{{ stats.total_alerts || 0 }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Open alerts</p>
+        <p class="kpi-value is-warn">{{ stats.open_alerts || 0 }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">High risk</p>
+        <p class="kpi-value is-danger">{{ stats.high_risk || 0 }}</p>
+      </div>
+      <div class="kpi-item">
+        <p class="kpi-label">Open cases</p>
+        <p class="kpi-value is-info">{{ stats.open_cases || 0 }}</p>
       </div>
     </div>
 
-    <DataPanel v-if="activeTab === 'alerts'" title="Security alerts" subtitle="Automated detections requiring review" no-padding>
+    <div class="section-toolbar">
+      <div>
+        <h2 class="section-toolbar__title">{{ activeTab === 'alerts' ? 'Security alerts' : 'Fraud cases' }}</h2>
+        <p class="section-toolbar__sub">
+          {{ activeTab === 'alerts'
+            ? 'Automated detections requiring review'
+            : 'Escalated investigations' }}
+        </p>
+      </div>
+      <TabNav v-model="activeTab" :tabs="tabs" />
+    </div>
+
+    <div v-if="activeTab === 'alerts' && severityValues.length" class="severity-row">
+      <p class="severity-row__label">Severity mix</p>
+      <div class="severity-chips">
+        <span
+          v-for="(label, idx) in severityLabels"
+          :key="label"
+          class="severity-chip"
+          :data-level="label.toLowerCase()"
+        >
+          {{ label }}
+          <strong>{{ severityValues[idx] }}</strong>
+        </span>
+      </div>
+    </div>
+
+    <section v-if="activeTab === 'alerts'" class="table-surface">
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -65,7 +81,7 @@
           </tbody>
         </table>
       </div>
-      <template #footer>
+      <div class="table-surface__foot">
         <TablePagination
           :page="alertsPage"
           :page-size="alertsPageSize"
@@ -76,10 +92,10 @@
           @update:page="setAlertsPage"
           @update:page-size="setAlertsPageSize"
         />
-      </template>
-    </DataPanel>
+      </div>
+    </section>
 
-    <DataPanel v-else title="Fraud cases" subtitle="Escalated investigations" no-padding>
+    <section v-else class="table-surface">
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -111,7 +127,7 @@
           </tbody>
         </table>
       </div>
-      <template #footer>
+      <div class="table-surface__foot">
         <TablePagination
           :page="casesPage"
           :page-size="casesPageSize"
@@ -122,8 +138,8 @@
           @update:page="setCasesPage"
           @update:page-size="setCasesPageSize"
         />
-      </template>
-    </DataPanel>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -132,12 +148,9 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { fraudApi } from '@/api/fraud'
 import { usePagination } from '@/composables/usePagination'
 import PageHeader from '@/components/admin/PageHeader.vue'
-import StatCard from '@/components/admin/StatCard.vue'
-import DataPanel from '@/components/admin/DataPanel.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
 import TabNav from '@/components/admin/TabNav.vue'
 import TablePagination from '@/components/admin/TablePagination.vue'
-import DonutChart from '@/components/charts/DonutChart.vue'
 
 const stats = ref({ total_alerts: 0, open_alerts: 0, high_risk: 0, total_cases: 0, open_cases: 0 })
 const alerts = ref([])
@@ -237,15 +250,56 @@ onMounted(fetchAll)
 </script>
 
 <style scoped>
-.fraud-layout {
-  display: grid;
-  gap: 1rem;
+.severity-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+  margin: -0.35rem 0 1rem;
 }
 
-@media (min-width: 900px) {
-  .fraud-layout {
-    grid-template-columns: 0.9fr 1.1fr;
-    align-items: end;
-  }
+.severity-row__label {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--vb-muted);
+}
+
+.severity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.severity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--vb-ink);
+  background: var(--vb-panel);
+}
+
+.severity-chip strong {
+  font-weight: 800;
+}
+
+.severity-chip[data-level='critical'],
+.severity-chip[data-level='high'] {
+  background: #fff1f2;
+  color: #9f1239;
+}
+
+.severity-chip[data-level='medium'] {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.severity-chip[data-level='low'] {
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 </style>

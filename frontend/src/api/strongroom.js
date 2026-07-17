@@ -17,6 +17,18 @@ function vaultHeaders() {
 }
 
 export const strongroomApi = {
+  committeeOverview() {
+    return api.get('/strongroom/committees/')
+  },
+
+  nominateCommittee(uuid, members) {
+    return api.post(`/strongroom/elections/${uuid}/committee/nominate/`, { members })
+  },
+
+  approveCommittee(uuid) {
+    return api.post(`/strongroom/elections/${uuid}/committee/approve/`)
+  },
+
   authenticate(password) {
     return api.post('/strongroom/vault/authenticate/', { password })
   },

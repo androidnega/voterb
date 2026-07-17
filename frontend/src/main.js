@@ -55,7 +55,7 @@ async function bootstrap() {
   app.use(router)
 
   const current = window.location.pathname
-  const publicPaths = ['/', '/login', '/otp', '/verify']
+  const publicPaths = ['/', '/login', '/otp']
   if (!authStore.isAuthenticated && !publicPaths.includes(current)) {
     await router.replace('/login')
   } else if (authStore.isAuthenticated && current === '/login') {

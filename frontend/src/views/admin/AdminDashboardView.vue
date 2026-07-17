@@ -1,5 +1,13 @@
 <template>
   <div class="admin-page">
+    <div v-if="orgContext" class="org-banner page-section" :class="orgContext.ready === false ? 'is-blocked' : ''">
+      <div>
+        <span class="org-banner__label">{{ orgContext.roleLabel }}</span>
+        <strong>{{ orgContext.institutionName }}</strong>
+      </div>
+      <span class="org-banner__hint">{{ orgContext.hint }}</span>
+    </div>
+
     <div v-if="errorMessage" class="soft-alert">
       <span>{{ errorMessage }}</span>
       <button type="button" class="soft-btn soft-btn--inline" @click="fetchDashboard">Retry</button>
@@ -481,6 +489,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { dashboardApi } from '@/api/dashboard'
 import { useThemeStore } from '@/stores/theme'
+import { useAuthStore } from '@/stores/auth'
 import AreaChart from '@/components/charts/AreaChart.vue'
 import GaugeChart from '@/components/charts/GaugeChart.vue'
 import StatCard from '@/components/admin/StatCard.vue'
@@ -491,9 +500,34 @@ const LUMEN_GOLD = '#e8b92a'
 const LUMEN_INK = '#2d2d2d'
 const LUMEN_MUTED = '#c5c2b6'
 
+const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const isAtelier = computed(() => themeStore.isAtelierDashboard)
 const isLumen = computed(() => themeStore.isLumenDashboard)
+
+const orgContext = computed(() => {
+  const inst = authStore.institution
+  const gov = authStore.governance
+  if (!inst && !authStore.isMainEC && !authStore.isSubEC) return null
+  const institutionName = inst?.short_name || inst?.name || 'Your institution'
+  if (authStore.isSubEC && !authStore.isMainEC) {
+    return {
+      roleLabel: 'Sub EC',
+      institutionName,
+      hint: 'Scoped preview for assigned faculties / departments (assignments coming next).',
+      ready: true,
+    }
+  }
+  const ready = gov?.ready !== false
+  return {
+    roleLabel: 'Main EC',
+    institutionName,
+    hint: ready
+      ? 'Institutional Electoral Commission — dual approval required for enrollment'
+      : (gov?.message || `Add a second Main EC before operations can proceed (${gov?.main_ec_count || 0}/${gov?.required_main_ec_count || 2}).`),
+    ready,
+  }
+})
 const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1200)
 const chartHeight = computed(() => (viewportWidth.value < 640 ? '8.5rem' : '11.5rem'))
 const gaugeHeight = computed(() => (viewportWidth.value < 640 ? '8rem' : '9.5rem'))
@@ -507,7 +541,7 @@ const scheduleTab = ref('all')
 
 const context = ref({
   display_name: '…',
-  role_label: 'Election Committee',
+  role_label: 'Main EC',
   greeting: 'day',
   today_date: '',
 })
@@ -693,8 +727,56 @@ const opsStatCards = computed(() => [
 ])
 
 const opsQuickLinks = computed(() => {
+  if (authStore.isSubEC && !authStore.isMainEC) {
+    const links = [
+      {
+        path: '/elections?create=1',
+        title: 'Create election',
+        description: 'Select register, set Web/USSD/SMS, then positions & candidates',
+        icon: 'fas fa-calendar-plus',
+        tone: 'tone-teal',
+      },
+      {
+        path: '/elections',
+        title: 'Elections',
+        description: 'Your faculty/department elections',
+        icon: 'fas fa-calendar-check',
+        tone: 'tone-teal',
+      },
+      {
+        path: '/results',
+        title: 'Results',
+        description: 'View results for your elections',
+        icon: 'fas fa-chart-bar',
+        tone: 'tone-blue',
+      },
+      {
+        path: '/audit',
+        title: 'Audit',
+        description: 'Election audit trail',
+        icon: 'fas fa-clipboard-list',
+        tone: 'tone-slate',
+      },
+    ]
+    const openElection = liveElections.value.find((e) => e.status === 'open')
+    if (openElection) {
+      links.unshift({
+        path: `/monitor/${openElection.uuid}`,
+        title: 'Live Monitor Room',
+        description: 'Real-time turnout & votes',
+        icon: 'fas fa-tv',
+        tone: 'tone-emerald',
+      })
+    }
+    return links
+  }
+
   const links = [
-    { path: '/elections', title: 'Manage Elections', description: 'Positions, candidates, and voters', icon: 'fas fa-calendar-check', tone: 'tone-teal' },
+    { path: '/categories', title: 'Categories', description: 'Faculties and departments', icon: 'fas fa-layer-group', tone: 'tone-slate' },
+    { path: '/register', title: 'Register', description: 'Assign categories and import voters', icon: 'fas fa-book', tone: 'tone-teal' },
+    { path: '/sub-ec', title: 'Sub ECs', description: 'Propose and assign Sub ECs', icon: 'fas fa-sitemap', tone: 'tone-teal' },
+    { path: '/elections', title: 'Elections', description: 'Positions, candidates, and voters', icon: 'fas fa-calendar-check', tone: 'tone-teal' },
+    { path: '/approvals', title: 'Dual Approvals', description: 'Co-sign Main EC decisions', icon: 'fas fa-check-double', tone: 'tone-blue' },
     { path: '/results', title: 'Results & Certification', description: 'Generate and publish results', icon: 'fas fa-chart-bar', tone: 'tone-blue' },
     { path: '/strongroom', title: 'Strongroom', description: 'Seals and vault integrity', icon: 'fas fa-shield-alt', tone: 'tone-amber' },
     { path: '/fraud', title: 'Fraud Monitor', description: 'Suspicious voting alerts', icon: 'fas fa-user-shield', tone: 'tone-rose' },
@@ -775,6 +857,37 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.org-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1.05rem;
+  border-radius: 1rem;
+  border: 1px solid var(--vb-accent-border, #c5d4bc);
+  background: var(--vb-panel, #f7f6f2);
+  margin-bottom: 0.85rem;
+}
+
+.org-banner__label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--vb-accent, #3d4f44);
+}
+
+.org-banner__hint {
+  font-size: 0.8rem;
+  color: var(--vb-muted, #8a8a8a);
+}
+
+.org-banner.is-blocked {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
 .soft-dash,
 .ops-dash,
 .lumen-dash {

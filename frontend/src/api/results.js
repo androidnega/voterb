@@ -13,8 +13,15 @@ export const resultsApi = {
   preview(electionUuid) {
     return api.get(`/results/elections/${electionUuid}/preview/`)
   },
-  certify(electionUuid) {
-    return api.post(`/results/elections/${electionUuid}/certify/`)
+  certifyMeta(electionUuid, fingerprint) {
+    return api.get(`/results/elections/${electionUuid}/certify/`, {
+      headers: fingerprint ? { 'X-Device-Fingerprint': fingerprint } : {},
+    })
+  },
+  certify(electionUuid, payload, fingerprint) {
+    return api.post(`/results/elections/${electionUuid}/certify/`, payload, {
+      headers: fingerprint ? { 'X-Device-Fingerprint': fingerprint } : {},
+    })
   },
   publish(electionUuid) {
     return api.post(`/results/elections/${electionUuid}/publish/`)

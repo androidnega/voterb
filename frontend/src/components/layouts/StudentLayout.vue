@@ -11,7 +11,10 @@
           <span class="student-brand-text">VoteBridge</span>
         </router-link>
 
-        <StudentProfileMenu />
+        <div class="student-topbar-actions">
+          <StudentNotificationBell />
+          <StudentProfileMenu />
+        </div>
       </div>
     </header>
 
@@ -29,13 +32,15 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import StudentProfileMenu from '@/components/student/StudentProfileMenu.vue'
+import StudentNotificationBell from '@/components/student/StudentNotificationBell.vue'
 
 const router = useRouter()
 const transitionName = ref('page-fade')
 
 function routeDepth(path = '') {
-  if (path.startsWith('/vote/') && path.includes('/confirmation')) return 3
-  if (path.startsWith('/vote/') && path.includes('/ballot')) return 2
+  if (path.startsWith('/vote/') && path.includes('/confirmation')) return 4
+  if (path.startsWith('/vote/') && path.includes('/ballot')) return 3
+  if (path.startsWith('/vote/') && path.includes('/presence')) return 2
   if (path.startsWith('/vote/')) return 1
   if (path.startsWith('/student/results')) return 1
   return 0
@@ -98,6 +103,13 @@ router.beforeEach((to, from) => {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.student-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
 }
 
 .student-brand {

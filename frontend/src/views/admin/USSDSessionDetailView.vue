@@ -1,12 +1,6 @@
 <template>
   <div v-if="session" class="admin-page">
-    <PageHeader
-      title="Session details"
-      :subtitle="`USSD session for ${session.msisdn}`"
-      icon="fas fa-mobile-alt"
-      icon-tone="tone-blue"
-      :show-refresh="false"
-    >
+    <PageHeader :show-refresh="false">
       <template #actions>
         <button type="button" class="btn-back" @click="router.push('/ussd')">
           <i class="fas fa-arrow-left"></i>
@@ -74,17 +68,31 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ussdApi } from '@/api/ussd'
+import { usePageHeading } from '@/composables/usePageHeading'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import DataPanel from '@/components/admin/DataPanel.vue'
 import EmptyState from '@/components/admin/EmptyState.vue'
 
 const route = useRoute()
 const router = useRouter()
+const { setPageHeading } = usePageHeading()
 const session = ref(null)
 const logs = ref([])
+
+watch(
+  session,
+  (value) => {
+    if (!value) return
+    setPageHeading({
+      title: 'Session details',
+      subtitle: `USSD session for ${value.msisdn}`,
+    })
+  },
+  { immediate: true },
+)
 
 const fetchSession = async () => {
   try {

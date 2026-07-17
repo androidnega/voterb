@@ -74,14 +74,14 @@ onUnmounted(() => {
 }
 
 @media (min-width: 1024px) {
-  /* collapsed rail: 5.25rem sidebar + 0.85rem left offset + gap */
+  /* collapsed rail: 5.25rem sidebar + 0.85rem left offset + 0.35rem gap */
   .soft-main.is-rail {
-    margin-left: 6.95rem;
+    margin-left: 6.45rem;
   }
 
-  /* expanded: 15rem sidebar + 0.85rem left offset + gap */
+  /* expanded: 15rem sidebar + 0.85rem left offset + 0.35rem gap */
   .soft-main.is-wide {
-    margin-left: 16.7rem;
+    margin-left: 16.2rem;
   }
 }
 
@@ -95,13 +95,14 @@ onUnmounted(() => {
 
 @media (min-width: 640px) {
   .soft-main__inner {
-    padding: 1.1rem 1.25rem 2.25rem;
+    padding: 1.1rem 1.15rem 2.25rem 0.9rem;
   }
 }
 
 @media (min-width: 1024px) {
   .soft-main__inner {
-    padding: 1.25rem 1.5rem 2.5rem;
+    /* Tighter left padding so content meets the sidebar */
+    padding: 1.15rem 1.25rem 2.5rem 0.65rem;
   }
 }
 
