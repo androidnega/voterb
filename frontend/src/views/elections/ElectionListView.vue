@@ -98,7 +98,7 @@
             v-for="election in sortedElections"
             :key="election.uuid"
             class="election-card"
-            :class="[`status-${election.status}`, { 'is-live': election.status === 'open' }]"
+            :class="{ 'is-live': election.status === 'open' }"
             @click="viewElection(election.uuid)"
           >
             <header class="election-card__head">
@@ -106,10 +106,9 @@
                 <span v-if="election.status === 'open'" class="live-dot" aria-hidden="true"></span>
                 {{ election.status }}
               </span>
-              <span class="owner-chip" :class="election.owner_type === 'sub' ? 'is-sub' : 'is-main'">
+              <span class="owner-label">
                 {{ election.owner_type === 'sub' ? (election.owner_ec_unit_name || 'Sub EC') : 'Institutional' }}
               </span>
-              <span class="type-label">{{ channelSummary(election) }}</span>
             </header>
 
             <div class="election-card__body">
@@ -127,6 +126,10 @@
               <div class="election-card__meta">
                 <i class="fas fa-address-book" aria-hidden="true"></i>
                 <span>{{ registerSummary(election) }}</span>
+              </div>
+              <div class="election-card__meta">
+                <i class="fas fa-broadcast-tower" aria-hidden="true"></i>
+                <span>{{ channelSummary(election) }}</span>
               </div>
             </div>
 
@@ -378,7 +381,7 @@ const onElectionPendingApproval = (decision) => {
   showCreateDialog.value = false
   governanceMessage.value =
     decision?.message
-    || 'Submitted for dual Main EC approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'
+    || 'Submitted for approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'
   showGovernanceModal.value = true
 }
 
@@ -540,16 +543,22 @@ onMounted(() => {
 }
 
 .election-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 14.75rem;
+  min-height: 14.5rem;
   padding: 1.15rem 1.2rem 1rem;
   background: var(--vb-surface, #fff);
   border: 1px solid var(--vb-line, #ebeae4);
-  border-radius: 1.1rem;
+  border-left: 1px solid var(--vb-line, #ebeae4);
+  border-radius: 1rem;
   box-shadow: none;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.election-card::before {
+  content: none;
 }
 
 .election-card:hover {
@@ -570,27 +579,20 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-.owner-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.15rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+.owner-label {
+  font-size: 0.7rem;
+  font-weight: 550;
+  color: var(--vb-muted, #8a8a8a);
+  letter-spacing: 0.01em;
 }
-
-.owner-chip.is-main { background: #eef2ff; color: #3730a3; }
-.owner-chip.is-sub { background: #ecfdf5; color: #047857; }
 
 .status-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 650;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--vb-muted, #8a8a8a);
   background: none;
@@ -598,21 +600,15 @@ onMounted(() => {
 }
 
 .status-chip[data-status='open'] {
-  color: var(--vb-accent, #3d4f44);
+  color: var(--vb-ink, #1c1c1c);
 }
 
-.status-chip[data-status='scheduled'] {
-  color: #5c6bc0;
-}
-
-.status-chip[data-status='paused'] {
-  color: #b45309;
-}
-
+.status-chip[data-status='scheduled'],
+.status-chip[data-status='paused'],
 .status-chip[data-status='closed'],
 .status-chip[data-status='archived'],
 .status-chip[data-status='draft'] {
-  color: #a8a29e;
+  color: var(--vb-muted, #8a8a8a);
 }
 
 .live-dot {
@@ -620,13 +616,6 @@ onMounted(() => {
   height: 0.32rem;
   border-radius: 9999px;
   background: currentColor;
-}
-
-.type-label {
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--vb-muted, #8a8a8a);
-  text-transform: capitalize;
 }
 
 .election-card__body {

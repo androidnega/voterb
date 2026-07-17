@@ -119,7 +119,7 @@ import { parseApiError } from '@/utils/apiError'
 const authStore = useAuthStore()
 const { setPageHeading } = usePageHeading()
 setPageHeading({
-  title: 'Dual Approvals',
+  title: 'Approvals',
   subtitle: 'Both Main ECs must approve before a decision is enrolled',
 })
 
@@ -198,7 +198,7 @@ const runApprove = async (d) => {
     } else {
       resultState.value = 'pending'
       resultMessage.value =
-        data.message || 'Approval recorded. Awaiting co-signature from the other Main EC member.'
+        data.message || 'Approval recorded. Waiting for the other Main EC member.'
       showResultModal.value = true
     }
     await load()

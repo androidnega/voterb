@@ -326,7 +326,7 @@ def decision_submitted_response(decision: MainECDecision):
         data['message'] = 'Decision enrolled — both Main EC members approved.'
     else:
         data['message'] = (
-            'Submitted for dual Main EC approval. Your approval is recorded; '
+            'Submitted for approval. Your approval is recorded; '
             'the other institutional EC member must also approve before enrollment.'
         )
     return Response(data, status=status.HTTP_202_ACCEPTED)

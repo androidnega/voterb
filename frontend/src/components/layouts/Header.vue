@@ -227,7 +227,7 @@ const pageMeta = computed(() => {
   }
   if (path.startsWith('/approvals')) {
     return {
-      title: 'Dual Approvals',
+      title: 'Approvals',
       subtitle: 'Both Main ECs must approve before a decision is enrolled',
     }
   }

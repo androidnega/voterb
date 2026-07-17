@@ -50,7 +50,7 @@
         <p>
           {{
             institution.governance?.message
-              || `An institution needs at least ${requiredMainEc} Main EC members. All Main EC decisions require dual approval before enrollment.`
+              || `An institution needs at least ${requiredMainEc} Main EC members. All Main EC decisions require approval before enrollment.`
           }}
         </p>
       </div>
@@ -108,7 +108,7 @@
 
     <DataPanel
       title="Sub EC units"
-      subtitle="Faculty / department Sub ECs — proposed by Main EC, dual-approved, then assigned to categories"
+      subtitle="Faculty / department Sub ECs — proposed by Main EC, approved, then assigned to categories"
       class="page-section"
     >
       <div v-if="!(institution.sub_ec_units || []).length" class="empty-hint">

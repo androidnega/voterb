@@ -705,7 +705,7 @@ const handleGovernanceResponse = (response, fallbackMessage) => {
     governanceMessage.value =
       data?.message
       || fallbackMessage
-      || 'Submitted for dual Main EC approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'
+      || 'Submitted for approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'
     showGovernanceModal.value = true
     return true
   }

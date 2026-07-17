@@ -126,7 +126,7 @@ const menuItems = computed(() => {
   if (role === 'admin' || authStore.isMainEC) {
     return [
       { path: '/dashboard', label: 'Dashboard', icon: 'fas fa-th-large' },
-      { path: '/approvals', label: 'Dual Approvals', icon: 'fas fa-check-double' },
+      { path: '/approvals', label: 'Approvals', icon: 'fas fa-check-double' },
       { path: '/categories', label: 'Categories', icon: 'fas fa-layer-group' },
       { path: '/register', label: 'Register', icon: 'fas fa-book' },
       { path: '/sub-ec', label: 'Sub ECs', icon: 'fas fa-sitemap' },

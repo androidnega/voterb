@@ -28,7 +28,7 @@
       <div class="field">
         <div class="field-head">
           <label for="election-register">Voter register <span class="req">*</span></label>
-          <span class="field-hint-inline">Who can vote in this election</span>
+          <span class="field-hint-inline">Who can vote</span>
         </div>
 
         <div v-if="!loadingRegisters && !registerOptions.length" class="register-empty">
@@ -39,8 +39,7 @@
               categories, then return here to create the election.
             </template>
             <template v-else>
-              Create a Main EC institution register under Register (not a Sub EC faculty/department one),
-              get dual approval, then return here.
+              Create a Main EC institution register under Register, get approval, then return here.
             </template>
           </p>
           <router-link
@@ -94,17 +93,12 @@
       <div class="field">
         <div class="field-head">
           <label>Schedule <span class="req">*</span></label>
-          <span class="field-hint-inline">When voting opens and closes</span>
+          <span class="field-hint-inline">Opens and closes</span>
         </div>
         <div class="schedule-grid">
-          <div class="schedule-card">
-            <div class="schedule-card__meta">
-              <span class="schedule-card__icon" aria-hidden="true">
-                <i class="fas fa-play"></i>
-              </span>
-              <label class="schedule-card__label" for="election-start">Starts</label>
-            </div>
-            <Calendar
+          <div class="schedule-field">
+            <label class="schedule-field__label" for="election-start">Starts</label>
+            <DatePicker
               id="election-start"
               v-model="form.start_date"
               showTime
@@ -112,22 +106,20 @@
               dateFormat="dd M yy"
               class="schedule-picker"
               inputClass="schedule-picker__input"
-              placeholder="Select date & time"
+              panelClass="schedule-datepicker-panel"
+              placeholder="Date & time"
               :manualInput="false"
               :showSeconds="false"
               :showIcon="true"
               iconDisplay="input"
+              :hideOnDateTimeSelect="true"
               appendTo="body"
             />
+            <p v-if="form.start_date" class="schedule-field__value">{{ formatSchedule(form.start_date) }}</p>
           </div>
-          <div class="schedule-card">
-            <div class="schedule-card__meta">
-              <span class="schedule-card__icon" aria-hidden="true">
-                <i class="fas fa-flag-checkered"></i>
-              </span>
-              <label class="schedule-card__label" for="election-end">Ends</label>
-            </div>
-            <Calendar
+          <div class="schedule-field">
+            <label class="schedule-field__label" for="election-end">Ends</label>
+            <DatePicker
               id="election-end"
               v-model="form.end_date"
               showTime
@@ -135,13 +127,16 @@
               dateFormat="dd M yy"
               class="schedule-picker"
               inputClass="schedule-picker__input"
-              placeholder="Select date & time"
+              panelClass="schedule-datepicker-panel"
+              placeholder="Date & time"
               :manualInput="false"
               :showSeconds="false"
               :showIcon="true"
               iconDisplay="input"
+              :hideOnDateTimeSelect="true"
               appendTo="body"
             />
+            <p v-if="form.end_date" class="schedule-field__value">{{ formatSchedule(form.end_date) }}</p>
           </div>
         </div>
       </div>
@@ -149,34 +144,26 @@
       <div class="field">
         <div class="field-head">
           <label>Voting channels</label>
-          <span class="field-hint-inline">Pick how voters take part</span>
+          <span class="field-hint-inline">How voters take part</span>
         </div>
-        <div class="channel-grid" role="group" aria-label="Voting channels">
-          <button
+        <div class="channel-checks" role="group" aria-label="Voting channels">
+          <label
             v-for="channel in channelOptions"
             :key="channel.key"
-            type="button"
-            class="channel-card"
-            :class="{
-              'is-selected': form[channel.key],
-              'is-disabled': channel.disabled,
-            }"
-            :aria-pressed="form[channel.key]"
-            :aria-disabled="channel.disabled || undefined"
-            :disabled="channel.disabled"
-            @click="toggleChannel(channel.key)"
+            class="channel-check"
+            :class="{ 'is-disabled': channel.disabled }"
           >
-            <span class="channel-card__icon" aria-hidden="true">
-              <i :class="channel.icon"></i>
+            <input
+              type="checkbox"
+              :checked="form[channel.key]"
+              :disabled="channel.disabled"
+              @change="toggleChannel(channel.key)"
+            />
+            <span class="channel-check__box" aria-hidden="true">
+              <i class="fas fa-check"></i>
             </span>
-            <span class="channel-card__copy">
-              <strong class="channel-card__label">{{ channel.label }}</strong>
-              <small class="channel-card__hint">{{ channel.hint }}</small>
-            </span>
-            <span class="channel-card__switch" aria-hidden="true">
-              <span class="channel-card__knob"></span>
-            </span>
-          </button>
+            <span class="channel-check__label">{{ channel.label }}</span>
+          </label>
         </div>
       </div>
 
@@ -203,7 +190,7 @@ import { registerApi } from '@/api/registers'
 import { useAuthStore } from '@/stores/auth'
 import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
-import Calendar from 'primevue/calendar'
+import DatePicker from 'primevue/datepicker'
 
 const emit = defineEmits(['success', 'cancel', 'pending-approval'])
 const authStore = useAuthStore()
@@ -234,25 +221,31 @@ const channelOptions = computed(() => [
   {
     key: 'allow_web_voting',
     label: 'Web',
-    hint: 'Browser ballot',
-    icon: 'fas fa-globe',
     disabled: false,
   },
   {
     key: 'allow_ussd_voting',
     label: 'USSD',
-    hint: 'Dial-in ballot',
-    icon: 'fas fa-mobile-alt',
     disabled: false,
   },
   {
     key: 'allow_sms_notifications',
     label: 'SMS',
-    hint: smsEnabled.value ? 'Alerts & tokens' : 'Not available yet',
-    icon: 'fas fa-sms',
     disabled: !smsEnabled.value,
   },
 ])
+
+const formatSchedule = (value) => {
+  if (!value) return ''
+  return new Date(value).toLocaleString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 const toggleChannel = (key) => {
   const channel = channelOptions.value.find((item) => item.key === key)
@@ -281,7 +274,6 @@ const loadRegisters = async () => {
   try {
     const { data } = await registerApi.available()
     registerOptions.value = Array.isArray(data) ? data : (data.results || [])
-    // Flow: if only one register in scope, auto-select it
     if (registerOptions.value.length === 1) {
       form.value.register_uuid = registerOptions.value[0].uuid
     }
@@ -329,7 +321,6 @@ const handleSubmit = async () => {
       start_date: new Date(form.value.start_date).toISOString(),
       end_date: new Date(form.value.end_date).toISOString(),
       register_uuid: form.value.register_uuid,
-      // Preserve the approved voter list used at creation time.
       clone_register: false,
       allow_web_voting: form.value.allow_web_voting,
       allow_ussd_voting: form.value.allow_ussd_voting,
@@ -373,7 +364,7 @@ onMounted(() => {
 .form-body {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.95rem;
   padding: 0.15rem 0.15rem 0.25rem;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -397,7 +388,7 @@ onMounted(() => {
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 0.45rem;
+  margin-bottom: 0.4rem;
 }
 
 .field-head label {
@@ -417,7 +408,7 @@ onMounted(() => {
 .schedule-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.55rem;
+  gap: 0.65rem;
 }
 
 @media (max-width: 480px) {
@@ -426,58 +417,36 @@ onMounted(() => {
   }
 }
 
-.schedule-card {
+.schedule-field {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.schedule-field__label {
   margin: 0;
-  padding: 0.65rem 0.7rem 0.7rem;
-  border-radius: 0.85rem;
-  border: 1px solid var(--vb-line, #ebeae4);
-  background: #fff;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.schedule-card:focus-within {
-  border-color: var(--vb-accent-border, #c5d4bc);
-  box-shadow: 0 0 0 3px var(--vb-focus-ring, rgba(61, 79, 68, 0.12));
-}
-
-.schedule-card__meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.schedule-card__icon {
-  width: 1.35rem;
-  height: 1.35rem;
-  border-radius: 0.4rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--vb-panel, #f7f6f2);
+  font-size: 0.7rem;
+  font-weight: 650;
   color: var(--vb-muted, #8a8a8a);
-  font-size: 0.58rem;
 }
 
-.schedule-card__label {
+.schedule-field__value {
   margin: 0;
   font-size: 0.72rem;
-  font-weight: 750;
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-  color: var(--vb-muted, #8a8a8a);
+  font-weight: 600;
+  color: var(--vb-ink, #1c1c1c);
+  letter-spacing: -0.01em;
 }
 
 .register-select {
   width: 100%;
-  padding: 0.62rem 0.8rem;
-  border-radius: 0.75rem;
+  padding: 0.58rem 0.75rem;
+  border-radius: 0.7rem;
   border: 1px solid var(--vb-line, #ebeae4);
   background: #fff;
   color: var(--vb-ink, #1c1c1c);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 .register-select:focus {
@@ -491,22 +460,15 @@ onMounted(() => {
   background: var(--vb-panel, #f7f6f2);
 }
 
-.field-note {
-  margin: 0.4rem 0 0;
-  font-size: 0.75rem;
-  color: #b45309;
-  line-height: 1.35;
-}
-
 .register-auto {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.7rem;
-  padding: 0.75rem 0.85rem;
-  border-radius: 0.75rem;
-  background: #f0f7f3;
-  border: 1px solid rgba(61, 79, 68, 0.14);
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.7rem;
+  background: var(--vb-panel, #f7f6f2);
+  border: 1px solid var(--vb-line, #ebeae4);
   color: var(--vb-ink, #1c1c1c);
 }
 
@@ -514,12 +476,12 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.6rem;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 0.5rem;
   background: var(--vb-accent, #3d4f44);
   color: #fff;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
 }
 
 .register-auto__copy {
@@ -531,14 +493,14 @@ onMounted(() => {
 
 .register-auto__copy strong {
   overflow: hidden;
-  font-size: 0.83rem;
+  font-size: 0.82rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .register-auto__copy small {
   color: var(--vb-muted, #8a8a8a);
-  font-size: 0.71rem;
+  font-size: 0.7rem;
 }
 
 .register-auto__status {
@@ -546,7 +508,7 @@ onMounted(() => {
   align-items: center;
   gap: 0.3rem;
   color: var(--vb-accent, #3d4f44);
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 750;
 }
 
@@ -554,15 +516,15 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  padding: 0.95rem 1rem;
-  border-radius: 0.9rem;
-  border: 1px dashed var(--vb-accent-border, #c5d4bc);
+  padding: 0.9rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px dashed var(--vb-line, #ebeae4);
   background: var(--vb-panel, #f7f6f2);
 }
 
 .register-empty__title {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 750;
   color: var(--vb-ink, #1c1c1c);
 }
@@ -579,119 +541,60 @@ onMounted(() => {
   margin-top: 0.2rem;
 }
 
-.channel-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.55rem;
+.channel-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1.1rem;
 }
 
-@media (max-width: 520px) {
-  .channel-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.channel-card {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.channel-check {
+  display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  width: 100%;
-  text-align: left;
-  padding: 0.55rem 0.6rem;
-  border-radius: 0.8rem;
-  border: 1px solid var(--vb-line, #ebeae4);
-  background: #fff;
   cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease,
-    box-shadow 0.15s ease;
+  user-select: none;
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: var(--vb-ink, #1c1c1c);
 }
 
-.channel-card:hover:not(:disabled) {
-  border-color: var(--vb-accent-border, #c5d4bc);
-  background: #fcfcfb;
+.channel-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.channel-card.is-selected {
-  border-color: var(--vb-accent-border, #c5d4bc);
-  background: var(--vb-accent-soft, #e8efe6);
-  box-shadow: inset 0 0 0 1px var(--vb-accent-border, #c5d4bc);
-}
-
-.channel-card.is-disabled,
-.channel-card:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-  background: var(--vb-panel, #f7f6f2);
-}
-
-.channel-card__icon {
-  width: 1.55rem;
-  height: 1.55rem;
-  border-radius: 0.45rem;
+.channel-check__box {
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 0.3rem;
+  border: 1.5px solid #d6d3d1;
+  background: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--vb-panel, #f7f6f2);
-  color: var(--vb-muted, #8a8a8a);
-  font-size: 0.65rem;
-  flex-shrink: 0;
+  color: transparent;
+  font-size: 0.55rem;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
 }
 
-.channel-card.is-selected .channel-card__icon {
+.channel-check input:checked + .channel-check__box {
+  border-color: var(--vb-accent, #3d4f44);
   background: var(--vb-accent, #3d4f44);
   color: #fff;
 }
 
-.channel-card__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.05rem;
-  min-width: 0;
+.channel-check input:focus-visible + .channel-check__box {
+  box-shadow: 0 0 0 3px var(--vb-focus-ring, rgba(61, 79, 68, 0.14));
 }
 
-.channel-card__label {
-  font-size: 0.8rem;
-  font-weight: 750;
-  letter-spacing: -0.015em;
-  color: var(--vb-ink, #1c1c1c);
+.channel-check.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-.channel-card__hint {
-  font-size: 0.65rem;
-  line-height: 1.25;
-  color: var(--vb-muted, #8a8a8a);
-}
-
-.channel-card__switch {
-  width: 1.9rem;
-  height: 1.05rem;
-  border-radius: 999px;
-  background: #e7e5e4;
-  padding: 0.1rem;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  transition: background 0.15s ease;
-}
-
-.channel-card.is-selected .channel-card__switch {
-  background: var(--vb-accent, #3d4f44);
-}
-
-.channel-card__knob {
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(28, 28, 28, 0.15);
-  transition: transform 0.15s ease;
-}
-
-.channel-card.is-selected .channel-card__knob {
-  transform: translateX(0.8rem);
+.channel-check__label {
+  letter-spacing: -0.01em;
 }
 
 .form-error {
@@ -717,19 +620,17 @@ onMounted(() => {
 
 :deep(.p-inputtext),
 :deep(.p-inputtextarea),
-:deep(.p-calendar),
 :deep(.p-datepicker),
-:deep(.p-calendar .p-inputtext),
 :deep(.p-datepicker .p-inputtext) {
   width: 100%;
 }
 
 :deep(.p-inputtext),
 :deep(.p-inputtextarea) {
-  border-radius: 0.75rem;
+  border-radius: 0.7rem;
   border-color: var(--vb-line, #ebeae4);
-  padding: 0.62rem 0.8rem;
-  font-size: 0.9rem;
+  padding: 0.58rem 0.75rem;
+  font-size: 0.88rem;
   background: #fff;
 }
 
@@ -739,7 +640,6 @@ onMounted(() => {
   box-shadow: 0 0 0 3px var(--vb-focus-ring, rgba(61, 79, 68, 0.14));
 }
 
-:deep(.p-calendar),
 :deep(.p-datepicker) {
   display: block;
 }
@@ -752,11 +652,11 @@ onMounted(() => {
 :deep(.schedule-picker__input) {
   width: 100%;
   min-width: 0;
-  padding: 0.48rem 2.1rem 0.48rem 0.65rem;
-  border: none;
-  border-radius: 0.6rem;
-  background: var(--vb-panel, #f7f6f2);
-  font-size: 0.8rem;
+  padding: 0.5rem 2rem 0.5rem 0.7rem;
+  border: 1px solid var(--vb-line, #ebeae4);
+  border-radius: 0.65rem;
+  background: #fff;
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--vb-ink, #1c1c1c);
   box-shadow: none;
@@ -764,20 +664,73 @@ onMounted(() => {
 
 :deep(.schedule-picker .p-inputtext:enabled:focus),
 :deep(.schedule-picker__input:enabled:focus) {
-  border: none;
-  box-shadow: none;
-  background: #eef2ec;
+  border-color: var(--vb-accent-border, #c5d4bc);
+  box-shadow: 0 0 0 3px var(--vb-focus-ring, rgba(61, 79, 68, 0.12));
 }
 
 :deep(.schedule-picker .p-datepicker-input-icon-container),
 :deep(.schedule-picker .p-datepicker-trigger),
 :deep(.schedule-picker .p-datepicker-input-icon) {
   color: var(--vb-muted, #8a8a8a);
-  right: 0.55rem;
+  right: 0.5rem;
 }
 
 :deep(.schedule-picker .p-icon) {
-  width: 0.85rem;
-  height: 0.85rem;
+  width: 0.8rem;
+  height: 0.8rem;
+}
+</style>
+
+<style>
+/* DatePicker panel is teleported to body */
+.schedule-datepicker-panel.p-datepicker-panel,
+.p-datepicker-panel.schedule-datepicker-panel {
+  width: min(17.5rem, calc(100vw - 1.5rem)) !important;
+  min-width: 0 !important;
+  padding: 0.55rem !important;
+  border-radius: 0.85rem !important;
+  border: 1px solid #ebeae4 !important;
+  box-shadow: 0 14px 36px rgba(28, 28, 28, 0.14) !important;
+  font-size: 0.8rem !important;
+}
+
+.schedule-datepicker-panel .p-datepicker-header {
+  padding: 0.15rem 0.2rem 0.45rem !important;
+}
+
+.schedule-datepicker-panel .p-datepicker-title {
+  font-size: 0.82rem !important;
+  font-weight: 700 !important;
+}
+
+.schedule-datepicker-panel .p-datepicker-calendar th,
+.schedule-datepicker-panel .p-datepicker-calendar td {
+  padding: 0.1rem !important;
+}
+
+.schedule-datepicker-panel .p-datepicker-day,
+.schedule-datepicker-panel .p-datepicker-weekday {
+  width: 1.85rem !important;
+  height: 1.85rem !important;
+  font-size: 0.75rem !important;
+}
+
+.schedule-datepicker-panel .p-timepicker,
+.schedule-datepicker-panel .p-datepicker-time-picker {
+  padding: 0.4rem 0.2rem 0.15rem !important;
+  border-top: 1px solid #ebeae4 !important;
+  gap: 0.35rem !important;
+}
+
+.schedule-datepicker-panel .p-timepicker span,
+.schedule-datepicker-panel .p-datepicker-time-picker span {
+  font-size: 0.9rem !important;
+  font-weight: 700 !important;
+}
+
+.schedule-datepicker-panel .p-timepicker button,
+.schedule-datepicker-panel .p-datepicker-time-picker button {
+  width: 1.5rem !important;
+  height: 1.5rem !important;
 }
 </style>

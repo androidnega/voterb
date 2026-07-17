@@ -18,7 +18,27 @@
         >
           <div class="gov-submit-glow" aria-hidden="true"></div>
 
-          <div class="gov-submit-icon" aria-hidden="true">
+          <div v-if="state === 'enrolled'" class="fp-seal" aria-hidden="true">
+            <svg class="fp-seal__svg" viewBox="0 0 64 64" fill="none">
+              <circle class="fp-seal__ring" cx="32" cy="32" r="28" />
+              <g class="fp-seal__print" stroke="currentColor" stroke-linecap="round" fill="none">
+                <path d="M32 18c-6.2 0-11 5-11 11.5 0 8.2 4.2 14.5 8.2 20.2" stroke-width="2.2" />
+                <path d="M32 18c6.2 0 11 5 11 11.5 0 8.2-4.2 14.5-8.2 20.2" stroke-width="2.2" />
+                <path d="M32 22.5c-3.8 0-6.8 3.2-6.8 7.2 0 5.8 2.8 10.6 5.6 15.2" stroke-width="1.8" />
+                <path d="M32 22.5c3.8 0 6.8 3.2 6.8 7.2 0 5.8-2.8 10.6-5.6 15.2" stroke-width="1.8" />
+                <path d="M32 27c-1.8 0-3.2 1.6-3.2 3.6 0 3.4 1.4 6.4 3.2 9.4" stroke-width="1.6" />
+                <path d="M32 27c1.8 0 3.2 1.6 3.2 3.6 0 3.4-1.4 6.4-3.2 9.4" stroke-width="1.6" />
+                <path d="M26 20.5c-2.4 1.8-4 4.6-4 7.8 0 4.6 1.6 8.6 3.6 12.4" stroke-width="1.5" opacity="0.75" />
+                <path d="M38 20.5c2.4 1.8 4 4.6 4 7.8 0 4.6-1.6 8.6-3.6 12.4" stroke-width="1.5" opacity="0.75" />
+              </g>
+              <line class="fp-seal__scan" x1="14" y1="20" x2="50" y2="20" />
+            </svg>
+            <span class="fp-seal__check">
+              <i class="fas fa-check"></i>
+            </span>
+          </div>
+
+          <div v-else class="gov-submit-icon" aria-hidden="true">
             <span class="gov-submit-icon__ring"></span>
             <i :class="iconClass"></i>
           </div>
@@ -42,10 +62,10 @@
             </div>
           </div>
 
-          <div v-else-if="state === 'enrolled'" class="gov-submit-progress is-complete" aria-label="Enrolled">
+          <div v-else-if="state === 'enrolled'" class="gov-submit-progress is-complete" aria-label="Approved">
             <div class="gov-submit-step is-done">
-              <span class="gov-submit-dot"><i class="fas fa-check"></i></span>
-              <span>Both approved</span>
+              <span class="gov-submit-dot"><i class="fas fa-fingerprint"></i></span>
+              <span>Approved</span>
             </div>
             <div class="gov-submit-rail is-complete" aria-hidden="true"></div>
             <div class="gov-submit-step is-done">
@@ -94,7 +114,7 @@ const props = defineProps({
   message: {
     type: String,
     default:
-      'Submitted for dual Main EC approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.',
+      'Submitted for approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.',
   },
   approvalsPath: { type: String, default: '/approvals' },
 })
@@ -106,15 +126,15 @@ const panelRef = ref(null)
 const titleId = 'gov-submit-title'
 
 const eyebrow = computed(() => {
-  if (props.state === 'enrolled') return 'Enrolled'
+  if (props.state === 'enrolled') return 'Approved'
   if (props.state === 'rejected') return 'Rejected'
-  return 'Dual Main EC'
+  return 'Approvals'
 })
 
 const heading = computed(() => {
   if (props.state === 'enrolled') return 'Decision enrolled'
   if (props.state === 'rejected') return 'Decision rejected'
-  return 'Awaiting co-approval'
+  return 'Awaiting approval'
 })
 
 const iconClass = computed(() => {
@@ -197,6 +217,68 @@ const onReview = () => {
   background: radial-gradient(ellipse at center, rgba(34, 197, 94, 0.28), transparent 68%);
 }
 
+.fp-seal {
+  position: relative;
+  width: 5.25rem;
+  height: 5.25rem;
+  margin: 0 auto 1.15rem;
+  display: grid;
+  place-items: center;
+  color: #15803d;
+}
+
+.fp-seal__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.fp-seal__ring {
+  stroke: rgba(22, 163, 74, 0.28);
+  stroke-width: 1.5;
+  fill: rgba(240, 253, 244, 0.9);
+  animation: fp-ring 1.1s ease-out both;
+}
+
+.fp-seal__print path {
+  stroke-dasharray: 80;
+  stroke-dashoffset: 80;
+  animation: fp-draw 1.05s ease-out forwards;
+}
+
+.fp-seal__print path:nth-child(1) { animation-delay: 0.05s; }
+.fp-seal__print path:nth-child(2) { animation-delay: 0.1s; }
+.fp-seal__print path:nth-child(3) { animation-delay: 0.15s; }
+.fp-seal__print path:nth-child(4) { animation-delay: 0.2s; }
+.fp-seal__print path:nth-child(5) { animation-delay: 0.25s; }
+.fp-seal__print path:nth-child(6) { animation-delay: 0.3s; }
+.fp-seal__print path:nth-child(7) { animation-delay: 0.35s; }
+.fp-seal__print path:nth-child(8) { animation-delay: 0.4s; }
+
+.fp-seal__scan {
+  stroke: rgba(22, 163, 74, 0.55);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.45));
+  animation: fp-scan 1.6s ease-in-out 0.35s infinite;
+}
+
+.fp-seal__check {
+  position: absolute;
+  right: -0.1rem;
+  bottom: 0.05rem;
+  width: 1.55rem;
+  height: 1.55rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 0.7rem;
+  box-shadow: 0 6px 14px rgba(22, 163, 74, 0.35);
+  animation: fp-check 0.45s ease-out 0.85s both;
+}
+
 .gov-submit-icon {
   position: relative;
   width: 3.6rem;
@@ -211,11 +293,6 @@ const onReview = () => {
   box-shadow: 0 12px 28px rgba(61, 79, 68, 0.28);
 }
 
-.gov-submit-panel.is-enrolled .gov-submit-icon {
-  background: linear-gradient(145deg, #15803d, #22c55e);
-  box-shadow: 0 12px 28px rgba(22, 163, 74, 0.32);
-}
-
 .gov-submit-panel.is-rejected .gov-submit-icon {
   background: linear-gradient(145deg, #9a3412, #ea580c);
   box-shadow: 0 12px 28px rgba(194, 65, 12, 0.28);
@@ -227,10 +304,6 @@ const onReview = () => {
   border-radius: 1.35rem;
   border: 1.5px solid rgba(61, 79, 68, 0.22);
   animation: gov-ring 2.4s ease-out infinite;
-}
-
-.gov-submit-panel.is-enrolled .gov-submit-icon__ring {
-  border-color: rgba(22, 163, 74, 0.35);
 }
 
 .gov-submit-eyebrow {
@@ -400,6 +473,51 @@ const onReview = () => {
 .gov-submit-primary:active,
 .gov-submit-secondary:active {
   transform: translateY(0);
+}
+
+@keyframes fp-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fp-scan {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+
+@keyframes fp-ring {
+  from {
+    transform: scale(0.86);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fp-check {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 @keyframes gov-ring {

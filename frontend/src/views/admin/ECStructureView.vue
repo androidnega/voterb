@@ -44,7 +44,7 @@
       v-if="showForm"
       :title="editingUnit ? 'Edit Sub EC' : 'Propose Sub EC'"
       :subtitle="editingUnit
-        ? 'Changes are submitted for dual Main EC approval before they apply'
+        ? 'Changes are submitted for approval before they apply'
         : 'Account details and category assignment (faculty / department)'"
       class="page-section"
     >
@@ -300,7 +300,7 @@ import { usePageHeading } from '@/composables/usePageHeading'
 const { setPageHeading } = usePageHeading()
 setPageHeading({
   title: 'Sub ECs',
-  subtitle: 'Faculty and department Sub Electoral Commissions — dual-approved by Main EC',
+  subtitle: 'Faculty and department Sub Electoral Commissions — approved by Main EC',
 })
 
 const structure = ref(null)
@@ -470,7 +470,7 @@ const submitProposal = async () => {
       ;({ data } = await governanceApi.proposeSubEC(payload))
     }
     closeForm()
-    governanceMessage.value = data.message || 'Submitted for dual Main EC approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'
+    governanceMessage.value = data.message || 'Submitted for approval. Your approval is recorded; the other institutional EC member must also approve before enrollment.'
     showGovernanceModal.value = true
   } catch (error) {
     formError.value = parseApiError(error) || 'Could not submit for approval.'

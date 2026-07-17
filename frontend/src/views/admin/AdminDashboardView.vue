@@ -766,7 +766,7 @@ const opsQuickLinks = computed(() => {
     { path: '/register', title: 'Register', description: 'Assign categories and import voters', icon: 'fas fa-book', tone: 'tone-teal' },
     { path: '/sub-ec', title: 'Sub ECs', description: 'Propose and assign Sub ECs', icon: 'fas fa-sitemap', tone: 'tone-teal' },
     { path: '/elections', title: 'Elections', description: 'Positions, candidates, and voters', icon: 'fas fa-calendar-check', tone: 'tone-teal' },
-    { path: '/approvals', title: 'Dual Approvals', description: 'Co-sign Main EC decisions', icon: 'fas fa-check-double', tone: 'tone-blue' },
+    { path: '/approvals', title: 'Approvals', description: 'Co-sign Main EC decisions', icon: 'fas fa-check-double', tone: 'tone-blue' },
     { path: '/results', title: 'Results & Certification', description: 'Generate and publish results', icon: 'fas fa-chart-bar', tone: 'tone-blue' },
     { path: '/strongroom', title: 'Strongroom', description: 'Seals and vault integrity', icon: 'fas fa-shield-alt', tone: 'tone-amber' },
     { path: '/fraud', title: 'Fraud Monitor', description: 'Suspicious voting alerts', icon: 'fas fa-user-shield', tone: 'tone-rose' },

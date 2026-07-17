@@ -90,7 +90,7 @@
             >
               <i v-if="busyAction === 'approve'" class="fas fa-spinner fa-spin" aria-hidden="true"></i>
               <i v-else class="fas fa-check" aria-hidden="true"></i>
-              {{ alreadyApproved ? 'You already approved' : 'Approve & enroll' }}
+              {{ alreadyApproved ? 'You already approved' : 'Approve' }}
             </button>
           </div>
         </div>
