@@ -7,15 +7,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import MFALog, User
-from accounts.permissions import IsAuditor, IsSuperAdmin
+from accounts.permissions import IsElectionViewer, IsSuperAdmin
 from candidates.models import Candidate
-from elections.models import Department, Election, Faculty, Level, VoterEligibility
+from elections.models import Department, Election, Faculty, VoterEligibility
 from system.models import FeatureFlag, MaintenanceState
 from voting.models import Vote
 
 
 ROLE_LABELS = {
-    'admin': 'Election Committee',
+    'admin': 'Main EC',
+    'sub_ec': 'Sub EC',
     'super_admin': 'Platform Governance',
     'auditor': 'Auditor',
     'student': 'Student',
@@ -57,18 +58,31 @@ def _role_name(user):
 
 
 class AdminDashboardView(APIView):
-    permission_classes = [IsAuditor]
+    permission_classes = [IsElectionViewer]
 
     def get(self, request):
-        total_elections = Election.objects.count()
-        active_elections = Election.objects.filter(status='open').count()
-        scheduled_elections = Election.objects.filter(status='scheduled').count()
-        closed_elections = Election.objects.filter(status__in=['closed', 'archived']).count()
+        from elections.services.ec_access import elections_visible_to
+
+        visible = elections_visible_to(request.user)
+        total_elections = visible.count()
+        active_elections = visible.filter(status='open').count()
+        scheduled_elections = visible.filter(status='scheduled').count()
+        closed_elections = visible.filter(status__in=['closed', 'archived']).count()
         total_voters = User.objects.filter(role__name='student').count()
-        total_votes = Vote.objects.count()
-        unique_voters = Vote.objects.values('user').distinct().count()
-        total_candidates = Candidate.objects.filter(status='approved').count()
-        eligible_voters = VoterEligibility.objects.filter(is_eligible=True).count()
+        visible_ids = list(visible.values_list('id', flat=True))
+        total_votes = Vote.objects.filter(election_id__in=visible_ids).count() if visible_ids else 0
+        unique_voters = (
+            Vote.objects.filter(election_id__in=visible_ids).values('user').distinct().count()
+            if visible_ids else 0
+        )
+        total_candidates = (
+            Candidate.objects.filter(election_id__in=visible_ids, status='approved').count()
+            if visible_ids else 0
+        )
+        eligible_voters = (
+            VoterEligibility.objects.filter(election_id__in=visible_ids, is_eligible=True).count()
+            if visible_ids else 0
+        )
 
         turnout_pct = 0
         if eligible_voters > 0:
@@ -76,8 +90,11 @@ class AdminDashboardView(APIView):
 
         cutoff = timezone.now() - timedelta(days=7)
         today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        votes_today = Vote.objects.filter(timestamp__gte=today_start).count()
-        mfa_logs = MFALog.objects.filter(created_at__gte=cutoff).order_by('-created_at')[:12]
+        votes_today = (
+            Vote.objects.filter(election_id__in=visible_ids, timestamp__gte=today_start).count()
+            if visible_ids else 0
+        )
+        mfa_logs = MFALog.objects.filter(created_at__gte=cutoff).order_by('-created_at')[:5]
         activities = []
         for log in mfa_logs:
             actor = (log.user.email if log.user and log.user.email else None) or (
@@ -96,7 +113,14 @@ class AdminDashboardView(APIView):
             day = timezone.now() - timedelta(days=i)
             start = day.replace(hour=0, minute=0, second=0, microsecond=0)
             end = start + timedelta(days=1)
-            count = Vote.objects.filter(timestamp__gte=start, timestamp__lt=end).count()
+            count = (
+                Vote.objects.filter(
+                    election_id__in=visible_ids,
+                    timestamp__gte=start,
+                    timestamp__lt=end,
+                ).count()
+                if visible_ids else 0
+            )
             chart_dates.append(day.strftime('%a'))
             chart_counts.append(count)
 
@@ -109,13 +133,13 @@ class AdminDashboardView(APIView):
             ('draft', 'Draft'),
             ('paused', 'Paused'),
         ]:
-            count = Election.objects.filter(status=status).count()
+            count = visible.filter(status=status).count()
             if count > 0:
                 status_labels.append(label)
                 status_values.append(count)
 
         live_elections = []
-        for election in Election.objects.filter(status__in=['open', 'scheduled', 'paused']).order_by('-start_date')[:6]:
+        for election in visible.filter(status__in=['open', 'scheduled', 'paused']).order_by('-start_date')[:6]:
             eligible = election.eligibilities.filter(is_eligible=True).count()
             voters = Vote.objects.filter(election=election).values('user').distinct().count()
             votes = Vote.objects.filter(election=election).count()
@@ -270,7 +294,6 @@ class SuperAdminDashboardView(APIView):
                 'student_users': student_users,
                 'faculties': Faculty.objects.count(),
                 'departments': Department.objects.count(),
-                'levels': Level.objects.count(),
                 'flags_enabled': flags_enabled,
                 'flags_total': flags_total,
                 'maintenance_active': maintenance_active,
@@ -287,7 +310,7 @@ class SuperAdminDashboardView(APIView):
             'recent_activities': activities,
             'shortcuts': [
                 {'path': '/users', 'title': 'User management', 'description': 'Roles and account access', 'icon': 'fas fa-users'},
-                {'path': '/academic', 'title': 'Academic structure', 'description': 'Faculties and departments', 'icon': 'fas fa-university'},
+                {'path': '/categories', 'title': 'Categories', 'description': 'Faculties and departments', 'icon': 'fas fa-layer-group'},
                 {'path': '/operations', 'title': 'Operations', 'description': 'Health and infrastructure', 'icon': 'fas fa-server'},
                 {'path': '/settings', 'title': 'Settings', 'description': 'Theme and feature flags', 'icon': 'fas fa-sliders-h'},
                 {'path': '/audit', 'title': 'Audit trail', 'description': 'Security and admin events', 'icon': 'fas fa-clipboard-list'},

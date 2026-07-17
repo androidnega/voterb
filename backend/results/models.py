@@ -22,6 +22,9 @@ class ElectionResult(models.Model):
     turnout_percentage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     certified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='certified_results')
     certified_at = models.DateTimeField(null=True, blank=True)
+    certification_evidence = models.JSONField(default=dict, blank=True)
+    # Expected keys: photo, location {lat, lng}, signature, ip_address,
+    # device_fingerprint, certified_at, certified_by
     published_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

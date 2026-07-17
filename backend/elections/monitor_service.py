@@ -1,10 +1,64 @@
 from datetime import timedelta
+from math import ceil
 
 from django.utils import timezone
 
 from candidates.models import Candidate
 from elections.models import Election, Position
+from elections.services.register_service import election_register_user_count
 from voting.models import Vote
+
+
+def _monitor_time_buckets(election, now, max_buckets=12):
+    """
+    Build consecutive time buckets for votes-per-hour charts.
+
+    Prefer recent hourly buckets when votes fall in the last 12 hours;
+    otherwise span from the first vote (or election start) so older ballots
+    still appear on the monitor instead of an empty chart.
+    """
+    recent_start = (now - timedelta(hours=11)).replace(minute=0, second=0, microsecond=0)
+    has_recent_votes = Vote.objects.filter(
+        election=election, timestamp__gte=recent_start
+    ).exists()
+
+    if has_recent_votes or not Vote.objects.filter(election=election).exists():
+        labels = []
+        buckets = []
+        for i in range(11, -1, -1):
+            hour_start = (now - timedelta(hours=i)).replace(minute=0, second=0, microsecond=0)
+            hour_end = hour_start + timedelta(hours=1)
+            labels.append(hour_start.strftime('%b %d %H:%M'))
+            buckets.append((hour_start, hour_end))
+        return labels, buckets
+
+    first_ts = (
+        Vote.objects.filter(election=election)
+        .order_by('timestamp')
+        .values_list('timestamp', flat=True)
+        .first()
+    )
+    start = first_ts or election.start_date or recent_start
+    if timezone.is_naive(start):
+        start = timezone.make_aware(start, timezone.get_current_timezone())
+    start = start.replace(minute=0, second=0, microsecond=0)
+    end = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    if start >= end:
+        start = end - timedelta(hours=12)
+
+    span_hours = max(1, int((end - start).total_seconds() // 3600))
+    bucket_hours = 1 if span_hours <= max_buckets else max(1, ceil(span_hours / max_buckets))
+    bucket_count = min(max_buckets, ceil(span_hours / bucket_hours))
+    cursor = end - timedelta(hours=bucket_hours * bucket_count)
+
+    labels = []
+    buckets = []
+    for i in range(bucket_count):
+        hour_start = cursor + timedelta(hours=i * bucket_hours)
+        hour_end = hour_start + timedelta(hours=bucket_hours)
+        labels.append(hour_start.strftime('%b %d %H:%M'))
+        buckets.append((hour_start, hour_end))
+    return labels, buckets
 
 
 def get_election_monitor_data(election):
@@ -13,7 +67,7 @@ def get_election_monitor_data(election):
         election=election, is_active=True, is_votable=True
     ).order_by('display_order')
 
-    eligible_voters = election.eligibilities.filter(is_eligible=True).count()
+    eligible_voters = election_register_user_count(election)
     unique_voters = Vote.objects.filter(election=election).values('user').distinct().count()
     total_votes = Vote.objects.filter(election=election).count()
 
@@ -22,13 +76,7 @@ def get_election_monitor_data(election):
         turnout = round((unique_voters / eligible_voters) * 100, 1)
 
     now = timezone.now()
-    hourly_labels = []
-    hourly_buckets = []
-    for i in range(11, -1, -1):
-        hour_start = (now - timedelta(hours=i)).replace(minute=0, second=0, microsecond=0)
-        hour_end = hour_start + timedelta(hours=1)
-        hourly_labels.append(hour_start.strftime('%b %d %H:%M'))
-        hourly_buckets.append((hour_start, hour_end))
+    hourly_labels, hourly_buckets = _monitor_time_buckets(election, now)
 
     votes_per_hour = []
     ballots_per_hour = []
@@ -78,7 +126,6 @@ def get_election_monitor_data(election):
             candidates_data.append({
                 'uuid': str(candidate.uuid),
                 'full_name': candidate.full_name,
-                'department': candidate.department,
                 'ballot_number': candidate.ballot_number,
                 'photo_url': candidate.photo.url if candidate.photo else None,
                 'votes': vote_count,
@@ -108,6 +155,7 @@ def get_election_monitor_data(election):
             for hour_start, hour_end in hourly_buckets:
                 count = Vote.objects.filter(
                     election=election,
+                    position=pos,
                     candidate_id=cand['uuid'],
                     timestamp__gte=hour_start,
                     timestamp__lt=hour_end,
@@ -119,6 +167,18 @@ def get_election_monitor_data(election):
                 'data': series,
             })
 
+        # Aggregate votes for this race across the same hour buckets
+        pos_votes_per_hour = []
+        for hour_start, hour_end in hourly_buckets:
+            pos_votes_per_hour.append(
+                Vote.objects.filter(
+                    election=election,
+                    position=pos,
+                    timestamp__gte=hour_start,
+                    timestamp__lt=hour_end,
+                ).count()
+            )
+
         positions_data.append({
             'uuid': str(pos.uuid),
             'title': pos.title,
@@ -128,6 +188,7 @@ def get_election_monitor_data(election):
             'hourly_trend': {
                 'labels': hourly_labels,
                 'datasets': pos_hourly_datasets,
+                'votes_cast': pos_votes_per_hour,
             },
         })
 

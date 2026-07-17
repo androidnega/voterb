@@ -174,3 +174,102 @@ def _user_agent(request):
     if not request:
         return ''
     return (request.META.get('HTTP_USER_AGENT') or '')[:255]
+
+
+def seal_vote_cast(
+    *,
+    election,
+    confirmation_code: str,
+    audit_log=None,
+    presence_capture=None,
+    svt=None,
+    channel: str = 'web',
+):
+    """
+    Create a BallotSeal and linked VoteCastEvidence from the security audit trail.
+    Never accepts or stores candidate selections.
+    """
+    from django.db import transaction
+    from strongroom.models import BallotSeal, VoteCastEvidence
+
+    code = (confirmation_code or '').strip()
+    code_hash = _hash_token(code)
+    seal_material = '|'.join([
+        str(getattr(election, 'uuid', '')),
+        code_hash,
+        str(getattr(svt, 'svt_id', '') or ''),
+        channel,
+        timezone.now().isoformat(),
+    ])
+    with transaction.atomic():
+        seal = BallotSeal.objects.create(
+            election=election,
+            svt_id=getattr(svt, 'svt_id', None),
+            seal_hash=_hash_token(seal_material),
+            status='active',
+        )
+
+        device = getattr(audit_log, 'device_log', None) if audit_log else None
+        location = getattr(audit_log, 'location_log', None) if audit_log else None
+        meta = dict(getattr(audit_log, 'metadata', None) or {}) if audit_log else {}
+        loc_meta = meta.get('location') if isinstance(meta.get('location'), dict) else {}
+
+        presence_path = ''
+        presence_id = None
+        if presence_capture is not None:
+            presence_id = getattr(presence_capture, 'uuid', None) or getattr(presence_capture, 'pk', None)
+            image = getattr(presence_capture, 'image', None)
+            if image and getattr(image, 'name', ''):
+                presence_path = str(image.name)[:500]
+
+        lat = getattr(location, 'latitude', None) if location is not None else None
+        lng = getattr(location, 'longitude', None) if location is not None else None
+        if lat is None and loc_meta.get('latitude') is not None:
+            try:
+                from decimal import Decimal
+                lat = Decimal(str(loc_meta.get('latitude')))
+            except Exception:
+                lat = None
+        if lng is None and loc_meta.get('longitude') is not None:
+            try:
+                from decimal import Decimal
+                lng = Decimal(str(loc_meta.get('longitude')))
+            except Exception:
+                lng = None
+
+        evidence = VoteCastEvidence.objects.create(
+            election=election,
+            ballot_seal=seal,
+            confirmation_code_hash=code_hash,
+            channel=(channel or 'web')[:20],
+            audit_log_id=getattr(audit_log, 'audit_id', None) or getattr(audit_log, 'pk', None),
+            presence_capture_id=presence_id,
+            device_log_id=getattr(device, 'device_log_id', None) or getattr(device, 'pk', None),
+            location_log_id=getattr(location, 'location_log_id', None) or getattr(location, 'pk', None),
+            device_id=str(getattr(device, 'device_log_id', '') or '')[:64],
+            browser_fingerprint=(getattr(device, 'browser_fingerprint', '') or '')[:128],
+            ip_address=getattr(audit_log, 'ip_address', None),
+            user_agent=(getattr(audit_log, 'user_agent', '') or '')[:2000],
+            latitude=lat,
+            longitude=lng,
+            presence_image_path=presence_path,
+            metadata={
+                'has_presence_image': bool(presence_path),
+                'device_type': getattr(device, 'device_type', '') if device else '',
+                'operating_system': getattr(device, 'operating_system', '') if device else '',
+                'location_accuracy_m': loc_meta.get('accuracy_m') or loc_meta.get('accuracy'),
+            },
+        )
+
+        CustodyRecord.objects.create(
+            election=election,
+            action='vote_cast_sealed',
+            actor=getattr(audit_log, 'user', None),
+            metadata={
+                'seal_uuid': str(seal.uuid),
+                'evidence_uuid': str(evidence.uuid),
+                'channel': channel,
+                'confirmation_code_hash': code_hash,
+            },
+        )
+    return seal, evidence

@@ -94,12 +94,47 @@ def notify_svt_requested(user, election):
     if admin_user_ids:
         create_notification_for_users(
             user_ids=admin_user_ids,
-            title='🔑 SVT Request',
+            title='SVT Request',
             body=f'{user.email} requested an SVT for "{election.title}".',
             link=f'/elections/{election.uuid}',
             notification_type='svt_requested',
             metadata={'election_uuid': str(election.uuid), 'user_uuid': str(user.uuid)}
         )
+
+
+def notify_svt_issued(user, election, *, expires_at=None, phone_masked=''):
+    """Notify the voter that their SVT SMS was sent — with live expiry metadata."""
+    minutes = 20
+    try:
+        from system.settings_utils import get_setting_int
+        minutes = max(1, get_setting_int('svt_expiry_minutes', 20))
+    except Exception:
+        minutes = 20
+
+    expires_iso = None
+    if expires_at is not None:
+        try:
+            expires_iso = expires_at.isoformat()
+        except Exception:
+            expires_iso = str(expires_at)
+
+    phone_bit = f' to {phone_masked}' if phone_masked else ''
+    create_notification(
+        user=user,
+        title='Your Secure Voting Token was sent',
+        body=(
+            f'SVT sent by SMS{phone_bit} for "{election.title}". '
+            f'Enter it within {minutes} minutes — one use only.'
+        ),
+        link=f'/vote/{election.uuid}',
+        notification_type='svt_issued',
+        metadata={
+            'election_uuid': str(election.uuid),
+            'expires_at': expires_iso,
+            'countdown': True,
+            'phone_masked': phone_masked or '',
+        },
+    )
 
 def notify_fraud_alert(alert):
     """Notify admins about a new fraud alert."""
@@ -115,3 +150,86 @@ def notify_fraud_alert(alert):
             notification_type='fraud_alert',
             metadata={'alert_uuid': str(alert.uuid)}
         )
+
+
+def notify_main_ec_approval_needed(decision, exclude_user_ids=None):
+    """Notify co–Main EC members that a decision awaits their approval."""
+    from accounts.governance import main_ec_member_user_ids
+
+    exclude = set(exclude_user_ids or [])
+    recipient_ids = [
+        uid for uid in main_ec_member_user_ids(decision.institution)
+        if uid not in exclude
+    ]
+    if not recipient_ids:
+        return
+    proposer_name = (
+        f'{decision.proposed_by.first_name or ""} {decision.proposed_by.last_name or ""}'.strip()
+        or decision.proposed_by.email
+    )
+    create_notification_for_users(
+        user_ids=recipient_ids,
+        title='Approval required',
+        body=f'{proposer_name} submitted "{decision.title}". Your co-signature is needed before enrollment.',
+        link='/approvals',
+        notification_type='main_ec_approval',
+        metadata={
+            'decision_uuid': str(decision.uuid),
+            'decision_type': decision.decision_type,
+        },
+    )
+
+
+def notify_main_ec_decision_enrolled(decision):
+    """Notify Main EC members that a dual-approved decision is enrolled."""
+    from accounts.governance import main_ec_member_user_ids
+
+    recipient_ids = list(main_ec_member_user_ids(decision.institution))
+    if not recipient_ids:
+        return
+    create_notification_for_users(
+        user_ids=recipient_ids,
+        title='Decision enrolled',
+        body=f'"{decision.title}" was approved by both Main ECs and is now enrolled.',
+        link='/approvals',
+        notification_type='main_ec_enrolled',
+        metadata={
+            'decision_uuid': str(decision.uuid),
+            'decision_type': decision.decision_type,
+        },
+    )
+
+
+def notify_main_ec_decision_rejected(decision):
+    """Notify the proposer (and other Main ECs) that a decision was rejected."""
+    from accounts.governance import main_ec_member_user_ids
+
+    recipient_ids = list(main_ec_member_user_ids(decision.institution))
+    if not recipient_ids:
+        return
+    rejector = decision.rejected_by
+    rejector_name = ''
+    if rejector:
+        rejector_name = (
+            f'{rejector.first_name or ""} {rejector.last_name or ""}'.strip()
+            or rejector.email
+        )
+    reason = (decision.rejection_reason or '').strip()
+    body = f'"{decision.title}" was rejected'
+    if rejector_name:
+        body += f' by {rejector_name}'
+    if reason:
+        body += f': {reason}'
+    else:
+        body += '.'
+    create_notification_for_users(
+        user_ids=recipient_ids,
+        title='Decision rejected',
+        body=body[:400],
+        link='/approvals',
+        notification_type='main_ec_rejected',
+        metadata={
+            'decision_uuid': str(decision.uuid),
+            'decision_type': decision.decision_type,
+        },
+    )

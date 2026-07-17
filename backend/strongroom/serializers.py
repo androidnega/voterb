@@ -92,23 +92,72 @@ class VaultEvidenceSerializer(serializers.ModelSerializer):
         fields = ['uuid', 'seal_type', 'seal_hash', 'seal_uuid', 'viewed_by', 'viewed_at']
         read_only_fields = ['uuid', 'viewed_by', 'viewed_at']
 
+def latest_committee(election):
+    return election.committees.order_by('-updated_at').first()
+
+
+def election_has_approved_committee(election):
+    return election.committees.filter(status='approved').exists()
+
+
+def has_any_approved_committee():
+    return StrongroomCommittee.objects.filter(status='approved').exists()
+
+
+# ---------- Committee overview (no vault session) ----------
+class CommitteeOverviewSerializer(serializers.ModelSerializer):
+    committee = serializers.SerializerMethodField()
+    committee_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Election
+        fields = ['uuid', 'title', 'status', 'committee', 'committee_status']
+
+    def get_committee(self, obj):
+        committee = latest_committee(obj)
+        if not committee:
+            return None
+        return StrongroomCommitteeSerializer(committee).data
+
+    def get_committee_status(self, obj):
+        committee = latest_committee(obj)
+        if not committee:
+            return 'none'
+        return committee.status
+
+
 # ---------- Combined Strongroom Detail ----------
 class StrongroomElectionDetailSerializer(serializers.ModelSerializer):
     election_seal = ElectionSealSerializer(read_only=True)
-    ballot_seals = BallotSealSerializer(many=True, read_only=True, source='ballot_seals')
+    ballot_seals = BallotSealSerializer(many=True, read_only=True)
     custody_records = serializers.SerializerMethodField()
-    committee = StrongroomCommitteeSerializer(read_only=True)
+    committee = serializers.SerializerMethodField()
+    committee_status = serializers.SerializerMethodField()
     vault_requests = VaultAccessRequestSerializer(many=True, read_only=True)
     vault_sessions = serializers.SerializerMethodField()
 
     class Meta:
         model = Election
-        fields = ['uuid', 'title', 'status', 'election_seal', 'ballot_seals', 'custody_records',
-                  'committee', 'vault_requests', 'vault_sessions']
+        fields = [
+            'uuid', 'title', 'status', 'election_seal', 'ballot_seals', 'custody_records',
+            'committee', 'committee_status', 'vault_requests', 'vault_sessions',
+        ]
 
     def get_custody_records(self, obj):
         records = CustodyRecord.objects.filter(election=obj).order_by('-timestamp')[:20]
         return CustodyRecordSerializer(records, many=True).data
+
+    def get_committee(self, obj):
+        committee = latest_committee(obj)
+        if not committee:
+            return None
+        return StrongroomCommitteeSerializer(committee).data
+
+    def get_committee_status(self, obj):
+        committee = latest_committee(obj)
+        if not committee:
+            return 'none'
+        return committee.status
 
     def get_vault_sessions(self, obj):
         sessions = VaultSession.objects.filter(access_request__election=obj).order_by('-opened_at')[:5]

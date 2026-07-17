@@ -180,31 +180,45 @@ def upsert_location_log(ip_address: str | None, client_location: dict | None = N
 
 def record_vote_cast_audit(
     *,
-    request,
+    request=None,
     user,
     election,
     confirmation_code: str,
     positions_count: int,
     presence_capture=None,
     client_context=None,
+    channel: str = 'web',
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    msisdn: str | None = None,
 ) -> AuditLog:
     """
     Persist a vote_cast audit row with device/location context.
     Does not accept or store candidate / selection data.
     """
     ctx = _normalize_client_context(client_context)
-    ip = client_ip(request)
-    ua = client_user_agent(request, ctx)
+    ip = ip_address or (client_ip(request) if request is not None else None)
+    ua = (user_agent or '').strip() or (
+        client_user_agent(request, ctx) if request is not None else ''
+    )
+    if channel == 'ussd' and not ua:
+        ua = f'USSD/{(msisdn or "unknown")[-4:]}'
 
     os_label = (
         ctx.get('operating_system')
         or ' '.join(
             str(x) for x in (ctx.get('platform'), ctx.get('platform_version')) if x
         ).strip()
-        or _guess_os_from_ua(ua)
+        or (_guess_os_from_ua(ua) if ua else ('USSD Gateway' if channel == 'ussd' else 'Unknown'))
     )
-    device_type = (ctx.get('device_type') or _guess_device_type(ua, ctx))[:20]
+    device_type = (ctx.get('device_type') or (
+        'mobile' if channel == 'ussd' else _guess_device_type(ua, ctx)
+    ))[:20]
     fingerprint = (ctx.get('fingerprint') or '')[:128]
+    if channel == 'ussd' and not fingerprint:
+        fingerprint = hashlib.sha256(
+            f'ussd|{(msisdn or "")}|{getattr(user, "pk", "")}'.encode()
+        ).hexdigest()[:128]
 
     device = upsert_device_log(
         user,
@@ -222,7 +236,8 @@ def record_vote_cast_audit(
     metadata = sanitize_audit_metadata({
         'confirmation_code': confirmation_code,
         'positions_completed': int(positions_count or 0),
-        'channel': 'web',
+        'channel': (channel or 'web')[:20],
+        'msisdn_suffix': (msisdn or '')[-4:] if msisdn else None,
         'presence_capture_id': str(presence_id) if presence_id else None,
         'device': {
             'fingerprint': device.browser_fingerprint,

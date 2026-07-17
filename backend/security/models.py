@@ -4,6 +4,12 @@ from accounts.models import User
 from elections.models import Election
 
 class SVTToken(models.Model):
+    STATUS_ISSUED = 'issued'
+    STATUS_VALIDATED = 'validated'
+    STATUS_USED = 'used'
+    STATUS_EXPIRED = 'expired'
+    STATUS_REVOKED = 'revoked'
+
     svt_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.PROTECT)
     election = models.ForeignKey(Election, on_delete=models.PROTECT)
@@ -15,6 +21,35 @@ class SVTToken(models.Model):
     used_at = models.DateTimeField(null=True, blank=True)
     validation_attempts = models.SmallIntegerField(default=0)
     last_resent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'election', 'status']),
+            models.Index(fields=['election', 'token_hash']),
+        ]
+
+
+class SVTAbuseBlock(models.Model):
+    """
+    Temporary lockout when a voter attempts to use another voter's live SVT.
+    Blocks the attempting user (not the token owner) for a configured window.
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='svt_abuse_blocks')
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='svt_abuse_blocks')
+    reason = models.CharField(max_length=80, default='foreign_svt_attempt')
+    blocked_until = models.DateTimeField(db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'election', 'blocked_until']),
+        ]
+
+    def __str__(self):
+        return f'Block {self.user_id} until {self.blocked_until}'
+
 
 class AuditLog(models.Model):
     audit_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -14,6 +14,7 @@ from candidates.models import Candidate
 from results.models import ElectionResult
 from results.serializers import ElectionResultSerializer
 from elections.monitor_service import get_election_monitor_data
+from elections.services.register_service import election_register_user_count
 
 
 def generate_result_hash(standings, election_uuid, turnout):
@@ -43,7 +44,7 @@ class GenerateResultsView(APIView):
 
         standings_data = []
         total_votes_cast = 0
-        eligible_voters = election.eligibilities.filter(is_eligible=True).count()
+        eligible_voters = election_register_user_count(election)
 
         for pos in positions:
             candidates = Candidate.objects.filter(position=pos, status='approved')
@@ -61,7 +62,6 @@ class GenerateResultsView(APIView):
                 position_data['candidates'].append({
                     'uuid': candidate.uuid,
                     'full_name': candidate.full_name,
-                    'department': candidate.department,
                     'votes': vote_count,
                     'percentage': 0,
                 })
@@ -117,19 +117,88 @@ class PreviewResultsView(APIView):
         return Response(serializer.data)
 
 
+def _client_ip(request):
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR') or ''
+
+
 class CertifyResultsView(APIView):
     permission_classes = [IsAdmin]
+
+    def get(self, request, uuid):
+        """Return client meta used by the certification ceremony UI."""
+        get_object_or_404(Election, uuid=uuid)
+        return Response({
+            'ip_address': _client_ip(request),
+            'device_fingerprint': (
+                request.headers.get('X-Device-Fingerprint')
+                or request.META.get('HTTP_X_DEVICE_FINGERPRINT')
+                or ''
+            ),
+        })
 
     def post(self, request, uuid):
         election = get_object_or_404(Election, uuid=uuid)
         result = get_object_or_404(ElectionResult, election=election)
 
         if result.status not in ['generated', 'pending_certification']:
-            return Response({'error': 'Results must be generated or pending certification'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'Results must be generated or pending certification'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        evidence = request.data.get('certification_evidence')
+        if not isinstance(evidence, dict):
+            return Response(
+                {'error': 'certification_evidence is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        photo = evidence.get('photo')
+        location = evidence.get('location')
+        signature = evidence.get('signature')
+        if not photo:
+            return Response({'error': 'photo is required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(location, dict) or location.get('lat') is None or location.get('lng') is None:
+            return Response(
+                {'error': 'location with lat and lng is required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not signature:
+            return Response({'error': 'signature is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        now = timezone.now()
+        fingerprint = (
+            request.headers.get('X-Device-Fingerprint')
+            or request.META.get('HTTP_X_DEVICE_FINGERPRINT')
+            or evidence.get('device_fingerprint')
+            or ''
+        )
+        certified_by_label = (
+            getattr(request.user, 'email', None)
+            or getattr(request.user, 'username', None)
+            or str(request.user.pk)
+        )
 
         result.status = 'certified'
         result.certified_by = request.user
-        result.certified_at = timezone.now()
+        result.certified_at = now
+        result.certification_evidence = {
+            'photo': photo,
+            'location': {
+                'lat': location.get('lat'),
+                'lng': location.get('lng'),
+                'accuracy': location.get('accuracy'),
+                'source': location.get('source') or 'gps',
+            },
+            'signature': signature,
+            'ip_address': _client_ip(request),
+            'device_fingerprint': fingerprint,
+            'certified_at': now.isoformat(),
+            'certified_by': certified_by_label,
+        }
         result.save()
 
         serializer = ElectionResultSerializer(result)

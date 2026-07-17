@@ -4,8 +4,9 @@ from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'django-insecure-change-this-in-production!'
-DEBUG = True
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-this-in-production!')
+# Production: export DEBUG=0 (or False). Console SMS fallback is only allowed when DEBUG is True.
+DEBUG = os.environ.get('DEBUG', 'True').strip().lower() in ('1', 'true', 'yes', 'on')
 
 # Comma-separated hosts, e.g. localhost,127.0.0.1,192.168.1.10
 # Set LAN_DEV=1 via scripts/lan-dev.sh to allow any host on your local network.
@@ -23,9 +24,17 @@ LAN_ORIGIN = os.environ.get('LAN_ORIGIN', '').strip()
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'https://localhost:5173',
+    'https://127.0.0.1:5173',
 ]
 if LAN_ORIGIN:
-    CSRF_TRUSTED_ORIGINS.append(LAN_ORIGIN.rstrip('/'))
+    origin = LAN_ORIGIN.rstrip('/')
+    CSRF_TRUSTED_ORIGINS.append(origin)
+    # Trust both http and https for the same LAN host (dev camera needs https)
+    if origin.startswith('http://'):
+        CSRF_TRUSTED_ORIGINS.append('https://' + origin[len('http://'):])
+    elif origin.startswith('https://'):
+        CSRF_TRUSTED_ORIGINS.append('http://' + origin[len('https://'):])
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -52,6 +61,7 @@ INSTALLED_APPS = [
     'system',
     'operations',
     'audit',
+    'dashboard',
 ]
 
 MIDDLEWARE = [
@@ -131,8 +141,8 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': True,
     'ALGORITHM': 'HS256',
@@ -144,10 +154,41 @@ SIMPLE_JWT = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
-    },
-}
+# Redis powers live monitor fan-out + SMS prewarm cache.
+# Set REDIS_URL (e.g. redis://127.0.0.1:6379/0). Falls back to in-memory for local/dev.
+REDIS_URL = (os.environ.get('REDIS_URL') or '').strip()
+USE_REDIS = bool(REDIS_URL) and os.environ.get('USE_REDIS', '1') != '0'
+
+if USE_REDIS:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+            'KEY_PREFIX': 'voterb',
+            'TIMEOUT': 300,
+        },
+    }
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [REDIS_URL],
+                'capacity': 5000,
+                'expiry': 30,
+            },
+        },
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'voterb-local',
+        },
+    }
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

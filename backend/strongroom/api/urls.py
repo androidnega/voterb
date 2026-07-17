@@ -9,16 +9,22 @@ from .views import (
     VaultSessionCloseView,
     ElectionVaultAccessView,
     RevealSealView,
+    NominateCommitteeView,
+    ApproveCommitteeView,
+    CommitteeOverviewView,
 )
 
 urlpatterns = [
     path('vault/authenticate/', VaultAuthenticateView.as_view(), name='vault-authenticate'),
     path('vault/session/status/', VaultSessionStatusView.as_view(), name='vault-session-status'),
     path('vault/session/close/', VaultSessionCloseView.as_view(), name='vault-session-close'),
+    path('committees/', CommitteeOverviewView.as_view(), name='strongroom-committee-overview'),
     path('elections/', StrongroomElectionListView.as_view(), name='strongroom-election-list'),
     path('elections/<uuid:uuid>/', StrongroomElectionDetailView.as_view(), name='strongroom-election-detail'),
     path('elections/<uuid:uuid>/access/', ElectionVaultAccessView.as_view(), name='strongroom-election-access'),
     path('elections/<uuid:uuid>/reveal-seal/', RevealSealView.as_view(), name='strongroom-reveal-seal'),
     path('elections/<uuid:uuid>/lock/', LockElectionView.as_view(), name='strongroom-election-lock'),
+    path('elections/<uuid:uuid>/committee/nominate/', NominateCommitteeView.as_view(), name='strongroom-committee-nominate'),
+    path('elections/<uuid:uuid>/committee/approve/', ApproveCommitteeView.as_view(), name='strongroom-committee-approve'),
     path('public/verify/', PublicVerifyView.as_view(), name='public-verify'),
 ]

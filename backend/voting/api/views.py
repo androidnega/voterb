@@ -13,13 +13,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from candidates.models import Candidate
-from elections.models import Election, Position, VoterEligibility
+from elections.models import Election, Position
+from elections.services.register_service import election_register_user_count
 from elections.services.scope_eligibility import student_can_access_election
 from accounts.models import User
-from accounts.permissions import IsAdminOrSuperAdmin
-from security.models import SVTToken
+from accounts.permissions import IsMainEC
+from security.models import SVTAbuseBlock, SVTToken
 from system.settings_utils import get_setting_int
 from voting.models import Vote, PreVotePresenceCapture
+from notifications.sms import mask_phone, send_svt_sms
 
 SVT_PATTERN = re.compile(r'^v-[a-z]{3}-\d{4}$')
 
@@ -56,12 +58,6 @@ def hash_svt(code):
     return hashlib.sha256(normalize_svt(code).encode()).hexdigest()
 
 
-def candidate_department_label(candidate):
-    if candidate.academic_department_id and candidate.academic_department:
-        return candidate.academic_department.name
-    return candidate.department or ''
-
-
 def candidate_photo_url(candidate, request=None):
     if not candidate.photo:
         return None
@@ -69,29 +65,51 @@ def candidate_photo_url(candidate, request=None):
     return candidate.photo.url
 
 
-def _svt_expires_at_for_election(election):
+def _svt_issue_expires_at():
+    """Issued SVTs are live for a short window (default 20 minutes)."""
+    minutes = get_setting_int('svt_expiry_minutes', 20)
+    if minutes <= 0:
+        minutes = 20
+    return timezone.now() + timedelta(minutes=minutes)
+
+
+def _svt_validated_expires_at(election):
     """
-    SVT stays usable until voting closes (or until the voter uses it).
-    Falls back to a long horizon only when the election has no end_date.
+    After successful validation, keep the voter authenticated through the
+    rest of voting (network blips included) until they cast a ballot or
+    the election closes.
     """
     now = timezone.now()
     if election.end_date and election.end_date > now:
         return election.end_date
-    # Open election without an end date — keep the token alive for the window.
-    return now + timedelta(days=30)
+    return now + timedelta(hours=12)
 
 
-def _sync_svt_lifetime(svt, election):
-    """Extend an unused token to the election close if it still has a short clock."""
-    if not svt or svt.status not in ('issued', 'validated'):
-        return svt
-    if election.status != 'open':
-        return svt
-    target = _svt_expires_at_for_election(election)
-    if svt.expires_at < target:
-        svt.expires_at = target
-        svt.save(update_fields=['expires_at'])
-    return svt
+def _resolve_voter_phone(user, election):
+    """Prefer account phone; fall back to register entry phone for this election."""
+    from django.db.models import Q
+    from elections.models import VoterRegisterEntry
+
+    phone = (getattr(user, 'phone_number', None) or '').strip()
+    if phone:
+        return phone
+    scope = (
+        Q(register=election.register)
+        if getattr(election, 'register_id', None)
+        else Q(register__election=election)
+    )
+    entry = (
+        VoterRegisterEntry.objects
+        .filter(user=user)
+        .filter(scope)
+        .exclude(phone_number__isnull=True)
+        .exclude(phone_number='')
+        .order_by('-created_at')
+        .first()
+    )
+    if entry and entry.phone_number:
+        return entry.phone_number.strip()
+    return ''
 
 
 def _active_issued_svt(user, election):
@@ -109,7 +127,6 @@ def _active_issued_svt(user, election):
     )
     if not svt:
         return None
-    svt = _sync_svt_lifetime(svt, election)
     if svt.expires_at <= now:
         svt.status = 'expired'
         svt.save(update_fields=['status'])
@@ -118,6 +135,7 @@ def _active_issued_svt(user, election):
 
 
 def _active_validated_svt(user, election):
+    """Validated SVTs remain usable until vote cast or election closes."""
     now = timezone.now()
     if election.status != 'open':
         return None
@@ -132,7 +150,6 @@ def _active_validated_svt(user, election):
     )
     if not svt:
         return None
-    svt = _sync_svt_lifetime(svt, election)
     if svt.expires_at <= now:
         svt.status = 'expired'
         svt.save(update_fields=['status'])
@@ -194,26 +211,24 @@ def presence_required_response():
 
 def _revoke_open_svts(user, election):
     """Expire any issued/validated tokens so older codes cannot be reused."""
+    now = timezone.now()
     SVTToken.objects.filter(
         user=user,
         election=election,
         status__in=['issued', 'validated'],
-    ).update(status='expired')
+    ).update(status='expired', expires_at=now)
 
 
-def _svt_request_count_last_hour(user, election):
-    """
-    Count live SVT mint outcomes in the last hour.
-    Expired/revoked rows from resends are excluded so legitimate resends
-    are gated by cooldown, not by leftover revoked rows.
-    """
-    cutoff = timezone.now() - timedelta(hours=1)
-    return SVTToken.objects.filter(
-        user=user,
-        election=election,
-        issued_at__gte=cutoff,
-        status__in=['issued', 'validated', 'used'],
-    ).count()
+def _svt_request_count_total(user, election):
+    """Lifetime request count for this voter on this election (one voter → capped SVTs)."""
+    return SVTToken.objects.filter(user=user, election=election).count()
+
+
+def _svt_max_requests():
+    total = get_setting_int('svt_max_requests_total', 0)
+    if total and total > 0:
+        return max(1, total)
+    return max(1, get_setting_int('svt_max_requests_per_hour', 3))
 
 
 def _svt_resend_wait_seconds(user, election, cooldown):
@@ -236,18 +251,56 @@ def _svt_resend_wait_seconds(user, election, cooldown):
     return max(1, int(cooldown - elapsed))
 
 
+def _active_abuse_block(user, election):
+    now = timezone.now()
+    block = (
+        SVTAbuseBlock.objects
+        .filter(user=user, election=election, blocked_until__gt=now)
+        .order_by('-blocked_until')
+        .first()
+    )
+    return block
+
+
+def _block_user_for_foreign_svt(user, election, foreign_svt):
+    minutes = max(1, get_setting_int('svt_cross_user_block_minutes', 60))
+    until = timezone.now() + timedelta(minutes=minutes)
+    return SVTAbuseBlock.objects.create(
+        user=user,
+        election=election,
+        reason='foreign_svt_attempt',
+        blocked_until=until,
+        metadata={
+            'foreign_svt_id': str(foreign_svt.svt_id),
+            'foreign_user_id': str(foreign_svt.user_id),
+        },
+    )
+
+
+def _abuse_block_response(block):
+    remaining = max(0, int((block.blocked_until - timezone.now()).total_seconds()))
+    minutes = max(1, (remaining + 59) // 60)
+    return Response(
+        {
+            'error': (
+                f'You attempted to use another voter’s Secure Voting Token. '
+                f'Access is blocked for {minutes} minute(s).'
+            ),
+            'blocked': True,
+            'blocked_until': block.blocked_until.isoformat(),
+            'retry_after': remaining,
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 class EligibleElectionsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         user = request.user
-        eligibilities = VoterEligibility.objects.filter(
-            user=user,
-            is_eligible=True,
-            election__status='open',
-        ).select_related('election')
-
-        election_ids = [el.election_id for el in eligibilities]
+        elections = Election.objects.filter(status='open').select_related('register')
+        election_ids = [e.pk for e in elections]
         voted_at_map = {}
         if election_ids:
             for vote in (
@@ -258,8 +311,7 @@ class EligibleElectionsView(APIView):
                 voted_at_map.setdefault(vote.election_id, vote.timestamp)
 
         elections_data = []
-        for el in eligibilities:
-            election = el.election
+        for election in elections:
             if not student_can_access_election(user, election):
                 continue
             has_voted = election.pk in voted_at_map
@@ -270,9 +322,7 @@ class EligibleElectionsView(APIView):
                 'status': election.status,
                 'start_date': election.start_date,
                 'end_date': election.end_date,
-                'voter_count': VoterEligibility.objects.filter(
-                    election=election, is_eligible=True
-                ).count(),
+                'voter_count': election_register_user_count(election),
                 'has_voted': has_voted,
                 'voted_at': voted_at_map.get(election.pk),
             })
@@ -290,6 +340,10 @@ class SVTRequestView(APIView):
         if election.status != 'open':
             return Response({'error': 'Election is not open'}, status=status.HTTP_400_BAD_REQUEST)
 
+        block = _active_abuse_block(user, election)
+        if block:
+            return _abuse_block_response(block)
+
         if not student_can_access_election(user, election):
             return Response(
                 {'error': 'You are not eligible for this election'},
@@ -299,7 +353,16 @@ class SVTRequestView(APIView):
         if user_has_voted(user, election):
             return already_voted_response()
 
-        # Resend cooldown first — avoid false 429s from old revoked rows
+        # Already validated — stay authenticated; do not mint another SVT.
+        validated = _active_validated_svt(user, election)
+        if validated:
+            return Response({
+                'message': 'Your SVT is already validated. Continue voting.',
+                'already_validated': True,
+                **_svt_session_payload(validated, 'validated', user=user, election=election),
+            })
+
+        # Resend cooldown first
         if force_resend:
             cooldown = max(0, get_setting_int('svt_resend_cooldown_seconds', 60))
             wait = _svt_resend_wait_seconds(user, election, cooldown)
@@ -312,34 +375,53 @@ class SVTRequestView(APIView):
                     status=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
 
-        max_per_hour = max(1, get_setting_int('svt_max_requests_per_hour', 5))
-        if _svt_request_count_last_hour(user, election) >= max_per_hour:
-            return Response(
-                {
-                    'error': 'You’ve requested too many tokens for now. Please try again later.',
-                    'retry_after': 3600,
-                },
-                status=status.HTTP_429_TOO_MANY_REQUESTS,
-            )
-
+        max_requests = _svt_max_requests()
+        used_requests = _svt_request_count_total(user, election)
         active = _active_issued_svt(user, election)
 
-        # First request / normal request: keep the unexpired token, do not mint another.
+        # First request / normal request: keep the unexpired token (one voter → one live SVT).
         if active and not force_resend:
+            phone = _resolve_voter_phone(user, election)
             return Response({
                 'message': 'An SVT was already issued and is still valid. Enter that token to continue.',
                 'svt_id': active.svt_id,
                 'already_issued': True,
                 'expires_at': active.expires_at,
+                'expires_in_seconds': max(0, int((active.expires_at - timezone.now()).total_seconds())),
+                'requests_remaining': max(0, max_requests - used_requests),
+                'phone_masked': mask_phone(phone) if phone else None,
             })
 
-        # Explicit resend: revoke previous tokens so the first code is no longer accepted.
-        if force_resend:
-            _revoke_open_svts(user, election)
+        if used_requests >= max_requests:
+            return Response(
+                {
+                    'error': (
+                        f'You have reached the maximum of {max_requests} SVT requests '
+                        'for this election.'
+                    ),
+                    'requests_remaining': 0,
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        phone = _resolve_voter_phone(user, election)
+        if not phone:
+            return Response(
+                {
+                    'error': (
+                        'No phone number is linked to your voter record. '
+                        'Contact the Electoral Commission to update your details.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Explicit resend (or no active token): revoke previous open tokens.
+        _revoke_open_svts(user, election)
 
         code = generate_svt()
         hashed = hash_svt(code)
-        expires_at = _svt_expires_at_for_election(election)
+        expires_at = _svt_issue_expires_at()
         svt = SVTToken.objects.create(
             user=user,
             election=election,
@@ -349,14 +431,54 @@ class SVTRequestView(APIView):
             last_resent_at=timezone.now() if force_resend else None,
         )
 
-        print(f'🔑 SVT for {user.email} (election: {election.title}): {code}')
+        sms_result = send_svt_sms(
+            phone=phone,
+            code=code,
+            election_title=election.title,
+            election_uuid=str(election.uuid),
+            user_uuid=str(user.uuid),
+        )
+        if not sms_result.get('ok'):
+            # Keep token issued so a retry can still validate if SMS eventually lands,
+            # but surface the delivery issue clearly.
+            return Response(
+                {
+                    'error': sms_result.get('error') or 'Could not deliver SVT SMS. Try again shortly.',
+                    'svt_id': svt.svt_id,
+                    'phone_masked': sms_result.get('masked_phone') or mask_phone(phone),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        try:
+            from notifications.services import notify_svt_issued, notify_svt_requested
+            notify_svt_issued(
+                user,
+                election,
+                expires_at=expires_at,
+                phone_masked=sms_result.get('masked_phone') or mask_phone(phone),
+            )
+            notify_svt_requested(user, election)
+        except Exception:
+            pass
 
         return Response({
-            'message': 'SVT sent to your phone' if not force_resend else 'A new SVT was issued. Previous tokens are no longer valid.',
+            'message': (
+                f'SVT sent to {sms_result.get("masked_phone") or mask_phone(phone)}. '
+                f'Valid for {max(1, int((expires_at - timezone.now()).total_seconds() // 60))} minutes. One use only.'
+                if not force_resend
+                else (
+                    f'A new SVT was sent to {sms_result.get("masked_phone") or mask_phone(phone)}. '
+                    'Previous tokens are no longer valid.'
+                )
+            ),
             'svt_id': svt.svt_id,
             'already_issued': False,
             'resent': force_resend,
             'expires_at': expires_at,
+            'expires_in_seconds': max(0, int((expires_at - timezone.now()).total_seconds())),
+            'requests_remaining': max(0, max_requests - (used_requests + 1)),
+            'phone_masked': sms_result.get('masked_phone') or mask_phone(phone),
         })
 
 
@@ -377,17 +499,40 @@ class SVTValidateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        block = _active_abuse_block(user, election)
+        if block:
+            return _abuse_block_response(block)
+
         if user_has_voted(user, election):
             return already_voted_response()
 
+        token_hash = hash_svt(svt_code)
+
         # Idempotent resume: already validated + still active + matching code
         active_validated = _active_validated_svt(user, election)
-        if active_validated and hash_svt(svt_code) == active_validated.token_hash:
+        if active_validated and token_hash == active_validated.token_hash:
             return Response({
                 'message': 'SVT already validated',
                 'already_validated': True,
                 **_svt_session_payload(active_validated, 'validated', user=user, election=election),
             })
+
+        # Cross-user attempt: live token belonging to someone else → block this user 1 hour
+        foreign = (
+            SVTToken.objects
+            .filter(election=election, token_hash=token_hash)
+            .exclude(user=user)
+            .filter(status__in=['issued', 'validated'])
+            .order_by('-issued_at')
+            .first()
+        )
+        if foreign:
+            if foreign.expires_at <= timezone.now():
+                foreign.status = 'expired'
+                foreign.save(update_fields=['status'])
+            else:
+                new_block = _block_user_for_foreign_svt(user, election, foreign)
+                return _abuse_block_response(new_block)
 
         svt = (
             SVTToken.objects.filter(user=user, election=election, status='issued')
@@ -396,14 +541,28 @@ class SVTValidateView(APIView):
         )
 
         if not svt:
+            # Used / expired token with matching hash → explicit messaging
+            prior = (
+                SVTToken.objects
+                .filter(user=user, election=election, token_hash=token_hash)
+                .order_by('-issued_at')
+                .first()
+            )
+            if prior and prior.status == 'used':
+                return Response(
+                    {'error': 'This SVT has already been used and cannot be reused.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if prior and prior.status in ('expired', 'revoked'):
+                return Response(
+                    {'error': 'This SVT has expired. Request a new one if you still have requests left.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             return Response(
                 {'error': 'No valid SVT found. Request a new one.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if timezone.now() > svt.expires_at:
-            # Heal short-lived tokens issued under the old 10-minute policy
-            svt = _sync_svt_lifetime(svt, election)
         if timezone.now() > svt.expires_at:
             svt.status = 'expired'
             svt.save(update_fields=['status'])
@@ -421,7 +580,7 @@ class SVTValidateView(APIView):
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
-        if hash_svt(svt_code) != svt.token_hash:
+        if token_hash != svt.token_hash:
             svt.validation_attempts += 1
             updates = ['validation_attempts']
             if svt.validation_attempts >= max_attempts:
@@ -435,9 +594,11 @@ class SVTValidateView(APIView):
                 )
             return Response({'error': 'Invalid SVT code'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Bind authentication for the rest of voting (network resume safe).
         svt.status = 'validated'
         svt.validated_at = timezone.now()
-        svt.save(update_fields=['status', 'validated_at'])
+        svt.expires_at = _svt_validated_expires_at(election)
+        svt.save(update_fields=['status', 'validated_at', 'expires_at'])
 
         return Response({
             'message': 'SVT validated successfully',
@@ -590,6 +751,10 @@ class BallotView(APIView):
         election = get_object_or_404(Election, uuid=uuid)
         user = request.user
 
+        block = _active_abuse_block(user, election)
+        if block:
+            return _abuse_block_response(block)
+
         if election.status != 'open':
             return Response({'error': 'Election is not open'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -610,11 +775,13 @@ class BallotView(APIView):
                 is_votable=True,
             )
             .order_by('display_order')
-            .prefetch_related('candidates__academic_department')
+            .prefetch_related('candidates', 'restricted_categories')
         )
 
         ballot_data = []
         for pos in positions:
+            if not pos.voter_may_see(user):
+                continue
             candidates = pos.candidates.filter(status='approved').order_by('ballot_number')
             ballot_data.append({
                 'uuid': pos.uuid,
@@ -625,7 +792,6 @@ class BallotView(APIView):
                     {
                         'uuid': str(c.uuid),
                         'full_name': c.full_name,
-                        'department': candidate_department_label(c),
                         'ballot_number': c.ballot_number,
                         'photo': candidate_photo_url(c, request),
                     }
@@ -647,7 +813,7 @@ class BallotView(APIView):
             'institution_short_name': '',
             'logo': None,
             'election_year': election_year,
-            'election_type': election.get_election_type_display() if election.election_type else '',
+            'election_type': '',
         }
         if profile:
             name = (profile.name or '').strip()
@@ -675,6 +841,10 @@ class SubmitVoteView(APIView):
         user = request.user
         svt_code = normalize_svt(request.data.get('svt_code'))
         selections = request.data.get('selections', [])
+
+        block = _active_abuse_block(user, election)
+        if block:
+            return _abuse_block_response(block)
 
         svt = _active_validated_svt(user, election)
         if not svt:
@@ -706,6 +876,16 @@ class SubmitVoteView(APIView):
                 return Response(
                     {'error': f'Position {position.title} is not votable'},
                     status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not position.is_active:
+                return Response(
+                    {'error': f'Position {position.title} is not active'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not position.voter_may_see(user):
+                return Response(
+                    {'error': f'You are not eligible to vote for {position.title}'},
+                    status=status.HTTP_403_FORBIDDEN,
                 )
 
             if len(candidate_uuids) > position.max_votes_allowed:
@@ -743,7 +923,8 @@ class SubmitVoteView(APIView):
 
         svt.status = 'used'
         svt.used_at = timezone.now()
-        svt.save(update_fields=['status', 'used_at'])
+        svt.expires_at = timezone.now()
+        svt.save(update_fields=['status', 'used_at', 'expires_at'])
 
         confirmation_code = f'VTB-{str(election.uuid)[:4]}-{random.randint(100000, 999999)}'
 
@@ -762,9 +943,11 @@ class SubmitVoteView(APIView):
             )
 
         from security.services.vote_audit import record_vote_cast_audit
+        from strongroom.services import seal_vote_cast
+        from elections.ws import broadcast_election_monitor
 
         positions_count = len({sel.get('position_uuid') for sel in selections if sel.get('position_uuid')})
-        record_vote_cast_audit(
+        audit_log = record_vote_cast_audit(
             request=request,
             user=user,
             election=election,
@@ -773,6 +956,18 @@ class SubmitVoteView(APIView):
             presence_capture=presence,
             client_context=request.data.get('client_context') or request.data.get('device_context'),
         )
+        seal_vote_cast(
+            election=election,
+            confirmation_code=confirmation_code,
+            audit_log=audit_log,
+            presence_capture=presence,
+            svt=svt,
+            channel='web',
+        )
+        try:
+            broadcast_election_monitor(election)
+        except Exception:
+            pass
 
         return Response({
             'message': 'Vote submitted successfully',
@@ -784,7 +979,7 @@ class SubmitVoteView(APIView):
 class ClearStudentVoteView(APIView):
     """Testing helper: wipe a student's votes + SVTs so they can revote."""
 
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsMainEC]
 
     @transaction.atomic
     def post(self, request, uuid, user_uuid):

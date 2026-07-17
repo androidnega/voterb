@@ -16,6 +16,44 @@ class BallotSeal(models.Model):
     def __str__(self):
         return f"BallotSeal {self.seal_hash[:16]}... ({self.election.title})"
 
+
+class VoteCastEvidence(models.Model):
+    """
+    Strongroom custody record for a cast ballot's integrity evidence.
+    Stores device/IP/location/fingerprint/presence references — never ballot choices.
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    election = models.ForeignKey(Election, on_delete=models.CASCADE, related_name='vote_cast_evidence')
+    ballot_seal = models.OneToOneField(
+        BallotSeal,
+        on_delete=models.CASCADE,
+        related_name='vote_evidence',
+    )
+    confirmation_code_hash = models.CharField(max_length=128, db_index=True)
+    channel = models.CharField(max_length=20, default='web')
+    audit_log_id = models.UUIDField(null=True, blank=True, db_index=True)
+    presence_capture_id = models.UUIDField(null=True, blank=True, db_index=True)
+    device_log_id = models.UUIDField(null=True, blank=True)
+    location_log_id = models.UUIDField(null=True, blank=True)
+    device_id = models.CharField(max_length=64, blank=True)
+    browser_fingerprint = models.CharField(max_length=128, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    presence_image_path = models.CharField(max_length=500, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['election', 'created_at']),
+            models.Index(fields=['election', 'confirmation_code_hash']),
+        ]
+
+    def __str__(self):
+        return f"VoteEvidence {self.uuid} ({self.channel})"
+
 class ElectionSeal(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     election = models.OneToOneField(Election, on_delete=models.CASCADE, related_name='election_seal')
