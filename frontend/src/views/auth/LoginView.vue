@@ -155,14 +155,16 @@ const handleLogin = async () => {
     if (error.response?.data?.requires_password) {
       showPassword.value = true
       errorMessage.value = ''
-    } else if (error.code === 'ECONNABORTED' || /timeout/i.test(error.message || '')) {
-      errorMessage.value = 'Sign-in is taking too long. Check your connection and try again.'
+    } else if (error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK' || /timeout/i.test(error.message || '')) {
+      errorMessage.value = 'Sign-in is taking too long or the server is unreachable. Please try again.'
+    } else if (error.response?.status >= 500) {
+      errorMessage.value = error.response?.data?.error || 'Server is busy right now. Please try again.'
     } else if (error.response?.data?.error) {
       errorMessage.value = error.response.data.error
     } else if (error.response?.data?.detail) {
       errorMessage.value = String(error.response.data.detail)
-    } else if (error.request) {
-      errorMessage.value = 'Cannot connect to the server. Please try again.'
+    } else if (error.request && !error.response) {
+      errorMessage.value = 'The server did not respond in time. Please try again.'
     } else {
       errorMessage.value = 'An unexpected error occurred.'
     }

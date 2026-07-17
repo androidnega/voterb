@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import random
+import threading
 from datetime import timedelta
 
 from django.conf import settings
@@ -112,6 +113,23 @@ def resolve_otp_phone(user):
     return ''
 
 
+def _dispatch_login_otp_sms(phone: str, message: str, user_label: str) -> None:
+    """Fire-and-forget login OTP SMS so sign-in responds immediately."""
+    try:
+        from notifications.sms import send_sms
+
+        result = send_sms(phone=phone, message=message, http_timeout=8)
+        if not result.get('ok'):
+            logger.warning(
+                'Background OTP SMS failed for %s (%s): %s',
+                user_label,
+                result.get('provider'),
+                result.get('error') or result,
+            )
+    except Exception as exc:
+        logger.exception('Background OTP SMS failed for %s: %s', user_label, exc)
+
+
 class OTPService:
     @staticmethod
     def create_otp(user, purpose='login', channel='sms'):
@@ -138,28 +156,18 @@ class OTPService:
         phone = resolve_otp_phone(user)
         sms_result = None
         if channel == 'sms' and phone:
-            try:
-                from notifications.sms import send_sms
-
-                # Login OTP must send immediately in-process (Arkesel → Moolre fallback).
-                sms_result = send_sms(
-                    phone=phone,
-                    message=(
-                        f'Your VoteBridge login code is {code}. '
-                        f'It expires in {expiry_minutes} minutes. Do not share this code.'
-                    ),
-                )
-                if not sms_result.get('ok'):
-                    logger.warning(
-                        'OTP SMS not delivered for %s (%s): %s',
-                        user.index_number or user.email,
-                        sms_result.get('provider'),
-                        sms_result.get('error') or sms_result,
-                    )
-            except Exception as exc:
-                logger.exception('OTP SMS failed for %s: %s', user.index_number or user.email, exc)
-                sms_result = {'ok': False, 'error': str(exc)}
-        otp._sms_result = sms_result  # transient attribute for login response
+            sms_message = (
+                f'Your VoteBridge login code is {code}. '
+                f'It expires in {expiry_minutes} minutes. Do not share this code.'
+            )
+            user_label = user.index_number or user.email or str(user.uuid)
+            threading.Thread(
+                target=_dispatch_login_otp_sms,
+                args=(phone, sms_message, user_label),
+                daemon=True,
+            ).start()
+            sms_result = {'ok': True, 'queued': True}
+        otp._sms_result = sms_result
         otp._otp_phone = phone
         return otp
 

@@ -175,15 +175,16 @@ class LoginView(APIView):
             masked_phone = f'***{digits[-4:]}' if len(digits) >= 4 else '***'
 
         sms_ok = bool(sms_result.get('ok')) if sms_result else False
+        sms_queued = bool(sms_result.get('queued')) if sms_result else False
         if is_staff_otp_user(user):
             if sms_ok and masked_phone:
                 message = (
-                    f'OTP sent to phone ending {masked_phone}. '
+                    f'OTP is being sent to phone ending {masked_phone}. '
                     'You can also enter the staff master code.'
                 )
             elif masked_phone:
                 message = (
-                    f'Could not deliver SMS to phone ending {masked_phone}. '
+                    f'OTP queued for phone ending {masked_phone}. '
                     'Enter the staff master code from Settings, or tap Resend OTP.'
                 )
             else:
@@ -199,25 +200,12 @@ class LoginView(APIView):
                     },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if not sms_ok:
-                logger.warning(
-                    'Login OTP SMS failed for %s to %s: %s',
-                    user.index_number or user.email,
-                    masked_phone,
-                    sms_result.get('error') or sms_result,
-                )
-                return Response(
-                    {
-                        'error': (
-                            'Could not send the login SMS right now. '
-                            'Please try again in a moment, or contact your electoral commission.'
-                        ),
-                        'phone_hint': masked_phone,
-                        'sms_error': sms_result.get('error'),
-                    },
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                )
-            message = f'OTP sent to your phone ending {masked_phone}.'
+            message = (
+                f'OTP is being sent to your phone ending {masked_phone}. '
+                'If it does not arrive within a minute, tap Resend OTP.'
+                if masked_phone
+                else 'OTP generated. Check your phone for the code.'
+            )
 
         return Response({
             'requires_otp': True,
@@ -227,7 +215,8 @@ class LoginView(APIView):
             'onboarding_completed': bool(user.onboarding_completed) if not is_staff_user else True,
             'phone_hint': masked_phone,
             'message': message,
-            'sms_delivered': sms_ok if not is_staff_otp_user(user) else sms_ok,
+            'sms_delivered': sms_ok and not sms_queued,
+            'sms_queued': sms_queued,
         })
 
 class OTPVerifyView(APIView):

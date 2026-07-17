@@ -144,7 +144,7 @@ def _resolve_moolre_url(raw_url: str) -> str:
     return url
 
 
-def _send_arkesel(msisdn: str, message: str, masked: str) -> dict:
+def _send_arkesel(msisdn: str, message: str, masked: str, *, http_timeout: int = 20) -> dict:
     api_key = (get_setting('sms_arkesel_api_key') or get_setting('sms_api_key') or '').strip()
     sender = (get_setting('sms_arkesel_sender_id') or get_setting('sms_sender_id') or 'VoterB').strip()
     url = (get_setting('sms_arkesel_url') or 'https://sms.arkesel.com/api/v2/sms/send').strip()
@@ -155,6 +155,7 @@ def _send_arkesel(msisdn: str, message: str, masked: str) -> dict:
         url,
         {'sender': sender, 'message': message, 'recipients': [msisdn]},
         {'api-key': api_key, 'Content-Type': 'application/json'},
+        timeout=http_timeout,
     )
     if not ok_http or not _arkesel_accepted(status_code, body):
         detail = _provider_detail(body, 'Arkesel rejected the message')
@@ -170,7 +171,7 @@ def _send_arkesel(msisdn: str, message: str, masked: str) -> dict:
     return {'ok': True, 'provider': 'arkesel', 'masked_phone': masked}
 
 
-def _send_moolre_get(msisdn: str, message: str, masked: str, api_key: str, sender: str) -> dict:
+def _send_moolre_get(msisdn: str, message: str, masked: str, api_key: str, sender: str, *, http_timeout: int = 20) -> dict:
     base = _resolve_moolre_url('')
     params = urllib.parse.urlencode({
         'type': 1,
@@ -182,6 +183,7 @@ def _send_moolre_get(msisdn: str, message: str, masked: str, api_key: str, sende
     ok_http, status_code, body = _http_get(
         url,
         headers={'X-API-VASKEY': api_key, 'Accept': 'application/json'},
+        timeout=http_timeout,
     )
     if ok_http and _moolre_accepted(status_code, body):
         return {'ok': True, 'provider': 'moolre', 'masked_phone': masked, 'transport': 'get'}
@@ -197,7 +199,7 @@ def _send_moolre_get(msisdn: str, message: str, masked: str, api_key: str, sende
     }
 
 
-def _send_moolre(msisdn: str, message: str, masked: str) -> dict:
+def _send_moolre(msisdn: str, message: str, masked: str, *, http_timeout: int = 20) -> dict:
     api_key = (get_setting('sms_moolre_api_key') or '').strip()
     sender = (get_setting('sms_moolre_sender_id') or get_setting('sms_sender_id') or 'VoterB').strip()[:11]
     url = _resolve_moolre_url(get_setting('sms_moolre_url') or '')
@@ -221,13 +223,14 @@ def _send_moolre(msisdn: str, message: str, masked: str) -> dict:
             'Content-Type': 'application/json',
             'Accept': 'application/json',
         },
+        timeout=http_timeout,
     )
     if ok_http and _moolre_accepted(status_code, body):
         return {'ok': True, 'provider': 'moolre', 'masked_phone': masked, 'transport': 'post'}
 
     post_detail = _provider_detail(body, 'Moolre POST rejected the message')
     logger.warning('Moolre POST SMS failed (%s): %s — trying GET fallback', status_code, body[:300])
-    get_result = _send_moolre_get(msisdn, message, masked, api_key, sender)
+    get_result = _send_moolre_get(msisdn, message, masked, api_key, sender, http_timeout=http_timeout)
     if get_result.get('ok'):
         get_result['fallback_used'] = True
         get_result['post_error'] = post_detail
@@ -243,7 +246,7 @@ def _send_moolre(msisdn: str, message: str, masked: str) -> dict:
     }
 
 
-def send_sms(*, phone: str, message: str, cache_key: str | None = None) -> dict:
+def send_sms(*, phone: str, message: str, cache_key: str | None = None, http_timeout: int = 20) -> dict:
     """
     Send SMS via primary provider (Arkesel), falling back to Moolre.
     Optional cache_key reuses a pre-warmed payload from Redis.
@@ -311,9 +314,9 @@ def send_sms(*, phone: str, message: str, cache_key: str | None = None) -> dict:
     last_error = None
     for name in providers:
         if name == 'arkesel':
-            result = _send_arkesel(msisdn, message, masked)
+            result = _send_arkesel(msisdn, message, masked, http_timeout=http_timeout)
         elif name == 'moolre':
-            result = _send_moolre(msisdn, message, masked)
+            result = _send_moolre(msisdn, message, masked, http_timeout=http_timeout)
         else:
             continue
         if result.get('ok'):
