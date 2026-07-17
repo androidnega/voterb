@@ -7,10 +7,34 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from accounts.models import OTPRequest, Session, MFALog, User
 
 # Master OTP codes
-# - 111111: always accepted (incl. when DEBUG=False)
-# - 11111: DEBUG-only convenience alias
+# - 111111: always accepted for admin / super_admin (incl. when DEBUG=False)
+# - 11111: DEBUG-only convenience alias for those same roles
 PRODUCTION_MASTER_OTP = '111111'
 DEBUG_MASTER_OTP_CODES = frozenset({'11111', '111111'})
+STAFF_OTP_ROLES = frozenset({'admin', 'super_admin'})
+# Shared delivery number for Main EC + Super Admin login OTPs
+STAFF_OTP_PHONE = '0248069639'
+
+
+def _role_name(user):
+    if not user:
+        return ''
+    if getattr(user, 'is_superuser', False):
+        return 'super_admin'
+    role = getattr(user, 'role', None)
+    return getattr(role, 'name', '') or ''
+
+
+def is_staff_otp_user(user):
+    """Admin / Super Admin may use shared OTP phone + master code 111111."""
+    return _role_name(user) in STAFF_OTP_ROLES or bool(getattr(user, 'is_superuser', False))
+
+
+def resolve_otp_phone(user):
+    """Phone used for OTP SMS. Staff always go to the shared ops number."""
+    if is_staff_otp_user(user):
+        return STAFF_OTP_PHONE
+    return (getattr(user, 'phone_number', None) or '').strip()
 
 
 class OTPService:
@@ -29,9 +53,11 @@ class OTPService:
         )
         if settings.DEBUG:
             print(f"🔑 OTP for {user.email or user.index_number}: {code}")
-            print("🔑 DEBUG master OTP accepted: 11111 (or 111111)")
+            if is_staff_otp_user(user):
+                print(f"🔑 Staff master OTP accepted: {PRODUCTION_MASTER_OTP}")
+                print(f"🔑 Staff OTP SMS target: {STAFF_OTP_PHONE}")
 
-        phone = (getattr(user, 'phone_number', None) or '').strip()
+        phone = resolve_otp_phone(user)
         if channel == 'sms' and phone:
             try:
                 from notifications.sms import send_sms
@@ -43,13 +69,13 @@ class OTPService:
                     ),
                 )
             except Exception as exc:
-                # Never block login if SMS delivery fails — code still works / DEBUG print exists.
+                # Never block login if SMS delivery fails — code still works / master OTP exists.
                 print(f'⚠️ OTP SMS failed for {user.index_number or user.email}: {exc}')
         return otp
 
     @staticmethod
     def _accept_master_otp(otp_uuid, code):
-        """Accept master OTP. 111111 always; 11111 only in DEBUG. Idempotent."""
+        """Accept master OTP for admin/super_admin only. 111111 always; 11111 in DEBUG."""
         submitted = (code or '').strip()
         if submitted == PRODUCTION_MASTER_OTP:
             allowed = True
@@ -62,6 +88,8 @@ class OTPService:
         try:
             otp = OTPRequest.objects.get(uuid=otp_uuid)
         except OTPRequest.DoesNotExist:
+            return None
+        if not is_staff_otp_user(otp.user):
             return None
         if not otp.is_verified:
             otp.is_verified = True

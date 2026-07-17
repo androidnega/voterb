@@ -6,26 +6,31 @@
         class="gov-submit-overlay"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="gov-submit-title"
+        :aria-labelledby="titleId"
         @click.self="onDismiss"
         @keydown.esc.prevent="onDismiss"
       >
-        <div class="gov-submit-panel app-modal-panel" tabindex="-1" ref="panelRef">
+        <div
+          class="gov-submit-panel app-modal-panel"
+          :class="`is-${state}`"
+          tabindex="-1"
+          ref="panelRef"
+        >
           <div class="gov-submit-glow" aria-hidden="true"></div>
 
           <div class="gov-submit-icon" aria-hidden="true">
             <span class="gov-submit-icon__ring"></span>
-            <i class="fas fa-user-check"></i>
+            <i :class="iconClass"></i>
           </div>
 
-          <p class="gov-submit-eyebrow">Dual Main EC</p>
-          <h2 id="gov-submit-title" class="gov-submit-title">Awaiting co-approval</h2>
+          <p class="gov-submit-eyebrow">{{ eyebrow }}</p>
+          <h2 :id="titleId" class="gov-submit-title">{{ heading }}</h2>
 
           <p class="gov-submit-body">
             {{ message }}
           </p>
 
-          <div class="gov-submit-progress" aria-label="Approval progress">
+          <div v-if="state === 'pending'" class="gov-submit-progress" aria-label="Approval progress">
             <div class="gov-submit-step is-done">
               <span class="gov-submit-dot"><i class="fas fa-check"></i></span>
               <span>You approved</span>
@@ -37,13 +42,39 @@
             </div>
           </div>
 
+          <div v-else-if="state === 'enrolled'" class="gov-submit-progress is-complete" aria-label="Enrolled">
+            <div class="gov-submit-step is-done">
+              <span class="gov-submit-dot"><i class="fas fa-check"></i></span>
+              <span>Both approved</span>
+            </div>
+            <div class="gov-submit-rail is-complete" aria-hidden="true"></div>
+            <div class="gov-submit-step is-done">
+              <span class="gov-submit-dot"><i class="fas fa-check"></i></span>
+              <span>Enrolled</span>
+            </div>
+          </div>
+
           <div class="gov-submit-actions">
             <button type="button" class="gov-submit-secondary" @click="onDismiss">
-              Stay here
+              {{ state === 'enrolled' ? 'Close' : 'Stay here' }}
             </button>
-            <button type="button" class="gov-submit-primary" @click="onReview">
+            <button
+              v-if="state === 'pending'"
+              type="button"
+              class="gov-submit-primary"
+              @click="onReview"
+            >
               Review approvals
               <i class="fas fa-arrow-right" aria-hidden="true"></i>
+            </button>
+            <button
+              v-else-if="state === 'enrolled'"
+              type="button"
+              class="gov-submit-primary is-green"
+              @click="onDismiss"
+            >
+              Done
+              <i class="fas fa-check" aria-hidden="true"></i>
             </button>
           </div>
         </div>
@@ -53,11 +84,13 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
+  /** pending | enrolled | rejected */
+  state: { type: String, default: 'pending' },
   message: {
     type: String,
     default:
@@ -70,6 +103,25 @@ const emit = defineEmits(['update:visible', 'dismiss', 'review'])
 
 const router = useRouter()
 const panelRef = ref(null)
+const titleId = 'gov-submit-title'
+
+const eyebrow = computed(() => {
+  if (props.state === 'enrolled') return 'Enrolled'
+  if (props.state === 'rejected') return 'Rejected'
+  return 'Dual Main EC'
+})
+
+const heading = computed(() => {
+  if (props.state === 'enrolled') return 'Decision enrolled'
+  if (props.state === 'rejected') return 'Decision rejected'
+  return 'Awaiting co-approval'
+})
+
+const iconClass = computed(() => {
+  if (props.state === 'enrolled') return 'fas fa-check'
+  if (props.state === 'rejected') return 'fas fa-times'
+  return 'fas fa-user-check'
+})
 
 watch(
   () => props.visible,
@@ -129,12 +181,20 @@ const onReview = () => {
   will-change: transform, opacity;
 }
 
+.gov-submit-panel.is-enrolled {
+  border-color: rgba(22, 163, 74, 0.28);
+}
+
 .gov-submit-glow {
   position: absolute;
   inset: -40% -20% auto;
   height: 12rem;
   background: radial-gradient(ellipse at center, rgba(163, 177, 138, 0.28), transparent 68%);
   pointer-events: none;
+}
+
+.gov-submit-panel.is-enrolled .gov-submit-glow {
+  background: radial-gradient(ellipse at center, rgba(34, 197, 94, 0.28), transparent 68%);
 }
 
 .gov-submit-icon {
@@ -151,12 +211,26 @@ const onReview = () => {
   box-shadow: 0 12px 28px rgba(61, 79, 68, 0.28);
 }
 
+.gov-submit-panel.is-enrolled .gov-submit-icon {
+  background: linear-gradient(145deg, #15803d, #22c55e);
+  box-shadow: 0 12px 28px rgba(22, 163, 74, 0.32);
+}
+
+.gov-submit-panel.is-rejected .gov-submit-icon {
+  background: linear-gradient(145deg, #9a3412, #ea580c);
+  box-shadow: 0 12px 28px rgba(194, 65, 12, 0.28);
+}
+
 .gov-submit-icon__ring {
   position: absolute;
   inset: -0.35rem;
   border-radius: 1.35rem;
   border: 1.5px solid rgba(61, 79, 68, 0.22);
   animation: gov-ring 2.4s ease-out infinite;
+}
+
+.gov-submit-panel.is-enrolled .gov-submit-icon__ring {
+  border-color: rgba(22, 163, 74, 0.35);
 }
 
 .gov-submit-eyebrow {
@@ -166,6 +240,10 @@ const onReview = () => {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--vb-accent, #3d4f44);
+}
+
+.gov-submit-panel.is-enrolled .gov-submit-eyebrow {
+  color: #15803d;
 }
 
 .gov-submit-title {
@@ -197,6 +275,11 @@ const onReview = () => {
   border: 1px solid var(--vb-line, #ebeae4);
 }
 
+.gov-submit-progress.is-complete {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
 .gov-submit-step {
   display: flex;
   flex-direction: column;
@@ -210,6 +293,10 @@ const onReview = () => {
 
 .gov-submit-step.is-done {
   color: var(--vb-accent, #3d4f44);
+}
+
+.gov-submit-progress.is-complete .gov-submit-step.is-done {
+  color: #15803d;
 }
 
 .gov-submit-dot {
@@ -231,6 +318,11 @@ const onReview = () => {
   color: #fff;
 }
 
+.gov-submit-progress.is-complete .gov-submit-step.is-done .gov-submit-dot {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
 .gov-submit-step.is-wait .gov-submit-dot {
   border-style: dashed;
   border-color: rgba(61, 79, 68, 0.35);
@@ -244,6 +336,10 @@ const onReview = () => {
   margin-bottom: 1.1rem;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--vb-accent, #3d4f44), rgba(61, 79, 68, 0.2));
+}
+
+.gov-submit-rail.is-complete {
+  background: linear-gradient(90deg, #16a34a, #86efac);
 }
 
 .gov-submit-actions {
@@ -287,9 +383,18 @@ const onReview = () => {
   box-shadow: 0 10px 22px rgba(61, 79, 68, 0.22);
 }
 
+.gov-submit-primary.is-green {
+  background: #16a34a;
+  box-shadow: 0 10px 22px rgba(22, 163, 74, 0.28);
+}
+
 .gov-submit-primary:hover {
   background: var(--vb-accent-hover, #334239);
   transform: translateY(-1px);
+}
+
+.gov-submit-primary.is-green:hover {
+  background: #15803d;
 }
 
 .gov-submit-primary:active,

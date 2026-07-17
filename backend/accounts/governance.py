@@ -350,6 +350,8 @@ def _execute_decision(decision: MainECDecision) -> str:
 
     if decision.decision_type == MainECDecision.TYPE_ELECTION_OPEN:
         election = get_object_or_404(Election, uuid=payload['election_uuid'])
+        if election.status == 'open':
+            return str(election.uuid)
         if election.status not in ('draft', 'scheduled'):
             raise GovernanceBlocked(
                 'Election must be draft or scheduled before opening.',
@@ -365,8 +367,15 @@ def _execute_decision(decision: MainECDecision) -> str:
 
     if decision.decision_type == MainECDecision.TYPE_ELECTION_CLOSE:
         election = get_object_or_404(Election, uuid=payload['election_uuid'])
-        if election.status not in ['open', 'paused']:
-            raise GovernanceBlocked('Election must be open or paused to close.', code='invalid_state')
+        # Idempotent: election may already be closed (e.g. peer closed via Sub EC
+        # path, or end-of-window close) while this dual-approval was still pending.
+        if election.status in ('closed', 'archived'):
+            return str(election.uuid)
+        if election.status not in ('open', 'paused'):
+            raise GovernanceBlocked(
+                f'Election cannot be closed from status "{election.status}".',
+                code='invalid_state',
+            )
         election.status = 'closed'
         election.save(update_fields=['status', 'updated_at'])
         return str(election.uuid)

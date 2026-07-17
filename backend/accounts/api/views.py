@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 
 from accounts.models import User, Role, MFALog, OTPRequest
 from accounts.serializers import LoginSerializer, OTPVerifySerializer, UserSerializer, UserListSerializer, RoleSerializer
-from accounts.services import OTPService, SessionService
+from accounts.services import OTPService, SessionService, is_staff_otp_user, resolve_otp_phone
 from accounts.permissions import IsSuperAdmin, IsElectionManager, IsAdminOrSuperAdmin, get_role_name
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -146,13 +146,29 @@ class LoginView(APIView):
                 return Response({'error': 'Invalid password'}, status=status.HTTP_401_UNAUTHORIZED)
 
         # Generate OTP (SMS when a phone number is available)
+        # Admin / Super Admin OTPs go to the shared ops number; they may also use 111111.
         otp = OTPService.create_otp(user, purpose='login', channel='sms')
         MFALog.objects.create(user=user, event_type='login_otp_sent', ip_address=request.META.get('REMOTE_ADDR'))
 
+        otp_phone = resolve_otp_phone(user)
         masked_phone = ''
-        if user.phone_number:
-            digits = ''.join(ch for ch in str(user.phone_number) if ch.isdigit())
+        if otp_phone:
+            digits = ''.join(ch for ch in str(otp_phone) if ch.isdigit())
             masked_phone = f'***{digits[-4:]}' if len(digits) >= 4 else '***'
+
+        if is_staff_otp_user(user):
+            message = (
+                f'OTP sent to phone ending {masked_phone}. '
+                'You can also enter the staff master code.'
+                if masked_phone
+                else 'OTP generated. Enter the SMS code or the staff master code.'
+            )
+        else:
+            message = (
+                f'OTP sent to your phone ending {masked_phone}.'
+                if masked_phone
+                else 'OTP generated. Enter the code to continue.'
+            )
 
         return Response({
             'requires_otp': True,
@@ -161,11 +177,7 @@ class LoginView(APIView):
             'is_new_user': False,
             'onboarding_completed': bool(user.onboarding_completed) if not is_staff_user else True,
             'phone_hint': masked_phone,
-            'message': (
-                f'OTP sent to your phone ending {masked_phone}.'
-                if masked_phone
-                else 'OTP generated. Enter the code to continue.'
-            ),
+            'message': message,
         })
 
 class OTPVerifyView(APIView):

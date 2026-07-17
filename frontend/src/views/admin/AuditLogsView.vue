@@ -1,24 +1,6 @@
 <template>
   <div class="audit-page">
-    <StrongroomVaultGate
-      v-if="!isUnlocked"
-      :authenticating="authenticating"
-      :session-error="sessionError"
-      :challenge="unlockChallenge"
-      @authenticate="onAuthenticate"
-      @peer-confirm="onPeerConfirm"
-      @nominee-key="onNomineeKey"
-      @refresh="refreshUnlockStatus"
-    />
-
-    <template v-else>
     <header class="audit-hero audit-hero--actions">
-      <div class="audit-hero__left">
-        <span class="audit-unlocked"><i class="fas fa-lock-open"></i> Vault open · {{ remainingLabel }}</span>
-      </div>
-      <button type="button" class="audit-icon-btn" title="Lock vault" @click="onLock">
-        <i class="fas fa-lock"></i>
-      </button>
       <button type="button" class="audit-icon-btn" :disabled="loading" title="Refresh" @click="fetchLogs">
         <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
       </button>
@@ -234,7 +216,6 @@
         </article>
       </aside>
     </section>
-    </template>
   </div>
 </template>
 
@@ -243,22 +224,6 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { auditApi } from '@/api/audit'
 import { usePagination } from '@/composables/usePagination'
 import { resolveMediaUrl } from '@/utils/media'
-import StrongroomVaultGate from '@/components/strongroom/StrongroomVaultGate.vue'
-import { useStrongroomVault } from '@/composables/useStrongroomVault'
-
-const {
-  isUnlocked,
-  remainingLabel,
-  sessionError,
-  authenticating,
-  unlockChallenge,
-  checkSession,
-  refreshUnlockStatus,
-  authenticate,
-  peerConfirm,
-  submitNomineeKey,
-  lockVault,
-} = useStrongroomVault()
 
 const logs = ref([])
 const loading = ref(false)
@@ -267,7 +232,6 @@ const activeChip = ref('all')
 const selectedId = ref(null)
 const detail = ref(null)
 const detailLoading = ref(false)
-const vaultBlocked = ref(false)
 
 const { page, size, setPage, reset } = usePagination(logs, 8)
 
@@ -348,9 +312,7 @@ const normalizeLogs = (payload) => {
 }
 
 const fetchLogs = async () => {
-  if (!isUnlocked.value) return
   loading.value = true
-  vaultBlocked.value = false
   try {
     const response = await auditApi.getCombined({ limit: 200 })
     logs.value = normalizeLogs(response.data)
@@ -358,37 +320,9 @@ const fetchLogs = async () => {
   } catch (error) {
     console.error('Failed to fetch voter audits:', error)
     logs.value = []
-    if (error.response?.data?.code === 'vault_session_required') {
-      vaultBlocked.value = true
-      await lockVault()
-    }
   } finally {
     loading.value = false
   }
-}
-
-const onAuthenticate = async (password) => {
-  const result = await authenticate(password)
-  if (result === true) await fetchLogs()
-}
-
-const onPeerConfirm = async () => {
-  const uuid = unlockChallenge.value?.uuid
-  if (!uuid) return
-  await peerConfirm(uuid)
-}
-
-const onNomineeKey = async (key) => {
-  const uuid = unlockChallenge.value?.uuid
-  if (!uuid) return
-  const ok = await submitNomineeKey(uuid, key)
-  if (ok) await fetchLogs()
-}
-
-const onLock = async () => {
-  await lockVault()
-  logs.value = []
-  detail.value = null
 }
 
 const openDetail = async (auditId) => {
@@ -404,9 +338,6 @@ const openDetail = async (auditId) => {
   } catch (error) {
     console.error('Failed to load audit detail:', error)
     detail.value = null
-    if (error.response?.data?.code === 'vault_session_required') {
-      await lockVault()
-    }
   } finally {
     detailLoading.value = false
   }
@@ -441,11 +372,7 @@ const formatLocation = (loc) => {
   return loc.ip_address || '—'
 }
 
-onMounted(async () => {
-  const active = await checkSession()
-  if (active) await fetchLogs()
-  else await refreshUnlockStatus()
-})
+onMounted(fetchLogs)
 </script>
 
 <style scoped>

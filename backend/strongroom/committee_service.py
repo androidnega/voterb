@@ -284,7 +284,7 @@ def complete_unlock_with_nominee_key(*, actor: User, challenge_uuid, nominee_key
         'session_uuid': str(session.uuid),
         'expires_at': session.expires_at.isoformat(),
         'ttl_minutes': VAULT_SESSION_TTL_MINUTES,
-        'message': 'Audit vault unlocked',
+        'message': 'Strongroom vault unlocked',
     })
     return payload
 

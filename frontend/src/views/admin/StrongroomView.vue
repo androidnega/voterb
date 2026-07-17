@@ -1,63 +1,95 @@
 <template>
   <div class="strongroom-page">
-    <!-- Phase 1: committee must be approved before vault unlock -->
-    <template v-if="!overviewLoading && !hasApprovedCommittee">
-      <DataPanel
-        title="Custody committee required"
-        subtitle="Strongroom vault unlock and custody inspection open only after a committee is nominated and approved"
-      >
-        <div v-if="setupElections.length === 0" class="committee-empty">
-          <EmptyState
-            icon="fas fa-users-cog"
-            title="No elections yet"
-            message="Create an election first, then nominate a custody committee here."
-          />
+    <!-- Always visible: nominate + peer approval requests -->
+    <DataPanel
+      v-if="!overviewLoading"
+      class="page-section"
+      title="Custody committee"
+      subtitle="Nominate you + peer EC + candidate nominee. The peer EC must approve before the nominee receives a timed custody key."
+    >
+      <div v-if="pendingForMe.length" class="pending-banner">
+        <div>
+          <strong>{{ pendingForMe.length }} committee request{{ pendingForMe.length === 1 ? '' : 's' }} waiting for you</strong>
+          <p>Another EC nominated you as peer. Approve to activate the custody committee and send the nominee key.</p>
         </div>
+      </div>
 
-        <div v-else class="committee-list">
-          <div
-            v-for="election in setupElections"
-            :key="election.uuid"
-            class="committee-row"
-          >
-            <div class="committee-row-main">
-              <p class="committee-election">{{ election.title }}</p>
-              <span class="admin-badge" :class="committeeBadge(election.committee_status)">
-                {{ committeeLabel(election.committee_status) }}
-              </span>
-            </div>
-            <p class="committee-hint">{{ committeeHint(election.committee_status) }}</p>
-            <div class="committee-actions">
-              <button
-                v-if="canNominate(election)"
-                type="button"
-                class="committee-btn committee-btn--primary"
-                :disabled="actionBusy === election.uuid"
-                @click="openNominate(election)"
-              >
-                <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-user-plus'"></i>
-                Nominate committee
-              </button>
-              <button
-                v-if="canApprove(election)"
-                type="button"
-                class="committee-btn committee-btn--approve"
-                :disabled="actionBusy === election.uuid"
-                @click="approve(election)"
-              >
-                <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-check'"></i>
-                Approve as peer EC
-              </button>
-              <span v-if="isAuditorOnly" class="committee-wait">Waiting for EC nomination and peer approval</span>
-            </div>
-            <p v-if="actionError && actionTarget === election.uuid" class="committee-error">{{ actionError }}</p>
+      <div v-if="setupElections.length === 0" class="committee-empty">
+        <EmptyState
+          icon="fas fa-users-cog"
+          title="No elections yet"
+          message="Create an election first, then nominate a custody committee here."
+        />
+      </div>
+
+      <div v-else class="committee-list">
+        <div
+          v-for="election in setupElections"
+          :key="election.uuid"
+          class="committee-row"
+          :class="{ 'is-pending-me': canApprove(election) }"
+        >
+          <div class="committee-row-main">
+            <p class="committee-election">{{ election.title }}</p>
+            <span class="admin-badge" :class="committeeBadge(election.committee_status)">
+              {{ committeeLabel(election.committee_status) }}
+            </span>
           </div>
+          <p class="committee-hint">{{ committeeHint(election) }}</p>
+          <ul v-if="election.committee" class="committee-meta">
+            <li v-if="election.committee.nominated_by">
+              Nominated by {{ personName(election.committee.nominated_by) }}
+            </li>
+            <li v-if="election.committee.peer_ec">
+              Peer EC {{ personName(election.committee.peer_ec) }}
+            </li>
+            <li v-if="election.committee.nominee_full_name">
+              Nominee {{ election.committee.nominee_full_name }}
+              <span v-if="election.committee.nominee_phone_masked">
+                · {{ election.committee.nominee_phone_masked }}
+              </span>
+            </li>
+          </ul>
+          <div class="committee-actions">
+            <button
+              v-if="canNominate(election)"
+              type="button"
+              class="committee-btn committee-btn--primary"
+              :disabled="actionBusy === election.uuid"
+              @click="openNominate(election)"
+            >
+              <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-user-plus'"></i>
+              Request peer approval
+            </button>
+            <button
+              v-if="canApprove(election)"
+              type="button"
+              class="committee-btn committee-btn--approve"
+              :disabled="actionBusy === election.uuid"
+              @click="approve(election)"
+            >
+              <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-check'"></i>
+              Approve committee request
+            </button>
+            <span v-if="waitingOnPeer(election)" class="committee-wait">
+              Waiting for {{ personName(election.committee?.peer_ec) || 'peer EC' }} to approve
+            </span>
+            <span v-if="isAuditorOnly" class="committee-wait">View only — EC members set up the committee</span>
+          </div>
+          <p v-if="actionError && actionTarget === election.uuid" class="committee-error">{{ actionError }}</p>
+          <p v-if="actionSuccess && actionTarget === election.uuid" class="committee-success">{{ actionSuccess }}</p>
         </div>
-      </DataPanel>
-    </template>
+      </div>
+    </DataPanel>
 
+    <div v-else-if="overviewLoading" class="committee-loading">
+      <i class="fas fa-spinner fa-spin"></i>
+      Checking custody committee…
+    </div>
+
+    <!-- Vault unlock only after at least one committee is approved -->
     <StrongroomVaultGate
-      v-else-if="hasApprovedCommittee && !isUnlocked"
+      v-if="!overviewLoading && hasApprovedCommittee && !isUnlocked"
       :authenticating="authenticating"
       :session-error="sessionError"
       :challenge="unlockChallenge"
@@ -67,7 +99,18 @@
       @refresh="refreshUnlockStatus"
     />
 
-    <template v-else-if="isUnlocked">
+    <div
+      v-else-if="!overviewLoading && !hasApprovedCommittee"
+      class="vault-blocked page-section"
+    >
+      <i class="fas fa-lock" aria-hidden="true"></i>
+      <div>
+        <strong>Strongroom vault locked</strong>
+        <p>Nominate a committee and get peer EC approval first. Then unlock with EC password → peer confirm → nominee key.</p>
+      </div>
+    </div>
+
+    <template v-if="isUnlocked">
       <div class="vault-secure-bar">
         <div class="vault-secure-left">
           <span class="vault-secure-badge"><i class="fas fa-lock-open"></i> Vault Unlocked</span>
@@ -212,10 +255,10 @@
                   type="button"
                   class="committee-btn committee-btn--primary"
                   :disabled="actionBusy === election.uuid"
-                  @click="nominate(election)"
+                  @click="openNominate(election)"
                 >
                   <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-user-plus'"></i>
-                  Nominate
+                  Request peer approval
                 </button>
                 <button
                   v-if="canApprove(election)"
@@ -225,7 +268,7 @@
                   @click="approve(election)"
                 >
                   <i :class="actionBusy === election.uuid ? 'fas fa-spinner fa-spin' : 'fas fa-check'"></i>
-                  Approve
+                  Approve request
                 </button>
               </div>
             </template>
@@ -254,11 +297,6 @@
         </template>
       </DataPanel>
     </template>
-
-    <div v-else-if="overviewLoading" class="committee-loading">
-      <i class="fas fa-spinner fa-spin"></i>
-      Checking custody committee…
-    </div>
 
     <!-- Access request modal -->
     <Transition name="app-modal">
@@ -363,6 +401,7 @@ const verifying = ref(false)
 const verifyResult = ref(null)
 const actionBusy = ref(null)
 const actionError = ref('')
+const actionSuccess = ref('')
 const actionTarget = ref(null)
 
 const {
@@ -425,11 +464,34 @@ const committeeBadge = (status) => {
   return map[status] || 'neutral'
 }
 
-const committeeHint = (status) => {
-  if (status === 'approved') return 'Custody access is available for this election.'
-  if (status === 'submitted') return 'Waiting for the peer EC to approve. Nominee key is sent only after approval.'
-  if (status === 'rejected') return 'Previous nomination was rejected. Nominate a new committee.'
-  return 'Nominate you + peer EC + candidate nominee. Peer approval activates the custody key.'
+const personName = (person) => {
+  if (!person) return '—'
+  const name = `${person.first_name || ''} ${person.last_name || ''}`.trim()
+  return name || person.name || person.email || 'EC member'
+}
+
+const pendingForMe = computed(() => setupElections.value.filter((e) => canApprove(e)))
+
+const waitingOnPeer = (election) => {
+  if (!authStore.isElectionManager) return false
+  const status = election.committee_status
+  if (status !== 'submitted') return false
+  const nominatedBy = election.committee?.nominated_by?.uuid
+  return nominatedBy === authStore.user?.uuid
+}
+
+const committeeHint = (electionOrStatus) => {
+  const election = typeof electionOrStatus === 'string' ? { committee_status: electionOrStatus } : (electionOrStatus || {})
+  const status = election.committee_status || 'none'
+  if (status === 'approved') return 'Committee approved. Unlock the Strongroom vault with the three-party flow.'
+  if (canApprove(election)) {
+    return `${personName(election.committee?.nominated_by)} requested your approval as peer EC.`
+  }
+  if (status === 'submitted') {
+    return `Waiting for ${personName(election.committee?.peer_ec)} to approve. Nominee key is sent only after approval.`
+  }
+  if (status === 'rejected') return 'Previous nomination was rejected. Submit a new committee request.'
+  return 'Submit a request: you + peer EC + nominee. Peer must approve before the nominee key is sent.'
 }
 
 const canNominate = (election) => {
@@ -489,7 +551,11 @@ const submitNominate = async () => {
       nominee_phone: nominateForm.value.nominee_phone.trim(),
       nominee_email: nominateForm.value.nominee_email.trim(),
     })
+    const targetUuid = nominateModal.value.uuid
     nominateModal.value = null
+    actionTarget.value = targetUuid
+    actionSuccess.value = 'Committee request sent. Waiting for peer EC approval.'
+    actionError.value = ''
     await fetchOverview()
     if (isUnlocked.value) await fetchData()
   } catch (error) {
@@ -502,9 +568,11 @@ const submitNominate = async () => {
 const approve = async (election) => {
   actionBusy.value = election.uuid
   actionError.value = ''
+  actionSuccess.value = ''
   actionTarget.value = election.uuid
   try {
     await strongroomApi.approveCommittee(election.uuid)
+    actionSuccess.value = 'Committee approved. Nominee custody key has been sent.'
     await fetchOverview()
     if (isUnlocked.value) await fetchData()
   } catch (error) {
@@ -630,6 +698,81 @@ onMounted(async () => {
   padding: 3rem 1rem;
   color: #64748b;
   font-size: 0.9rem;
+}
+
+.pending-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 0.85rem;
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.pending-banner strong {
+  display: block;
+  font-size: 0.92rem;
+}
+
+.pending-banner p {
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #a16207;
+}
+
+.committee-row.is-pending-me {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+
+.committee-meta {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.85rem;
+  font-size: 0.78rem;
+  color: #78716c;
+}
+
+.committee-success {
+  margin: 0.55rem 0 0;
+  font-size: 0.8rem;
+  color: #166534;
+}
+
+.vault-blocked {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  padding: 1rem 1.1rem;
+  border-radius: 1rem;
+  border: 1px dashed #d6d3d1;
+  background: #fafaf9;
+  color: #57534e;
+}
+
+.vault-blocked i {
+  margin-top: 0.15rem;
+  color: #a8a29e;
+}
+
+.vault-blocked strong {
+  display: block;
+  font-size: 0.95rem;
+  color: #1c1917;
+}
+
+.vault-blocked p {
+  margin: 0.25rem 0 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: #78716c;
 }
 
 .committee-empty {

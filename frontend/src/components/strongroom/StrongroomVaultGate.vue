@@ -11,12 +11,12 @@
         </div>
         <div class="vault-panel__titles">
           <p class="vault-classified">Custody unlock</p>
-          <h1 class="vault-title">Audit vault</h1>
+          <h1 class="vault-title">Strongroom vault</h1>
         </div>
       </div>
 
       <p class="vault-subtitle">
-        Three-party unlock: EC password → peer EC confirm → nominee key. Ballot choices are never revealed.
+        Three-party unlock: EC password → peer EC confirm → nominee key. Seal inspection never reveals ballot choices.
       </p>
 
       <ol class="vault-steps" aria-label="Unlock steps">
@@ -103,7 +103,7 @@
         <p v-if="displayError" class="vault-error">{{ displayError }}</p>
         <button type="submit" class="vault-unlock-btn" :disabled="authenticating || !nomineeKey">
           <i class="fas fa-key"></i>
-          Open audit vault
+          Open Strongroom
         </button>
       </form>
     </div>

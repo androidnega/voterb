@@ -152,61 +152,119 @@ def notify_fraud_alert(alert):
         )
 
 
+def _decision_uuid(decision) -> str:
+    return str(decision.uuid)
+
+
+def resolve_main_ec_approval_notifications(decision):
+    """Mark pending approval alerts for this decision as read (request is resolved)."""
+    du = _decision_uuid(decision)
+    InAppNotification.objects.filter(
+        notification_type='main_ec_approval',
+        is_read=False,
+        metadata__decision_uuid=du,
+    ).update(is_read=True)
+
+
 def notify_main_ec_approval_needed(decision, exclude_user_ids=None):
-    """Notify co–Main EC members that a decision awaits their approval."""
+    """Notify co–Main EC members that a decision awaits their approval.
+
+    At most one unread approval notification per user per decision while pending.
+    """
     from accounts.governance import main_ec_member_user_ids
 
     exclude = set(exclude_user_ids or [])
+    # Proposer / anyone who already signed should not get another "please approve" ping.
+    exclude |= set(decision.approvals.values_list('user_id', flat=True))
     recipient_ids = [
         uid for uid in main_ec_member_user_ids(decision.institution)
         if uid not in exclude
     ]
     if not recipient_ids:
         return
+
+    du = _decision_uuid(decision)
     proposer_name = (
         f'{decision.proposed_by.first_name or ""} {decision.proposed_by.last_name or ""}'.strip()
         or decision.proposed_by.email
     )
-    create_notification_for_users(
-        user_ids=recipient_ids,
-        title='Approval required',
-        body=f'{proposer_name} submitted "{decision.title}". Your co-signature is needed before enrollment.',
-        link='/approvals',
-        notification_type='main_ec_approval',
-        metadata={
-            'decision_uuid': str(decision.uuid),
-            'decision_type': decision.decision_type,
-        },
+    title = 'Approval required'
+    body = (
+        f'{proposer_name} submitted "{decision.title}". '
+        'Your co-signature is needed before enrollment.'
     )
+    metadata = {
+        'decision_uuid': du,
+        'decision_type': decision.decision_type,
+    }
+
+    to_create = []
+    for uid in recipient_ids:
+        already = InAppNotification.objects.filter(
+            user_id=uid,
+            notification_type='main_ec_approval',
+            metadata__decision_uuid=du,
+        ).exists()
+        if already:
+            continue
+        to_create.append(InAppNotification(
+            user_id=uid,
+            title=title,
+            body=body,
+            link='/approvals',
+            notification_type='main_ec_approval',
+            metadata=metadata,
+        ))
+    if to_create:
+        InAppNotification.objects.bulk_create(to_create)
 
 
 def notify_main_ec_decision_enrolled(decision):
     """Notify Main EC members that a dual-approved decision is enrolled."""
     from accounts.governance import main_ec_member_user_ids
 
+    resolve_main_ec_approval_notifications(decision)
+
     recipient_ids = list(main_ec_member_user_ids(decision.institution))
     if not recipient_ids:
         return
-    create_notification_for_users(
-        user_ids=recipient_ids,
-        title='Decision enrolled',
-        body=f'"{decision.title}" was approved by both Main ECs and is now enrolled.',
-        link='/approvals',
-        notification_type='main_ec_enrolled',
-        metadata={
-            'decision_uuid': str(decision.uuid),
-            'decision_type': decision.decision_type,
-        },
-    )
+    du = _decision_uuid(decision)
+    body = f'"{decision.title}" was approved by both Main ECs and is now enrolled.'
+    metadata = {
+        'decision_uuid': du,
+        'decision_type': decision.decision_type,
+    }
+    # One enrolled notice per user per decision (avoid double-chime on retries).
+    to_create = []
+    for uid in recipient_ids:
+        if InAppNotification.objects.filter(
+            user_id=uid,
+            notification_type='main_ec_enrolled',
+            metadata__decision_uuid=du,
+        ).exists():
+            continue
+        to_create.append(InAppNotification(
+            user_id=uid,
+            title='Decision enrolled',
+            body=body,
+            link='/approvals',
+            notification_type='main_ec_enrolled',
+            metadata=metadata,
+        ))
+    if to_create:
+        InAppNotification.objects.bulk_create(to_create)
 
 
 def notify_main_ec_decision_rejected(decision):
     """Notify the proposer (and other Main ECs) that a decision was rejected."""
     from accounts.governance import main_ec_member_user_ids
 
+    resolve_main_ec_approval_notifications(decision)
+
     recipient_ids = list(main_ec_member_user_ids(decision.institution))
     if not recipient_ids:
         return
+    du = _decision_uuid(decision)
     rejector = decision.rejected_by
     rejector_name = ''
     if rejector:
@@ -222,14 +280,27 @@ def notify_main_ec_decision_rejected(decision):
         body += f': {reason}'
     else:
         body += '.'
-    create_notification_for_users(
-        user_ids=recipient_ids,
-        title='Decision rejected',
-        body=body[:400],
-        link='/approvals',
-        notification_type='main_ec_rejected',
-        metadata={
-            'decision_uuid': str(decision.uuid),
-            'decision_type': decision.decision_type,
-        },
-    )
+
+    metadata = {
+        'decision_uuid': du,
+        'decision_type': decision.decision_type,
+    }
+    truncated = body[:400]
+    to_create = []
+    for uid in recipient_ids:
+        if InAppNotification.objects.filter(
+            user_id=uid,
+            notification_type='main_ec_rejected',
+            metadata__decision_uuid=du,
+        ).exists():
+            continue
+        to_create.append(InAppNotification(
+            user_id=uid,
+            title='Decision rejected',
+            body=truncated,
+            link='/approvals',
+            notification_type='main_ec_rejected',
+            metadata=metadata,
+        ))
+    if to_create:
+        InAppNotification.objects.bulk_create(to_create)
