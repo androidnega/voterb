@@ -5,10 +5,10 @@
         <i class="fas fa-flask"></i>
       </div>
       <div>
-        <h3 class="dummy-preview__title">Dry-run ballot</h3>
+        <h3 class="dummy-preview__title">Dry-run ballot <span class="optional-tag">Optional</span></h3>
         <p class="dummy-preview__sub">
-          Watch a simulated vote with masked register voters. Nothing is saved —
-          when it succeeds, this preview clears so you can open the real election.
+          Optional readiness check with masked register voters. Skip it anytime —
+          schedule or start the election without running this.
         </p>
       </div>
       <div class="dummy-preview__actions">
@@ -394,6 +394,20 @@ onUnmounted(clearTimers)
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--vb-ink, #1c1c1c);
+}
+
+.optional-tag {
+  display: inline-flex;
+  margin-left: 0.4rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  background: #f1f5f9;
+  color: #64748b;
 }
 
 .dummy-preview__sub {

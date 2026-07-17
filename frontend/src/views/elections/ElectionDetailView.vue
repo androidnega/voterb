@@ -37,7 +37,7 @@
             @click="openElection"
           >
             <i class="fas fa-play"></i>
-            Open
+            Start election
           </button>
           <button
             v-if="canManageElections && (election.status === 'open' || election.status === 'paused')"
@@ -99,12 +99,65 @@
           <p>Add and approve candidates per position</p>
         </div>
       </div>
-      <div class="setup-strip__step">
+      <div class="setup-strip__step" :class="{ 'is-done': election.register }">
         <span class="setup-strip__num">3</span>
         <div>
-          <strong>Schedule & open</strong>
-          <p>When ready, schedule then open voting</p>
+          <strong>Attach voters</strong>
+          <p>Link an approved register</p>
         </div>
+      </div>
+      <div class="setup-strip__step is-optional">
+        <span class="setup-strip__num">✓</span>
+        <div>
+          <strong>Dry-run <em>(optional)</em></strong>
+          <p>Test the ballot flow — skip anytime</p>
+        </div>
+      </div>
+    </section>
+
+    <section
+      v-if="canManageElections && ['draft', 'scheduled'].includes(election.status)"
+      class="launch-card page-section"
+      :class="{ 'is-spotlight': launchSpotlight }"
+    >
+      <div class="launch-card__copy">
+        <h3>{{ election.status === 'scheduled' ? 'Start this election' : 'Ready when you are' }}</h3>
+        <p>
+          <template v-if="election.status === 'draft'">
+            Dry-run is optional. Schedule the election when positions, candidates, and voters are ready.
+          </template>
+          <template v-else>
+            Dry-run is optional. Open voting now to let eligible students cast ballots.
+          </template>
+        </p>
+      </div>
+      <div class="launch-card__actions">
+        <button
+          v-if="election.status === 'draft'"
+          type="button"
+          class="btn btn-primary"
+          @click="updateStatus('scheduled')"
+        >
+          <i class="fas fa-calendar-plus"></i>
+          Schedule election
+        </button>
+        <button
+          v-else
+          type="button"
+          class="btn btn-primary"
+          @click="openElection"
+        >
+          <i class="fas fa-play"></i>
+          Start election
+        </button>
+        <button
+          v-if="election.status === 'draft'"
+          type="button"
+          class="btn btn-ghost"
+          @click="activeTab = 'preview'"
+        >
+          Optional dry-run
+        </button>
       </div>
     </section>
 
@@ -451,6 +504,8 @@ const isGenerating = ref(false)
 const monitorData = ref(null)
 const registerDeepLink = ref('')
 const openCreateRegister = ref(false)
+const launchSpotlight = ref(false)
+let launchSpotlightTimer = null
 
 const applyVotersQuery = () => {
   const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
@@ -584,8 +639,8 @@ const tabItems = computed(() => {
   if (['draft', 'scheduled'].includes(election.value?.status)) {
     tabs.push({
       key: 'preview',
-      label: 'Preview',
-      icon: 'fas fa-eye',
+      label: 'Dry-run',
+      icon: 'fas fa-flask',
       tone: 'slate',
     })
   }
@@ -597,7 +652,10 @@ const activePanel = computed(() => {
     positions: { title: 'Positions', subtitle: 'Ballot positions and vote limits' },
     candidates: { title: 'Candidates', subtitle: 'Approved and pending candidates' },
     voters: { title: '', subtitle: '' },
-    preview: { title: 'Dummy preview', subtitle: 'Test the ballot flow only — no winners, nothing saved' },
+    preview: {
+      title: 'Dry-run (optional)',
+      subtitle: 'Optional ballot-flow check — skip it and schedule or start whenever you are ready',
+    },
   }
   return map[activeTab.value] || map.positions
 })
@@ -713,8 +771,18 @@ const openElection = async () => {
 }
 
 const onDummyPreviewCompleted = () => {
-  // Dry-run never records votes — return to setup so the EC can schedule/open.
+  // Dry-run is optional and never required — spotlight Start/Schedule afterward.
   activeTab.value = 'positions'
+  launchSpotlight.value = true
+  if (launchSpotlightTimer) clearTimeout(launchSpotlightTimer)
+  launchSpotlightTimer = setTimeout(() => {
+    launchSpotlight.value = false
+  }, 6000)
+  try {
+    document.querySelector('.launch-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  } catch {
+    /* ignore */
+  }
 }
 
 const closeElection = async () => {
@@ -834,6 +902,70 @@ watch(
 .setup-strip__step.is-done .setup-strip__num {
   background: var(--vb-accent, #3d4f44);
   color: #fff;
+}
+
+.setup-strip__step.is-optional {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
+.setup-strip__step.is-optional .setup-strip__num {
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.setup-strip__step em {
+  font-style: normal;
+  font-weight: 650;
+  color: #64748b;
+}
+
+.launch-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.05rem 1.15rem;
+  border-radius: 1.15rem;
+  background:
+    linear-gradient(135deg, rgba(61, 79, 68, 0.08), rgba(163, 177, 138, 0.12)),
+    #fff;
+  border: 1px solid rgba(61, 79, 68, 0.18);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+
+.launch-card.is-spotlight {
+  border-color: rgba(61, 79, 68, 0.4);
+  box-shadow: 0 0 0 4px rgba(61, 79, 68, 0.12), 0 14px 32px rgba(28, 28, 28, 0.08);
+  transform: translateY(-1px);
+}
+
+.launch-card__copy {
+  min-width: min(100%, 18rem);
+  flex: 1;
+}
+
+.launch-card__copy h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.launch-card__copy p {
+  margin: 0.3rem 0 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--vb-muted, #8a8a8a);
+  max-width: 36rem;
+}
+
+.launch-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .setup-strip__step strong {
