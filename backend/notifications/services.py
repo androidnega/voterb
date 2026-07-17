@@ -31,8 +31,8 @@ def create_notification_for_users(user_ids, title, body, link='', notification_t
 def notify_vote_cast(user, election_title, election_uuid):
     create_notification(
         user=user,
-        title='✅ Vote Confirmed',
-        body=f'Your vote in "{election_title}" has been recorded successfully.',
+        title='Vote confirmed',
+        body=f'Your ballot in "{election_title}" is sealed and recorded.',
         link=f'/vote/{election_uuid}/confirmation',
         notification_type='vote_cast',
         metadata={'election_uuid': str(election_uuid)}
@@ -47,8 +47,8 @@ def notify_election_opened(election):
     if eligible_user_ids:
         create_notification_for_users(
             user_ids=eligible_user_ids,
-            title='🗳️ Election Opened',
-            body=f'"{election.title}" is now open for voting. Cast your vote now!',
+            title='Election is open',
+            body=f'"{election.title}" is open. You can cast your ballot now.',
             link=f'/elections/{election.uuid}',
             notification_type='election_opened',
             metadata={'election_uuid': str(election.uuid)}
@@ -63,8 +63,8 @@ def notify_election_closed(election):
     if eligible_user_ids:
         create_notification_for_users(
             user_ids=eligible_user_ids,
-            title='🔒 Election Closed',
-            body=f'"{election.title}" has closed. Results will be available soon.',
+            title='Election closed',
+            body=f'"{election.title}" has closed. Results will follow when published.',
             link=f'/elections/{election.uuid}',
             notification_type='election_closed',
             metadata={'election_uuid': str(election.uuid)}
@@ -79,8 +79,8 @@ def notify_results_published(election):
     if student_user_ids:
         create_notification_for_users(
             user_ids=student_user_ids,
-            title='📊 Results Published',
-            body=f'Results for "{election.title}" have been published. View them now!',
+            title='Results published',
+            body=f'Results for "{election.title}" are ready to view.',
             link=f'/results/{election.uuid}',
             notification_type='results_published',
             metadata={'election_uuid': str(election.uuid)}
@@ -121,9 +121,9 @@ def notify_svt_issued(user, election, *, expires_at=None, phone_masked=''):
     phone_bit = f' to {phone_masked}' if phone_masked else ''
     create_notification(
         user=user,
-        title='Your Secure Voting Token was sent',
+        title='Secure voting token sent',
         body=(
-            f'SVT sent by SMS{phone_bit} for "{election.title}". '
+            f'Your SVT{phone_bit} for "{election.title}" is ready. '
             f'Enter it within {minutes} minutes — one use only.'
         ),
         link=f'/vote/{election.uuid}',
@@ -144,7 +144,7 @@ def notify_fraud_alert(alert):
     if admin_user_ids:
         create_notification_for_users(
             user_ids=admin_user_ids,
-            title='⚠️ Fraud Alert',
+            title='Fraud alert',
             body=alert.description[:200],
             link=f'/fraud/alerts/{alert.uuid}',
             notification_type='fraud_alert',

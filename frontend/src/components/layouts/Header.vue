@@ -49,52 +49,18 @@
           </span>
         </button>
 
-        <div v-if="showNotifications" class="soft-dropdown">
-          <div class="soft-dropdown__head">
-            <span>Notifications</span>
-            <button v-if="unreadCount > 0" type="button" class="soft-dropdown__action" @click="markAllRead">
-              Mark all read
-            </button>
-          </div>
-          <div class="soft-dropdown__body">
-            <div v-if="loading" class="soft-dropdown__empty">
-              <i class="fas fa-spinner fa-spin"></i> Loading…
-            </div>
-            <div v-else-if="notifications.length === 0" class="soft-dropdown__empty">
-              No notifications
-            </div>
-            <button
-              v-for="notif in notificationsWithCountdown"
-              :key="notif.uuid"
-              type="button"
-              class="soft-dropdown__item"
-              :class="{ 'is-unread': !notif.is_read, 'has-countdown': !!notif.countdown }"
-              @click="handleNotificationClick(notif)"
-            >
-              <span class="soft-dropdown__accent" aria-hidden="true"></span>
-              <div class="soft-dropdown__content">
-                <div class="soft-dropdown__item-top">
-                  <p class="soft-dropdown__item-title">{{ notif.title }}</p>
-                  <span v-if="!notif.is_read" class="soft-dropdown__live">New</span>
-                </div>
-                <p class="soft-dropdown__item-body">{{ notif.body }}</p>
-                <div class="soft-dropdown__item-meta">
-                  <span
-                    v-if="notif.countdown"
-                    class="soft-dropdown__countdown"
-                    :class="`is-${notif.countdown.urgency}`"
-                  >
-                    <i class="fas fa-hourglass-half" aria-hidden="true"></i>
-                    {{ notif.countdown.expired ? 'Expired' : notif.countdown.display }}
-                  </span>
-                  <span class="soft-dropdown__item-time">{{ timeAgo(notif.created_at) }}</span>
-                </div>
-              </div>
-            </button>
-          </div>
+        <div v-if="showNotifications" class="notif-popover">
+          <NotificationInbox
+            tone="admin"
+            :items="notifications"
+            :loading="loading"
+            :unread-count="unreadCount"
+            :now-ms="nowMs"
+            @select="handleNotificationClick"
+            @mark-all="markAllRead"
+          />
         </div>
       </div>
-
       <div class="header-profile" ref="profileRef">
         <button
           type="button"
@@ -137,7 +103,7 @@ import { notificationApi } from '@/api/notifications'
 import { displayUserName } from '@/utils/user'
 import { useShellPageHeading } from '@/composables/usePageHeading'
 import { playNotificationChime, unlockAudio } from '@/utils/beep'
-import { parseCountdown, formatCountdownUnit } from '@/composables/useCountdown'
+import NotificationInbox from '@/components/notifications/NotificationInbox.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -164,25 +130,6 @@ let interval = null
 let clockInterval = null
 let knownUnreadIds = new Set()
 let audioPrimed = false
-
-const notifCountdown = (notif) => {
-  const expires = notif?.metadata?.expires_at
-  if (!expires) return null
-  const parts = parseCountdown(expires, nowMs.value)
-  const total = Math.max(0, Math.floor((parts.totalMs || 0) / 1000))
-  const m = Math.floor(total / 60)
-  const s = total % 60
-  let urgency = 'ok'
-  if (parts.expired) urgency = 'expired'
-  else if (total <= 30) urgency = 'critical'
-  else if (total <= 120) urgency = 'urgent'
-  else if (total <= 300) urgency = 'warn'
-  return {
-    expired: parts.expired,
-    display: `${formatCountdownUnit(m)}:${formatCountdownUnit(s)}`,
-    urgency,
-  }
-}
 
 const pageMeta = computed(() => {
   const path = route.path
@@ -327,12 +274,6 @@ const initials = computed(() => {
 })
 
 const unreadCount = computed(() => notifications.value.filter((n) => !n.is_read).length)
-const notificationsWithCountdown = computed(() =>
-  notifications.value.map((notification) => ({
-    ...notification,
-    countdown: notifCountdown(notification),
-  })),
-)
 
 const allSearchTargets = [
   { match: ['election', 'elections'], path: '/elections', roles: ['admin', 'auditor'] },
@@ -424,14 +365,6 @@ const handleNotificationClick = async (notif) => {
       window.location.href = link
     }
   }
-}
-
-const timeAgo = (date) => {
-  const diff = Math.floor((Date.now() - new Date(date).getTime()) / 1000)
-  if (diff < 60) return 'Just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
 }
 
 const closeMenus = () => {
@@ -618,170 +551,23 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px #fff;
 }
 
-.soft-dropdown {
+.notif-popover {
   position: absolute;
   right: 0;
-  top: calc(100% + 0.65rem);
-  width: 20rem;
-  background: #fff;
-  border-radius: 1.25rem;
-  box-shadow: 0 18px 40px rgba(28, 28, 28, 0.12);
-  overflow: hidden;
+  top: calc(100% + 0.55rem);
   z-index: 50;
+  animation: notif-pop 0.18s ease;
 }
 
-.soft-dropdown__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.9rem 1rem;
-  border-bottom: 1px solid var(--vb-line);
-  font-size: 0.85rem;
-  font-weight: 700;
-}
-
-.soft-dropdown__action {
-  border: none;
-  background: transparent;
-  color: var(--vb-accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.soft-dropdown__body {
-  max-height: 20rem;
-  overflow-y: auto;
-}
-
-.soft-dropdown__empty {
-  padding: 2rem 1rem;
-  text-align: center;
-  color: var(--vb-muted);
-  font-size: 0.85rem;
-}
-
-.soft-dropdown__item {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  width: 100%;
-  text-align: left;
-  border: none;
-  background: transparent;
-  padding: 0;
-  border-bottom: 1px solid #eef7f4;
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.soft-dropdown__accent {
-  width: 0.28rem;
-  flex-shrink: 0;
-  background: transparent;
-}
-
-.soft-dropdown__content {
-  flex: 1;
-  min-width: 0;
-  padding: 0.85rem 1rem;
-}
-
-.soft-dropdown__item.is-unread {
-  background: linear-gradient(90deg, #ecfdf5 0%, #f0fdf9 55%, #fff 100%);
-}
-
-.soft-dropdown__item.is-unread .soft-dropdown__accent {
-  background: #0d9488;
-}
-
-.soft-dropdown__item:hover {
-  background: #f0fdf9;
-}
-
-.soft-dropdown__item-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.soft-dropdown__item-title {
-  margin: 0;
-  font-size: 0.86rem;
-  font-weight: 750;
-  color: #134e4a;
-  line-height: 1.3;
-}
-
-.soft-dropdown__item.is-unread .soft-dropdown__item-title {
-  color: #0f766e;
-}
-
-.soft-dropdown__live {
-  flex-shrink: 0;
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #fff;
-  background: #0d9488;
-  border-radius: 9999px;
-  padding: 0.18rem 0.45rem;
-  line-height: 1.2;
-}
-
-.soft-dropdown__item-body {
-  margin: 0.28rem 0 0;
-  font-size: 0.78rem;
-  color: #5b716c;
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.soft-dropdown__item-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-top: 0.4rem;
-}
-
-.soft-dropdown__countdown {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  color: #0f766e;
-  background: rgba(13, 148, 136, 0.1);
-  border-radius: 9999px;
-  padding: 0.15rem 0.5rem;
-}
-
-.soft-dropdown__countdown.is-warn {
-  color: #c2410c;
-  background: rgba(194, 65, 12, 0.1);
-}
-.soft-dropdown__countdown.is-urgent,
-.soft-dropdown__countdown.is-critical {
-  color: #b91c1c;
-  background: rgba(185, 28, 28, 0.1);
-}
-.soft-dropdown__countdown.is-expired {
-  color: #78716c;
-  background: #f5f5f4;
-}
-
-.soft-dropdown__item-time {
-  font-size: 0.68rem;
-  color: #94a3b8;
-  margin-left: auto;
+@keyframes notif-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @media (max-width: 900px) {

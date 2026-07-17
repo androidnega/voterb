@@ -54,17 +54,17 @@
           {{ step === 'verifying'
             ? 'Confirming your secure session…'
             : step === 'validate'
-              ? 'Enter the SVT sent to your phone. Valid 20 minutes · one use.'
-              : 'We’ll SMS a one-time SVT to your registered phone.' }}
+              ? 'Enter the one-time SVT we sent to your phone.'
+              : 'Request a one-time SVT by SMS to unlock your ballot.' }}
         </p>
 
         <div v-if="step === 'request'" class="svt-panel">
           <p class="svt-meta">
-            Starts with <strong>v-</strong> · max 3 requests · expires after use or 20 minutes.
+            Format <strong>v-xxx-0000</strong> · up to 3 requests · expires in 20 minutes or after use.
           </p>
           <button type="button" class="svt-btn svt-btn--primary" :disabled="requesting" @click="requestSVT">
             <i v-if="requesting" class="fas fa-spinner fa-spin" aria-hidden="true"></i>
-            <span>{{ requesting ? (actionSlow ? 'Still working…' : 'Sending…') : 'Request SVT' }}</span>
+            <span>{{ requesting ? (actionSlow ? 'Still sending…' : 'Sending SVT…') : 'Send SVT to my phone' }}</span>
           </button>
           <p v-if="actionSlow && requesting" class="svt-soft">{{ slowHint }}</p>
           <p v-if="errorMessage" class="svt-error">{{ errorMessage }}</p>

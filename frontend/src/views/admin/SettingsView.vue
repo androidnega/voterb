@@ -377,7 +377,7 @@ const flash = (message, tone = 'success') => {
 
   toast.add({
     severity: tone === 'error' ? 'error' : 'success',
-    summary: tone === 'error' ? 'Could not save' : 'Appearance saved',
+    summary: tone === 'error' ? 'Could not save' : 'Saved',
     detail: message,
     life: 3200,
   })

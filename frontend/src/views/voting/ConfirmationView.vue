@@ -18,8 +18,8 @@
         aria-hidden="true"
       />
 
-      <h1 class="confirm-title">You’ve voted</h1>
-      <p class="confirm-copy">Your ballot is sealed and counted.</p>
+      <h1 class="confirm-title">Ballot sealed</h1>
+      <p class="confirm-copy">Your vote is recorded. Keep this confirmation for your records.</p>
 
       <div v-if="confirmationCode !== '—'" class="confirm-code">
         <span class="confirm-code__label">Confirmation</span>
