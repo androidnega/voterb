@@ -1,4 +1,8 @@
-"""Resolve and apply current academic structure references."""
+"""Resolve academic structure references (faculties / departments).
+
+Candidate academic fields were removed in Phase 4; department resolution is
+retained for voter / eligibility tooling that still maps free-text labels.
+"""
 
 from __future__ import annotations
 
@@ -51,19 +55,10 @@ def resolve_department(*, code: str | None = None, name: str | None = None) -> D
 
 
 def apply_department_to_candidate(candidate, department: Department) -> None:
-    candidate.academic_department = department
-    candidate.faculty = department.faculty
-    candidate.department = department.name
-    candidate.save(update_fields=['academic_department', 'faculty', 'department', 'updated_at'])
+    """No-op: candidates no longer store faculty/department fields."""
+    return None
 
 
 def sync_candidate_department(candidate, *, department_code: str | None = None) -> bool:
-    """Resolve and persist academic refs on a candidate. Returns True if updated."""
-    department = resolve_department(
-        code=department_code,
-        name=candidate.department if not department_code else None,
-    )
-    if not department:
-        return False
-    apply_department_to_candidate(candidate, department)
-    return True
+    """No-op: candidates no longer store faculty/department fields."""
+    return False

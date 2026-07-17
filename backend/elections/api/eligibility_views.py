@@ -1,16 +1,18 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
-from django.db import transaction
 from accounts.models import User
-from elections.models import Election, VoterEligibility
+from accounts.permissions import IsElectionViewer, IsElectionManager
+from elections.models import Election, VoterEligibility, VoterRegister, VoterCategory
 from elections.serializers import VoterEligibilitySerializer
 from elections.services.eligibility import resolve_or_create_voter
-from django.utils import timezone
-from accounts.permissions import IsAdmin, IsElectionViewer
-import csv
-import io
+from elections.services.register_service import (
+    import_register_csv,
+    sync_eligibility_from_registers,
+    user_is_on_election_register,
+)
+
 
 class EligibilityListCreateView(generics.ListCreateAPIView):
     serializer_class = VoterEligibilitySerializer
@@ -18,86 +20,112 @@ class EligibilityListCreateView(generics.ListCreateAPIView):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [IsElectionViewer()]
-        return [IsAdmin()]
+        return [IsElectionManager()]
 
     def get_queryset(self):
-        election_uuid = self.kwargs['election_uuid']
-        election = get_object_or_404(Election, uuid=election_uuid)
-        return VoterEligibility.objects.filter(election=election).select_related('user', 'verified_by')
+        election = get_object_or_404(Election, uuid=self.kwargs['election_uuid'])
+        return VoterEligibility.objects.filter(
+            election=election,
+            is_eligible=True,
+        ).select_related(
+            'user', 'user__faculty', 'user__department', 'verified_by',
+        )
 
-    def perform_create(self, serializer):
-        election_uuid = self.kwargs['election_uuid']
-        election = get_object_or_404(Election, uuid=election_uuid)
-        serializer.save(election=election, verified_by=self.request.user)
+    def list(self, request, *args, **kwargs):
+        election = get_object_or_404(Election, uuid=self.kwargs['election_uuid'])
+        if election.register_id or election.registers.exists():
+            sync_eligibility_from_registers(election, verified_by=None)
+        return super().list(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):
+        election = get_object_or_404(Election, uuid=self.kwargs['election_uuid'])
+
+        identifier = (
+            request.data.get('user_identifier')
+            or request.data.get('index_number')
+            or ''
+        ).strip()
+        user = None
+        if request.data.get('user_uuid'):
+            user = User.objects.filter(uuid=request.data.get('user_uuid')).first()
+        elif identifier:
+            user, err = resolve_or_create_voter(identifier)
+            if err:
+                return Response({'user_identifier': [err]}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user and (election.register_id or election.registers.exists()) and not user_is_on_election_register(user, election):
+            return Response(
+                {
+                    'error': (
+                        'This student is not on any voter register for this election. '
+                        'Import them into a register category first.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(election=election, verified_by=request.user)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
 
 class EligibilityDeleteView(generics.DestroyAPIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsElectionManager]
     lookup_field = 'uuid'
 
     def get_queryset(self):
-        election_uuid = self.kwargs['election_uuid']
-        election = get_object_or_404(Election, uuid=election_uuid)
+        election = get_object_or_404(Election, uuid=self.kwargs['election_uuid'])
         return VoterEligibility.objects.filter(election=election)
 
+
 class EligibilityBulkImportView(APIView):
-    permission_classes = [IsAdmin]
+    """
+    Import voters into a register category, then sync eligibility.
+    Requires register_uuid + category_uuid + CSV file.
+    """
+    permission_classes = [IsElectionManager]
 
     def post(self, request, election_uuid):
         election = get_object_or_404(Election, uuid=election_uuid)
-        file = request.FILES.get('file')
-        if not file:
+        register_uuid = request.data.get('register_uuid')
+        category_uuid = request.data.get('category_uuid')
+        file_obj = request.FILES.get('file')
+
+        if not register_uuid or not category_uuid:
+            return Response(
+                {
+                    'error': (
+                        'register_uuid and category_uuid are required. '
+                        'Import voters into a register category, not directly onto eligibility.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not file_obj:
             return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
 
+        register = get_object_or_404(VoterRegister, uuid=register_uuid, election=election)
+        category = get_object_or_404(VoterCategory, uuid=category_uuid, register=register)
+
         try:
-            # Parse CSV
-            decoded = file.read().decode('utf-8')
-            io_string = io.StringIO(decoded)
-            reader = csv.DictReader(io_string)
-            created_count = 0
-            errors = []
+            record = import_register_csv(
+                register=register,
+                category=category,
+                file_obj=file_obj,
+                imported_by=request.user,
+            )
+        except Exception as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-            for row in reader:
-                index_number = (row.get('index_number') or row.get('identifier') or '').strip()
-                if not index_number:
-                    errors.append(f"Missing index_number in row: {row}")
-                    continue
-
-                if '@' in index_number:
-                    errors.append(f"{index_number}: students use index numbers only, not email")
-                    continue
-
-                user, error_message = resolve_or_create_voter(index_number)
-
-                if error_message or not user:
-                    errors.append(f"{index_number}: {error_message or 'Student not found'}")
-                    continue
-
-                first_name = row.get('first_name', '').strip()
-                last_name = row.get('last_name', '').strip()
-                if first_name:
-                    user.first_name = first_name
-                if last_name:
-                    user.last_name = last_name
-                if first_name or last_name:
-                    user.save()
-
-                # Check if already exists
-                if VoterEligibility.objects.filter(election=election, user=user).exists():
-                    continue
-
-                VoterEligibility.objects.create(
-                    election=election,
-                    user=user,
-                    is_eligible=True,
-                    verified_by=request.user,
-                    verified_at=timezone.now()
-                )
-                created_count += 1
-
-            return Response({
-                'created': created_count,
-                'errors': errors
-            }, status=status.HTTP_201_CREATED)
-
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                'created': record.rows_created,
+                'processed': record.rows_processed,
+                'errors': record.errors,
+                'register_uuid': str(register.uuid),
+                'category_uuid': str(category.uuid),
+            },
+            status=status.HTTP_201_CREATED,
+        )

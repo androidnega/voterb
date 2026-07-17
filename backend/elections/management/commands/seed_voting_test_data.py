@@ -6,7 +6,6 @@ from django.utils import timezone
 
 from accounts.models import User, Role
 from elections.models import Election, VoterEligibility, Position, VotingChannel
-from elections.services.academic_refs import resolve_department, apply_department_to_candidate
 from candidates.models import Candidate
 from voting.models import Vote
 
@@ -84,7 +83,6 @@ class Command(BaseCommand):
             title='TTU SRC Elections 2026',
             defaults={
                 'description': 'Student Representative Council elections — live monitor demo',
-                'election_type': 'student_union',
                 'status': 'open',
                 'start_date': timezone.now() - timedelta(days=1),
                 'end_date': timezone.now() + timedelta(days=7),
@@ -170,25 +168,18 @@ class Command(BaseCommand):
         ]
 
         def upsert_candidate(position, data):
-            department = resolve_department(code=data['department_code'])
-            if not department:
-                self.stderr.write(self.style.ERROR(f"Unknown department {data['department_code']!r}"))
-                return None
             candidate, _ = Candidate.objects.get_or_create(
                 election=election,
                 position=position,
                 full_name=data['full_name'],
                 defaults={
-                    'department': department.name,
                     'ballot_number': data['ballot_number'],
                     'status': 'approved',
-                    'faculty': department.faculty,
-                    'academic_department': department,
                 },
             )
             candidate.ballot_number = data['ballot_number']
             candidate.status = 'approved'
-            apply_department_to_candidate(candidate, department)
+            candidate.save(update_fields=['ballot_number', 'status', 'updated_at'])
             return candidate
 
         all_candidates = []

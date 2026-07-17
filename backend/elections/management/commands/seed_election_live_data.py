@@ -12,7 +12,6 @@ from django.utils import timezone
 from accounts.models import User, Role
 from candidates.models import Candidate
 from elections.models import Election, Position, VoterEligibility, VotingChannel
-from elections.services.academic_refs import resolve_department, apply_department_to_candidate
 from voting.models import Vote
 
 DATA_DIR = Path(__file__).resolve().parents[3] / 'data'
@@ -77,7 +76,6 @@ class Command(BaseCommand):
             title=options['election_title'],
             defaults={
                 'description': 'Student Representative Council elections',
-                'election_type': 'student_union',
                 'status': 'open',
                 'start_date': timezone.now() - timedelta(days=1),
                 'end_date': timezone.now() + timedelta(days=7),
@@ -191,28 +189,18 @@ class Command(BaseCommand):
             pos.is_votable = True
             pos.save()
 
-            department = resolve_department(code=entry['department_code'])
-            if not department:
-                self.stderr.write(self.style.ERROR(
-                    f"Unknown department code {entry['department_code']!r} for {entry['full_name']}"
-                ))
-                continue
-
             candidate, _ = Candidate.objects.get_or_create(
                 election=election,
                 position=pos,
                 full_name=entry['full_name'],
                 defaults={
-                    'department': department.name,
                     'ballot_number': entry['ballot_number'],
                     'status': 'approved',
-                    'faculty': department.faculty,
-                    'academic_department': department,
                 },
             )
             candidate.ballot_number = entry['ballot_number']
             candidate.status = 'approved'
-            apply_department_to_candidate(candidate, department)
+            candidate.save(update_fields=['ballot_number', 'status', 'updated_at'])
 
             pool = female_pool if entry['gender'] == 'female' else male_pool
             if not pool:

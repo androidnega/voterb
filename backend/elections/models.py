@@ -31,16 +31,6 @@ class Department(models.Model):
         return f'{self.name} ({self.faculty.name})'
 
 
-class Level(models.Model):
-    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=20, unique=True)
-    display_order = models.IntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.name
-
-
 class Election(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
@@ -50,77 +40,71 @@ class Election(models.Model):
         ('closed', 'Closed'),
         ('archived', 'Archived'),
     ]
-    
-    TYPE_CHOICES = [
-        ('general', 'General'),
-        ('student_union', 'Student Union'),
-        ('faculty', 'Faculty'),
-        ('departmental', 'Departmental'),
-        ('special', 'Special'),
-    ]
 
-    SCOPE_CHOICES = [
-        ('school', 'School-wide'),
-        ('faculty', 'Faculty'),
-        ('department', 'Department'),
-        ('level', 'Level'),
-    ]
-    
     id = models.BigAutoField(primary_key=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    election_type = models.CharField(max_length=30, choices=TYPE_CHOICES, default='general')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     start_date = models.DateTimeField(null=True, blank=True)
     end_date = models.DateTimeField(null=True, blank=True)
     allow_web_voting = models.BooleanField(default=True)
     allow_ussd_voting = models.BooleanField(default=False)
     allow_sms_notifications = models.BooleanField(default=False)
-    scope_type = models.CharField(max_length=20, choices=SCOPE_CHOICES, default='school')
-    scope_faculty = models.ForeignKey(
-        Faculty, on_delete=models.SET_NULL, null=True, blank=True, related_name='scoped_elections'
+    # Primary voter list for this election. The older election.registers
+    # relation is retained so existing register-management screens and data
+    # keep working during the transition to register-owned election scope.
+    register = models.ForeignKey(
+        'VoterRegister',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_elections',
     )
-    scope_department = models.ForeignKey(
-        Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='scoped_elections'
+
+    # Who owns / manages this election
+    OWNER_MAIN = 'main'
+    OWNER_SUB = 'sub'
+    OWNER_CHOICES = [
+        (OWNER_MAIN, 'Main EC (institutional)'),
+        (OWNER_SUB, 'Sub EC (category)'),
+    ]
+    owner_type = models.CharField(
+        max_length=10,
+        choices=OWNER_CHOICES,
+        default=OWNER_MAIN,
+        db_index=True,
     )
-    scope_level = models.ForeignKey(
-        Level, on_delete=models.SET_NULL, null=True, blank=True, related_name='scoped_elections'
+    institution = models.ForeignKey(
+        'system.InstitutionProfile',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='elections',
     )
+    owner_ec_unit = models.ForeignKey(
+        'accounts.ECUnit',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='owned_elections',
+    )
+
     created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name='elections_created')
     demo_seed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    @property
+    def is_main_owned(self) -> bool:
+        return self.owner_type == self.OWNER_MAIN
+
+    @property
+    def is_sub_owned(self) -> bool:
+        return self.owner_type == self.OWNER_SUB
+
     def __str__(self):
         return self.title
-
-    def user_matches_scope(self, user):
-        """Return True if the student's academic profile matches this election's scope."""
-        if self.scope_type == 'school':
-            return True
-        if self.scope_type == 'faculty':
-            return bool(self.scope_faculty_id and user.faculty_id == self.scope_faculty_id)
-        if self.scope_type == 'department':
-            return bool(self.scope_department_id and user.department_id == self.scope_department_id)
-        if self.scope_type == 'level':
-            return bool(self.scope_level_id and user.level_id == self.scope_level_id)
-        return False
-
-    def get_scope_eligible_students(self):
-        """Students matching this election's academic scope who completed onboarding."""
-        qs = User.objects.filter(
-            role__name='student',
-            is_active=True,
-            onboarding_completed=True,
-        )
-        if self.scope_type == 'faculty' and self.scope_faculty_id:
-            return qs.filter(faculty_id=self.scope_faculty_id)
-        if self.scope_type == 'department' and self.scope_department_id:
-            return qs.filter(department_id=self.scope_department_id)
-        if self.scope_type == 'level' and self.scope_level_id:
-            return qs.filter(level_id=self.scope_level_id)
-        return qs
 
 class Position(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -131,14 +115,42 @@ class Position(models.Model):
     display_order = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
     is_votable = models.BooleanField(default=True)
+    allow_all_voters = models.BooleanField(default=True)
+    restricted_categories = models.ManyToManyField(
+        'VoterCategory',
+        blank=True,
+        related_name='restricted_positions',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         unique_together = ('election', 'title')
-    
+
     def __str__(self):
         return f"{self.title} ({self.election.title})"
+
+    def voter_may_see(self, user) -> bool:
+        """
+        True if this position should appear on the voter's ballot.
+        allow_all_voters=True → every eligible voter sees it.
+        Otherwise the voter must have a register entry in one of restricted_categories.
+        """
+        if self.allow_all_voters:
+            return True
+        if not user or not getattr(user, 'pk', None):
+            return False
+        category_ids = list(self.restricted_categories.values_list('pk', flat=True))
+        if not category_ids:
+            # Restricted but no categories selected → nobody sees it
+            return False
+        from elections.models import VoterRegisterEntry
+        qs = VoterRegisterEntry.objects.filter(user=user, category_id__in=category_ids)
+        if self.election.register_id:
+            qs = qs.filter(register_id=self.election.register_id)
+        else:
+            qs = qs.filter(register__election_id=self.election_id)
+        return qs.exists()
 
 class VoterEligibility(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -165,3 +177,190 @@ class VotingChannel(models.Model):
 
     def __str__(self):
         return self.channel_name
+
+
+class VoterRegister(models.Model):
+    """
+    Institutional voter register (e.g. TTU Register).
+
+    Main EC creates the register and assigns Categories (faculty / department)
+    as voter containers. Elections may link via Election.register.
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    institution = models.ForeignKey(
+        'system.InstitutionProfile',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='voter_registers',
+    )
+    # Legacy: older rows were owned by an election. Prefer institution going forward.
+    election = models.ForeignKey(
+        Election,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='registers',
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+
+    # Dual Main EC approval — a second Main EC member must approve before the
+    # register can be used for elections.
+    APPROVAL_PENDING = 'pending'
+    APPROVAL_APPROVED = 'approved'
+    APPROVAL_REJECTED = 'rejected'
+    APPROVAL_CHOICES = [
+        (APPROVAL_PENDING, 'Pending approval'),
+        (APPROVAL_APPROVED, 'Approved'),
+        (APPROVAL_REJECTED, 'Rejected'),
+    ]
+    approval_status = models.CharField(
+        max_length=20,
+        choices=APPROVAL_CHOICES,
+        default=APPROVAL_APPROVED,
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+
+    # Staging register for dual-approved voter re-upload (points at the live register).
+    replace_of = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='pending_replacements',
+    )
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='registers_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def is_approved(self) -> bool:
+        return self.approval_status == self.APPROVAL_APPROVED
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['institution', 'name'],
+                condition=models.Q(institution__isnull=False),
+                name='uniq_voterregister_institution_name',
+            ),
+            models.UniqueConstraint(
+                fields=['election', 'name'],
+                condition=models.Q(election__isnull=False),
+                name='uniq_voterregister_election_name',
+            ),
+        ]
+
+    def __str__(self):
+        owner = self.institution.short_name if self.institution_id else (
+            self.election.title if self.election_id else 'orphan'
+        )
+        return f'{self.name} ({owner})'
+
+
+class VoterCategory(models.Model):
+    """
+    Category under a register — typically a faculty or department container
+    that holds that unit's voters (e.g. Hospitality Voters, Comp. Sci. Voters).
+    """
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    register = models.ForeignKey(VoterRegister, on_delete=models.CASCADE, related_name='categories')
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    faculty = models.ForeignKey(
+        Faculty,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='register_categories',
+    )
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='register_categories',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('register', 'name')
+        verbose_name_plural = 'voter categories'
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(faculty__isnull=True) | models.Q(department__isnull=True)
+                ),
+                name='voter_category_not_both_faculty_and_department',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.name} · {self.register.name}'
+
+    @property
+    def category_type(self):
+        if self.department_id:
+            return 'department'
+        if self.faculty_id:
+            return 'faculty'
+        return 'custom'
+
+    @property
+    def scope_label(self):
+        if self.department_id:
+            return f'Department · {self.department.name}'
+        if self.faculty_id:
+            return f'Faculty · {self.faculty.name}'
+        return 'Custom'
+
+class VoterRegisterEntry(models.Model):
+    GENDER_CHOICES = [
+        ('Male', 'Male'),
+        ('Female', 'Female'),
+        ('Other', 'Other'),
+    ]
+
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    register = models.ForeignKey(VoterRegister, on_delete=models.CASCADE, related_name='entries')
+    category = models.ForeignKey(
+        VoterCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='entries'
+    )
+    voter_id = models.CharField(max_length=50)
+    full_name = models.CharField(max_length=255)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    gender = models.CharField(max_length=10, choices=GENDER_CHOICES, blank=True)
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='register_entries'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('register', 'voter_id')
+        verbose_name_plural = 'voter register entries'
+
+    def __str__(self):
+        return f'{self.voter_id} — {self.full_name}'
+
+
+class VoterRegisterImport(models.Model):
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    register = models.ForeignKey(VoterRegister, on_delete=models.CASCADE, related_name='imports')
+    file_name = models.CharField(max_length=255)
+    rows_processed = models.IntegerField(default=0)
+    rows_created = models.IntegerField(default=0)
+    errors = models.JSONField(default=list, blank=True)
+    imported_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='voter_register_imports'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f'Import {self.file_name} → {self.register.name}'

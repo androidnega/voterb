@@ -20,6 +20,68 @@ def normalize_index_input(identifier: str) -> str:
     return identifier
 
 
+def apply_student_academic_placement(
+    user,
+    *,
+    faculty_uuid=None,
+    department_uuid=None,
+    faculty_code=None,
+    department_code=None,
+    clear_missing=False,
+):
+    """
+    Assign faculty / department on a student account (EC/admin).
+    Raises ValueError with a user-facing message on bad refs.
+    """
+    from elections.models import Department, Faculty
+
+    faculty = user.faculty
+    department = user.department
+
+    if faculty_uuid is not None or faculty_code is not None:
+        if faculty_uuid:
+            faculty = Faculty.objects.filter(uuid=faculty_uuid, is_active=True).first()
+            if not faculty:
+                raise ValueError('Faculty not found.')
+        elif faculty_code:
+            code = str(faculty_code).strip()
+            faculty = Faculty.objects.filter(code__iexact=code, is_active=True).first()
+            if not faculty:
+                faculty = Faculty.objects.filter(name__iexact=code, is_active=True).first()
+            if not faculty:
+                raise ValueError(f'Faculty "{code}" not found.')
+        elif clear_missing:
+            faculty = None
+
+    if department_uuid is not None or department_code is not None:
+        if department_uuid:
+            department = Department.objects.filter(uuid=department_uuid, is_active=True).first()
+            if not department:
+                raise ValueError('Department not found.')
+        elif department_code:
+            code = str(department_code).strip()
+            qs = Department.objects.filter(is_active=True)
+            if faculty:
+                qs = qs.filter(faculty=faculty)
+            department = qs.filter(code__iexact=code).first()
+            if not department:
+                department = qs.filter(name__iexact=code).first()
+            if not department:
+                raise ValueError(f'Department "{code}" not found.')
+        elif clear_missing:
+            department = None
+
+    if faculty and department and department.faculty_id != faculty.pk:
+        raise ValueError('Department does not belong to the selected faculty.')
+
+    if department and not faculty:
+        faculty = department.faculty
+
+    user.faculty = faculty
+    user.department = department
+    return user
+
+
 def resolve_or_create_voter(index_number: str):
     """
     Find a student by index number. Auto-create accounts for valid index formats.

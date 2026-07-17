@@ -1,12 +1,14 @@
-"""Election eligibility helpers combining voter lists and academic scope."""
+"""Election eligibility — voter register is the source of truth."""
 
 from elections.models import VoterEligibility
+from elections.services.register_service import user_is_on_election_register
 
 
 def student_can_access_election(user, election):
     """
-    A student can vote when they are on the election voter list,
-    have completed onboarding, and match the election's academic scope.
+    A student can vote when they appear on a voter register for the election
+    and have completed onboarding (students only).
+    Falls back to legacy VoterEligibility when no registers exist yet.
     """
     if not user.is_active:
         return False
@@ -15,11 +17,11 @@ def student_can_access_election(user, election):
     if role_name == 'student' and not user.onboarding_completed:
         return False
 
-    if not VoterEligibility.objects.filter(
+    if election.register_id or election.registers.exists():
+        return user_is_on_election_register(user, election)
+
+    return VoterEligibility.objects.filter(
         user=user,
         election=election,
         is_eligible=True,
-    ).exists():
-        return False
-
-    return election.user_matches_scope(user)
+    ).exists()

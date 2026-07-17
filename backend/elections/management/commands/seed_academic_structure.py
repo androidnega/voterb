@@ -3,32 +3,16 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand
 
-from elections.models import Faculty, Department, Level
+from elections.models import Faculty, Department
 
 DATA_DIR = Path(__file__).resolve().parents[3] / 'data'
 CSV_PATH = DATA_DIR / 'academic_structure.csv'
 
 
 class Command(BaseCommand):
-    help = 'Seed academic structure (Faculties, Departments, Levels) from data/academic_structure.csv'
+    help = 'Seed academic structure (Faculties, Departments) from data/academic_structure.csv'
 
     def handle(self, *args, **options):
-        levels = [
-            ('Level 100', 1),
-            ('Level 200', 2),
-            ('Level 300', 3),
-            ('Level 400', 4),
-        ]
-        for name, order in levels:
-            level, created = Level.objects.get_or_create(
-                name=name,
-                defaults={'display_order': order},
-            )
-            if not created and level.display_order != order:
-                level.display_order = order
-                level.save(update_fields=['display_order'])
-        self.stdout.write(self.style.SUCCESS(f'Levels: {Level.objects.count()}'))
-
         if not CSV_PATH.exists():
             self.stderr.write(self.style.ERROR(f'Missing {CSV_PATH}'))
             return

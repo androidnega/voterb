@@ -1,68 +1,113 @@
 from rest_framework import generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
-
+from accounts.permissions import IsElectionViewer, IsMainECOrSubEC
 from elections.models import Election
+from elections.services.ec_access import (
+    ElectionAccessBlocked,
+    assert_can_manage_election,
+    elections_visible_to,
+)
 from candidates.models import Candidate
 from candidates.serializers import CandidateSerializer
-from accounts.permissions import IsAdmin, IsElectionViewer
+
+
+def _election_for_viewer(request, election_uuid):
+    return get_object_or_404(elections_visible_to(request.user), uuid=election_uuid)
+
+
+def _manage_or_403(user, election):
+    try:
+        assert_can_manage_election(user, election)
+        return None
+    except ElectionAccessBlocked as exc:
+        return Response(
+            {'detail': str(exc), 'code': exc.code},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
 
 class CandidateListCreateView(generics.ListCreateAPIView):
+    """GET: election viewers. POST: Main/Sub EC who can manage the election."""
     serializer_class = CandidateSerializer
-    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_permissions(self):
         if self.request.method == 'GET':
             return [IsElectionViewer()]
-        return [IsAdmin()]
+        return [IsMainECOrSubEC()]
 
     def get_queryset(self):
-        election_uuid = self.kwargs['election_uuid']
-        election = get_object_or_404(Election, uuid=election_uuid)
-        return Candidate.objects.filter(election=election).select_related(
-            'position', 'faculty', 'academic_department'
-        ).order_by('position__display_order', 'ballot_number')
+        election = _election_for_viewer(self.request, self.kwargs['election_uuid'])
+        return Candidate.objects.filter(election=election).order_by(
+            'position__display_order', 'ballot_number'
+        )
+
+    def create(self, request, *args, **kwargs):
+        election = _election_for_viewer(request, self.kwargs['election_uuid'])
+        blocked = _manage_or_403(request.user, election)
+        if blocked:
+            return blocked
+        return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        election = get_object_or_404(Election, uuid=self.kwargs['election_uuid'])
+        election = _election_for_viewer(self.request, self.kwargs['election_uuid'])
         serializer.save(election=election)
 
 
 class CandidateDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """GET: election viewers. Mutations: owning Main/Sub EC only."""
     serializer_class = CandidateSerializer
     lookup_field = 'uuid'
-    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    lookup_url_kwarg = 'candidate_uuid'
 
     def get_permissions(self):
-        if self.request.method == 'GET':
+        if self.request.method in ['GET', 'HEAD', 'OPTIONS']:
             return [IsElectionViewer()]
-        return [IsAdmin()]
+        return [IsMainECOrSubEC()]
 
     def get_queryset(self):
-        election_uuid = self.kwargs['election_uuid']
-        return Candidate.objects.filter(election__uuid=election_uuid).select_related(
-            'position', 'faculty', 'academic_department'
-        )
+        election = _election_for_viewer(self.request, self.kwargs['election_uuid'])
+        return Candidate.objects.filter(election=election)
+
+    def update(self, request, *args, **kwargs):
+        election = _election_for_viewer(request, self.kwargs['election_uuid'])
+        blocked = _manage_or_403(request.user, election)
+        if blocked:
+            return blocked
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        election = _election_for_viewer(request, self.kwargs['election_uuid'])
+        blocked = _manage_or_403(request.user, election)
+        if blocked:
+            return blocked
+        return super().destroy(request, *args, **kwargs)
 
 
 class CandidateApproveView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsMainECOrSubEC]
 
     def post(self, request, election_uuid, candidate_uuid):
-        candidate = get_object_or_404(Candidate, uuid=candidate_uuid, election__uuid=election_uuid)
+        election = _election_for_viewer(request, election_uuid)
+        blocked = _manage_or_403(request.user, election)
+        if blocked:
+            return blocked
+        candidate = get_object_or_404(Candidate, uuid=candidate_uuid, election=election)
         candidate.status = 'approved'
-        candidate.save()
-        return Response({'message': 'Candidate approved successfully'})
+        candidate.save(update_fields=['status'])
+        return Response({'message': 'Candidate approved'})
 
 
 class CandidateRejectView(APIView):
-    permission_classes = [IsAdmin]
+    permission_classes = [IsMainECOrSubEC]
 
     def post(self, request, election_uuid, candidate_uuid):
-        candidate = get_object_or_404(Candidate, uuid=candidate_uuid, election__uuid=election_uuid)
+        election = _election_for_viewer(request, election_uuid)
+        blocked = _manage_or_403(request.user, election)
+        if blocked:
+            return blocked
+        candidate = get_object_or_404(Candidate, uuid=candidate_uuid, election=election)
         candidate.status = 'rejected'
-        candidate.save()
-        return Response({'message': 'Candidate rejected successfully'})
+        candidate.save(update_fields=['status'])
+        return Response({'message': 'Candidate rejected'})
