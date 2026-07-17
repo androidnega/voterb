@@ -1,71 +1,85 @@
 <template>
-  <div class="p-4 sm:p-6 max-w-7xl mx-auto">
-    <div class="flex flex-wrap items-end justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Results</h1>
-        <p class="text-gray-500 text-sm mt-1">View and manage election results.</p>
-      </div>
-      <Button label="Refresh" icon="pi pi-refresh" severity="secondary" size="small" @click="fetchResults" />
-    </div>
+  <div class="admin-page">
+    <PageHeader :loading="loading" @refresh="fetchResults" />
 
-    <!-- Stats -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <p class="text-xs font-medium text-gray-400 uppercase">Total</p>
-        <p class="text-xl font-bold text-gray-900">{{ stats.total }}</p>
+    <div class="kpi-strip">
+      <div class="kpi-item">
+        <p class="kpi-label">Total</p>
+        <p class="kpi-value">{{ stats.total }}</p>
       </div>
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <p class="text-xs font-medium text-gray-400 uppercase">Pending</p>
-        <p class="text-xl font-bold text-amber-600">{{ stats.pending }}</p>
+      <div class="kpi-item">
+        <p class="kpi-label">Pending</p>
+        <p class="kpi-value is-warn">{{ stats.pending }}</p>
       </div>
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <p class="text-xs font-medium text-gray-400 uppercase">Certified</p>
-        <p class="text-xl font-bold text-blue-600">{{ stats.certified }}</p>
+      <div class="kpi-item">
+        <p class="kpi-label">Certified</p>
+        <p class="kpi-value is-info">{{ stats.certified }}</p>
       </div>
-      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <p class="text-xs font-medium text-gray-400 uppercase">Published</p>
-        <p class="text-xl font-bold text-emerald-600">{{ stats.published }}</p>
+      <div class="kpi-item">
+        <p class="kpi-label">Published</p>
+        <p class="kpi-value is-ok">{{ stats.published }}</p>
       </div>
     </div>
 
-    <!-- Table -->
-    <div class="admin-table-wrap">
-      <table class="admin-table">
+    <section class="table-surface">
+      <div class="admin-table-wrap">
+        <table class="admin-table">
           <thead>
-            <tr class="bg-gray-50 border-b border-gray-100">
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Election</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Status</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Turnout</th>
-              <th class="text-left py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Certified By</th>
-              <th class="text-center py-3 px-4 font-semibold text-gray-600 text-xs uppercase tracking-wider">Actions</th>
+            <tr>
+              <th>Election</th>
+              <th>Status</th>
+              <th>Turnout</th>
+              <th>Certified By</th>
+              <th class="text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="result in results" :key="result.uuid" class="border-b border-gray-50 hover:bg-emerald-50/30 transition-colors duration-150">
-              <td class="py-3 px-4 font-medium text-gray-800">{{ result.election.title }}</td>
-              <td class="py-3 px-4">
-                <Badge :value="result.status" :severity="getStatusSeverity(result.status)" class="capitalize" />
+            <tr v-for="result in results" :key="result.uuid">
+              <td class="font-medium">{{ result.election.title }}</td>
+              <td>
+                <span class="admin-badge" :class="statusBadge(result.status)">{{ result.status }}</span>
               </td>
-              <td class="py-3 px-4 text-gray-600">{{ result.turnout_percentage || 0 }}%</td>
-              <td class="py-3 px-4 text-gray-600">{{ result.certified_by?.email || '—' }}</td>
-              <td class="py-3 px-4 text-center">
-                <div class="flex items-center justify-center gap-1">
-                  <Button icon="pi pi-eye" size="small" severity="secondary" text rounded @click="viewResult(result.election.uuid)" tooltip="View" />
-                  <Button v-if="result.status === 'generated' && canManageResults" icon="pi pi-check" size="small" severity="success" text rounded @click="certifyResult(result.election.uuid)" tooltip="Certify" />
-                  <Button v-if="result.status === 'certified' && canManageResults" icon="pi pi-globe" size="small" severity="info" text rounded @click="publishResult(result.election.uuid)" tooltip="Publish" />
+              <td class="text-muted">{{ result.turnout_percentage || 0 }}%</td>
+              <td class="text-muted">{{ result.certified_by?.email || '—' }}</td>
+              <td>
+                <div class="row-actions">
+                  <button type="button" class="admin-icon-btn" title="View" @click="viewResult(result.election.uuid)">
+                    <i class="fas fa-eye"></i>
+                  </button>
+                  <button
+                    v-if="result.status === 'generated' && canManageResults"
+                    type="button"
+                    class="admin-icon-btn"
+                    title="Certify"
+                    @click="certifyResult(result.election.uuid)"
+                  >
+                    <i class="fas fa-check"></i>
+                  </button>
+                  <button
+                    v-if="result.status === 'certified' && canManageResults"
+                    type="button"
+                    class="admin-icon-btn"
+                    title="Publish"
+                    @click="publishResult(result.election.uuid)"
+                  >
+                    <i class="fas fa-globe"></i>
+                  </button>
                 </div>
               </td>
             </tr>
             <tr v-if="results.length === 0 && !loading">
-              <td colspan="5" class="py-12 text-center text-gray-400">
-                <i class="pi pi-inbox text-4xl block mb-3 text-gray-200"></i>
-                <p class="text-sm">No results available.</p>
-                <p class="text-xs text-gray-400 mt-1">Generate results after closing an election.</p>
+              <td colspan="5">
+                <EmptyState
+                  icon="fas fa-inbox"
+                  title="No results available"
+                  message="Generate results after closing an election."
+                />
               </td>
             </tr>
           </tbody>
         </table>
-    </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -74,8 +88,8 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { resultsApi } from '@/api/results'
-import Button from 'primevue/button'
-import Badge from 'primevue/badge'
+import PageHeader from '@/components/admin/PageHeader.vue'
+import EmptyState from '@/components/admin/EmptyState.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -85,9 +99,9 @@ const canManageResults = computed(() => authStore.isElectionManager)
 
 const stats = computed(() => {
   const total = results.value.length
-  const pending = results.value.filter(r => r.status === 'generated' || r.status === 'pending_certification').length
-  const certified = results.value.filter(r => r.status === 'certified').length
-  const published = results.value.filter(r => r.status === 'published').length
+  const pending = results.value.filter((r) => r.status === 'generated' || r.status === 'pending_certification').length
+  const certified = results.value.filter((r) => r.status === 'certified').length
+  const published = results.value.filter((r) => r.status === 'published').length
   return { total, pending, certified, published }
 })
 
@@ -103,46 +117,35 @@ const fetchResults = async () => {
   }
 }
 
-const getStatusSeverity = (status) => {
-  const map = {
-    generated: 'warning',
-    pending_certification: 'warning',
-    certified: 'info',
-    published: 'success',
-    archived: 'danger'
-  }
-  return map[status] || 'secondary'
-}
+const statusBadge = (s) => ({
+  generated: 'warning',
+  pending_certification: 'warning',
+  certified: 'info',
+  published: 'success',
+}[s] || 'neutral')
 
-const viewResult = (uuid) => {
-  router.push(`/results/${uuid}`)
-}
+const viewResult = (uuid) => router.push(`/results/${uuid}`)
 
-const certifyResult = async (uuid) => {
-  if (confirm('Certify these results?')) {
-    try {
-      await resultsApi.certify(uuid)
-      await fetchResults()
-    } catch (error) {
-      console.error('Failed to certify:', error)
-      alert('Failed to certify. Please try again.')
-    }
-  }
+const certifyResult = (uuid) => {
+  router.push(`/results/${uuid}/certify`)
 }
 
 const publishResult = async (uuid) => {
-  if (confirm('Publish these results to students?')) {
-    try {
-      await resultsApi.publish(uuid)
-      await fetchResults()
-    } catch (error) {
-      console.error('Failed to publish:', error)
-      alert('Failed to publish. Please try again.')
-    }
+  if (!confirm('Publish these results?')) return
+  try {
+    await resultsApi.publish(uuid)
+    await fetchResults()
+  } catch {
+    alert('Failed to publish results.')
   }
 }
 
-onMounted(() => {
-  fetchResults()
-})
+onMounted(fetchResults)
 </script>
+
+<style scoped>
+.font-medium {
+  font-weight: 650;
+  color: var(--vb-ink, #1c1c1c);
+}
+</style>

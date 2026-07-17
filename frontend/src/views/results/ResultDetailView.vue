@@ -1,15 +1,16 @@
 <template>
   <div class="p-4 sm:p-6 max-w-7xl mx-auto" v-if="result">
-    <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">{{ result.election.title }}</h1>
-        <p class="text-gray-500 text-sm mt-1">Results for this election.</p>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <Button label="Back" icon="pi pi-arrow-left" severity="secondary" size="small" @click="$router.push('/results')" />
-        <Button v-if="result.status === 'generated' && canManageResults" label="Certify" icon="pi pi-check" severity="success" size="small" @click="certify" />
-        <Button v-if="result.status === 'certified' && canManageResults" label="Publish" icon="pi pi-globe" severity="info" size="small" @click="publish" />
-      </div>
+    <div class="flex flex-wrap items-center justify-end gap-2 mb-6">
+      <Button label="Back" icon="pi pi-arrow-left" severity="secondary" size="small" @click="$router.push('/results')" />
+      <Button
+        v-if="result.status === 'generated' && canCertify"
+        label="Certify"
+        icon="pi pi-check"
+        severity="success"
+        size="small"
+        @click="openCeremony"
+      />
+      <Button v-if="result.status === 'certified' && canManageResults" label="Publish" icon="pi pi-globe" severity="info" size="small" @click="publish" />
     </div>
 
     <!-- Status -->
@@ -81,7 +82,6 @@
               <span class="text-sm font-medium text-gray-400 w-6">{{ candidate.rank }}</span>
               <div>
                 <span class="font-medium text-gray-900">{{ candidate.full_name }}</span>
-                <span class="text-xs text-gray-400 ml-2">{{ candidate.department }}</span>
               </div>
             </div>
             <div class="flex items-center gap-6">
@@ -126,6 +126,49 @@
         Hash: {{ result.result_hash?.slice(0, 16) }}...
       </div>
     </div>
+
+    <!-- Certification evidence -->
+    <div
+      v-if="evidence && (result.status === 'certified' || result.status === 'published')"
+      class="mt-6 bg-white rounded-xl border border-gray-200 p-6 shadow-sm"
+    >
+      <h3 class="text-sm font-semibold text-gray-900 mb-3">Certification evidence</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <div>
+          <p class="text-xs text-gray-500 mb-1">Certifier photo</p>
+          <img
+            v-if="evidence.photo"
+            :src="evidence.photo"
+            alt="Certifier"
+            class="rounded-lg border border-gray-200 max-h-48 object-cover"
+          />
+          <p v-else class="text-gray-400">—</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500 mb-1">Signature</p>
+          <img
+            v-if="evidence.signature"
+            :src="evidence.signature"
+            alt="Signature"
+            class="rounded-lg border border-gray-200 bg-white max-h-32"
+          />
+          <p v-else class="text-gray-400">—</p>
+        </div>
+        <div class="space-y-1">
+          <p><span class="text-gray-500">Location:</span>
+            <span v-if="evidence.location">
+              {{ evidence.location.lat }}, {{ evidence.location.lng }}
+              <span class="text-xs text-gray-400">({{ evidence.location.source || 'gps' }})</span>
+            </span>
+            <span v-else>—</span>
+          </p>
+          <p><span class="text-gray-500">IP address:</span> {{ evidence.ip_address || '—' }}</p>
+          <p class="break-all"><span class="text-gray-500">Device fingerprint:</span> {{ evidence.device_fingerprint || '—' }}</p>
+          <p><span class="text-gray-500">Certified by:</span> {{ evidence.certified_by || result.certified_by || '—' }}</p>
+          <p><span class="text-gray-500">Certified at:</span> {{ formatDate(evidence.certified_at || result.certified_at) }}</p>
+        </div>
+      </div>
+    </div>
   </div>
   <div v-else class="p-6 text-center text-gray-500">
     <i class="pi pi-spin pi-spinner text-2xl"></i>
@@ -134,11 +177,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { resultsApi } from '@/api/results'
 import { electionApi } from '@/api/elections'
+import { usePageHeading } from '@/composables/usePageHeading'
 import Button from 'primevue/button'
 import Badge from 'primevue/badge'
 import HorizontalBarChart from '@/components/charts/HorizontalBarChart.vue'
@@ -148,11 +192,29 @@ import AreaChart from '@/components/charts/AreaChart.vue'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const { setPageHeading } = usePageHeading()
 const result = ref(null)
+
+watch(
+  result,
+  (value) => {
+    if (!value?.election) return
+    setPageHeading({
+      title: value.election.title,
+      subtitle: 'Results for this election.',
+    })
+  },
+  { immediate: true },
+)
 const loading = ref(true)
 const monitorData = ref(null)
 const selectedPositionUuid = ref(null)
 const canManageResults = computed(() => authStore.isElectionManager)
+const canCertify = computed(() => authStore.isElectionManager)
+const evidence = computed(() => {
+  const raw = result.value?.certification_evidence
+  return raw && typeof raw === 'object' && Object.keys(raw).length ? raw : null
+})
 
 const standings = computed(() => {
   if (!result.value?.standings) return []
@@ -224,16 +286,8 @@ const getStatusSeverity = (status) => {
   return map[status] || 'secondary'
 }
 
-const certify = async () => {
-  if (confirm('Certify these results?')) {
-    try {
-      await resultsApi.certify(route.params.uuid)
-      await fetchResult()
-    } catch (error) {
-      console.error('Failed to certify:', error)
-      alert('Failed to certify. Please try again.')
-    }
-  }
+const openCeremony = () => {
+  router.push(`/results/${route.params.uuid}/certify`)
 }
 
 const publish = async () => {

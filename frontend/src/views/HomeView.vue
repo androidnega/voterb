@@ -49,112 +49,77 @@
         </section>
 
         <section class="home-visual" aria-label="Sealed ballot box">
-          <div class="home-orbit">
-            <span class="home-orbit__glow" aria-hidden="true" />
+          <div class="home-visual__compose">
+            <div class="home-orbit">
+              <span class="home-orbit__glow" aria-hidden="true" />
 
-            <ul class="home-integrity" aria-label="Election integrity">
-              <li
-                v-for="line in integrityLines"
-                :key="line.id"
-                class="home-integrity__line"
-                :class="`from-${line.from}`"
-                :style="{
-                  '--d': line.delay,
-                  '--x': line.x,
-                  '--y': line.y,
-                  '--hold': line.hold,
-                }"
-              >
-                <span class="home-integrity__mark" aria-hidden="true" />
-                <span class="home-integrity__text">{{ line.text }}</span>
-              </li>
-            </ul>
+              <span class="home-orbit__ring home-orbit__ring--a" aria-hidden="true">
+                <span class="home-orbit__spoke" style="--a: 28deg">
+                  <i class="home-orbit__node" />
+                </span>
+              </span>
+              <span class="home-orbit__ring home-orbit__ring--b" aria-hidden="true">
+                <span class="home-orbit__spoke" style="--a: 130deg">
+                  <i class="home-orbit__node" />
+                </span>
+                <span class="home-orbit__spoke" style="--a: 255deg">
+                  <i class="home-orbit__node home-orbit__node--soft" />
+                </span>
+              </span>
+              <span class="home-orbit__ring home-orbit__ring--c" aria-hidden="true">
+                <span class="home-orbit__spoke" style="--a: 200deg">
+                  <i class="home-orbit__node" />
+                </span>
+              </span>
+              <span class="home-orbit__ring home-orbit__ring--d" aria-hidden="true">
+                <span class="home-orbit__spoke" style="--a: 70deg">
+                  <i class="home-orbit__node home-orbit__node--soft" />
+                </span>
+              </span>
 
-            <span class="home-orbit__ring home-orbit__ring--a" aria-hidden="true">
-              <span class="home-orbit__spoke" style="--a: 28deg">
-                <i class="home-orbit__node" />
-              </span>
-            </span>
-            <span class="home-orbit__ring home-orbit__ring--b" aria-hidden="true">
-              <span class="home-orbit__spoke" style="--a: 130deg">
-                <i class="home-orbit__node" />
-              </span>
-              <span class="home-orbit__spoke" style="--a: 255deg">
-                <i class="home-orbit__node home-orbit__node--soft" />
-              </span>
-            </span>
-            <span class="home-orbit__ring home-orbit__ring--c" aria-hidden="true">
-              <span class="home-orbit__spoke" style="--a: 200deg">
-                <i class="home-orbit__node" />
-              </span>
-            </span>
-            <span class="home-orbit__ring home-orbit__ring--d" aria-hidden="true">
-              <span class="home-orbit__spoke" style="--a: 70deg">
-                <i class="home-orbit__node home-orbit__node--soft" />
-              </span>
-            </span>
+              <div class="home-orbit__core">
+                <img
+                  class="home-visual__img"
+                  src="/images/ballot-box-hero.png?v=5"
+                  width="1024"
+                  height="1024"
+                  alt="Transparent sealed Electoral Commission ballot box filled with ballots"
+                  decoding="async"
+                  fetchpriority="high"
+                  draggable="false"
+                />
+              </div>
+            </div>
 
-            <div class="home-orbit__core">
-              <img
-                class="home-visual__img"
-                src="/images/ballot-box-hero.png?v=5"
-                width="1024"
-                height="1024"
-                alt="Transparent sealed Electoral Commission ballot box filled with ballots"
-                decoding="async"
-                fetchpriority="high"
-                draggable="false"
-              />
+            <div class="home-integrity" aria-label="Election integrity">
+              <p class="home-integrity__kicker">Election integrity</p>
+              <ul class="home-integrity__list">
+                <li
+                  v-for="line in integrityLines"
+                  :key="line.id"
+                  class="home-integrity__line"
+                  :class="`from-${line.from}`"
+                  :style="{ '--d': line.delay }"
+                >
+                  {{ line.text }}
+                </li>
+              </ul>
             </div>
           </div>
         </section>
       </main>
     </div>
   </div>
-</template>
-
-<script setup>
+</template><script setup>
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
 
 const integrityLines = [
-  {
-    id: 'sealed',
-    text: 'Sealed. Counted. Trusted.',
-    from: 'left',
-    x: '2%',
-    y: '18%',
-    delay: '0.55s',
-    hold: '0s',
-  },
-  {
-    id: 'one',
-    text: 'One voter. One vote.',
-    from: 'right',
-    x: '58%',
-    y: '8%',
-    delay: '0.85s',
-    hold: '0.4s',
-  },
-  {
-    id: 'chain',
-    text: 'Tamper-evident trail',
-    from: 'top',
-    x: '62%',
-    y: '62%',
-    delay: '1.15s',
-    hold: '0.8s',
-  },
-  {
-    id: 'truth',
-    text: 'Integrity you can verify',
-    from: 'bottom',
-    x: '6%',
-    y: '72%',
-    delay: '1.45s',
-    hold: '1.2s',
-  },
+  { id: 'sealed', text: 'Sealed. Counted. Trusted.', from: 'left', delay: '1.0s' },
+  { id: 'one', text: 'One voter. One vote.', from: 'right', delay: '2.6s' },
+  { id: 'chain', text: 'Tamper-evident audit trail', from: 'bottom', delay: '4.2s' },
+  { id: 'truth', text: 'Integrity you can verify', from: 'top', delay: '5.8s' },
 ]
 
 const orbs = [
@@ -372,85 +337,90 @@ const orbs = [
   min-height: 0;
 }
 
+.home-visual__compose {
+  position: relative;
+  width: min(100%, 30rem);
+  display: grid;
+  justify-items: center;
+}
+
 .home-orbit {
   --orbit-node: #0f766e;
   position: relative;
-  width: min(100%, 28rem);
+  width: 100%;
   aspect-ratio: 1;
   display: grid;
   place-items: center;
+  /* Leave room so the caption plate can sit in the lower frame */
+  padding-bottom: 2.75rem;
 }
 
 .home-integrity {
+  position: absolute;
+  left: 50%;
+  bottom: 0.15rem;
+  z-index: 4;
+  width: min(92%, 21.5rem);
+  padding: 0.9rem 1.1rem 0.95rem;
+  border-radius: 1rem;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(236, 253, 245, 0.88));
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  box-shadow:
+    0 16px 36px rgba(16, 42, 67, 0.1),
+    0 1px 0 rgba(255, 255, 255, 0.95) inset;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: integrity-panel-in 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.45s both;
+}
+
+.home-integrity__kicker {
+  margin: 0 0 0.55rem;
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--home-accent);
+}
+
+.home-integrity__list {
   list-style: none;
   margin: 0;
   padding: 0;
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
+  display: grid;
+  gap: 0.4rem;
 }
 
 .home-integrity__line {
-  position: absolute;
-  left: var(--x);
-  top: var(--y);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  max-width: 11.5rem;
-  padding: 0.42rem 0.7rem 0.42rem 0.55rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(15, 118, 110, 0.12);
-  box-shadow:
-    0 10px 28px rgba(16, 42, 67, 0.08),
-    0 1px 0 rgba(255, 255, 255, 0.9) inset;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  opacity: 0;
-  animation:
-    integrity-in 0.95s cubic-bezier(0.16, 1, 0.3, 1) var(--d, 0.5s) both,
-    integrity-breathe 5.5s ease-in-out calc(var(--d, 0.5s) + 1.1s + var(--hold, 0s)) infinite;
-  will-change: transform, opacity;
-}
-
-.home-integrity__mark {
-  width: 0.42rem;
-  height: 0.42rem;
-  border-radius: 999px;
-  flex-shrink: 0;
-  background: linear-gradient(145deg, #14b8a6, #0f766e);
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
-}
-
-.home-integrity__text {
-  font-size: 0.68rem;
+  margin: 0;
+  font-size: clamp(0.92rem, 1.45vw, 1.05rem);
   font-weight: 700;
-  letter-spacing: -0.015em;
-  line-height: 1.2;
-  color: #243b53;
-  white-space: nowrap;
+  letter-spacing: -0.03em;
+  line-height: 1.3;
+  color: #1f2937;
+  opacity: 0;
+  animation: integrity-in 1.05s cubic-bezier(0.16, 1, 0.3, 1) var(--d, 1s) both;
+  will-change: transform, opacity, filter;
 }
 
 .home-integrity__line.from-left {
-  --ox: -1.6rem;
-  --oy: 0.35rem;
+  --ox: -1.5rem;
+  --oy: 0;
 }
 
 .home-integrity__line.from-right {
-  --ox: 1.75rem;
-  --oy: -0.2rem;
+  --ox: 1.5rem;
+  --oy: 0;
 }
 
 .home-integrity__line.from-top {
-  --ox: 0.35rem;
-  --oy: -1.5rem;
+  --ox: 0;
+  --oy: -1.15rem;
 }
 
 .home-integrity__line.from-bottom {
-  --ox: -0.4rem;
-  --oy: 1.65rem;
+  --ox: 0;
+  --oy: 1.15rem;
 }
 
 .home-orbit__glow {
@@ -590,34 +560,30 @@ const orbs = [
   }
 }
 
+@keyframes integrity-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translate3d(0, 0.85rem, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translate3d(0, 0, 0);
+  }
+}
+
 @keyframes integrity-in {
   0% {
     opacity: 0;
-    transform: translate3d(var(--ox, 0), var(--oy, 0.8rem), 0) scale(0.92);
-    filter: blur(4px);
+    transform: translate3d(var(--ox, 0), var(--oy, 0.7rem), 0);
+    filter: blur(5px);
   }
-  70% {
+  60% {
     filter: blur(0);
   }
   100% {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-    filter: blur(0);
-  }
-}
-
-@keyframes integrity-breathe {
-  0%, 100% {
     transform: translate3d(0, 0, 0);
-    box-shadow:
-      0 10px 28px rgba(16, 42, 67, 0.08),
-      0 1px 0 rgba(255, 255, 255, 0.9) inset;
-  }
-  50% {
-    transform: translate3d(0, -0.28rem, 0);
-    box-shadow:
-      0 16px 34px rgba(15, 118, 110, 0.14),
-      0 1px 0 rgba(255, 255, 255, 0.95) inset;
+    filter: blur(0);
   }
 }
 
@@ -673,25 +639,6 @@ const orbs = [
   .home-orbit {
     width: min(100%, 20rem);
   }
-
-  .home-integrity__line {
-    max-width: 9.5rem;
-    padding: 0.34rem 0.55rem 0.34rem 0.45rem;
-  }
-
-  .home-integrity__text {
-    font-size: 0.6rem;
-    white-space: normal;
-  }
-
-  .home-integrity__line.from-right {
-    left: 48%;
-  }
-
-  .home-integrity__line.from-top {
-    left: 52%;
-    top: 58%;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -701,6 +648,7 @@ const orbs = [
   .home-orbit__ring,
   .home-copy,
   .home-orbit,
+  .home-integrity,
   .home-integrity__line {
     animation: none !important;
   }
@@ -713,9 +661,14 @@ const orbs = [
     transform: none;
   }
 
+  .home-integrity,
   .home-integrity__line {
     opacity: 1;
     filter: none;
+  }
+
+  .home-integrity {
+    transform: translateX(-50%);
   }
 }
 </style>

@@ -1,4 +1,5 @@
 import { Chart, registerables } from 'chart.js'
+import { MONITOR_THEMES } from '@/composables/useMonitorTheme'
 
 let registered = false
 
@@ -9,9 +10,11 @@ export function ensureChartJs() {
   }
 }
 
+/** Monitor palettes + app shell palette (classic / pulse / amber via CSS vars). */
 export const CHART_PALETTES = {
-  normal: ['#a3b18a', '#3d4f44', '#c5d4bc', '#8a7355', '#6b7f71', '#d4c4a8'],
-  monokai: ['#a6e22e', '#66d9ef', '#fd971f', '#f92672', '#ae81ff', '#e6db74'],
+  normal: [...MONITOR_THEMES.normal.colors],
+  dark: [...MONITOR_THEMES.dark.colors],
+  monokai: [...MONITOR_THEMES.monokai.colors],
 }
 
 export function getAccentColor() {
@@ -24,52 +27,107 @@ export function getAccentSoftColor() {
   return getComputedStyle(document.documentElement).getPropertyValue('--vb-accent-soft').trim() || '#e8efe6'
 }
 
-export function resolveChartTheme(theme = 'normal', containerEl = null) {
+function cssVar(root, name, fallback = '') {
+  if (!root) return fallback
+  return getComputedStyle(root).getPropertyValue(name).trim() || fallback
+}
+
+function appPalette(accent) {
+  const sage = cssVar(document.documentElement, '--vb-sage', '#a3b18a')
+  const accentBorder = cssVar(document.documentElement, '--vb-accent-border', '#c5d4bc')
+  const positive = cssVar(document.documentElement, '--vb-positive', accent)
+  const negative = cssVar(document.documentElement, '--vb-negative', '#c45c5c')
+  return [accent, sage, accentBorder, '#8a7355', positive, negative]
+}
+
+export function resolveAppChartTheme() {
+  const root = typeof document !== 'undefined' ? document.documentElement : null
+  const accent = cssVar(root, '--vb-accent', '#3d4f44')
+  return {
+    id: 'app',
+    mode: 'light',
+    text: cssVar(root, '--vb-muted', '#8a8a8a'),
+    grid: cssVar(root, '--vb-line', '#ebeae4'),
+    border: cssVar(root, '--vb-surface', '#ffffff'),
+    tooltipBg: cssVar(root, '--vb-ink', '#1c1c1c'),
+    accent,
+    accentSoft: cssVar(root, '--vb-accent-soft', '#e8efe6'),
+    colors: appPalette(accent),
+  }
+}
+
+function paletteFromContainer(root, theme) {
+  if (!root) return null
+  const style = getComputedStyle(root)
+  const raw = style.getPropertyValue('--mr-palette').trim()
+  if (raw) {
+    const parsed = raw.split(',').map((c) => c.trim()).filter(Boolean)
+    if (parsed.length) return parsed
+  }
+  const collected = []
+  for (let i = 1; i <= 8; i += 1) {
+    const value = style.getPropertyValue(`--mr-color-${i}`).trim()
+    if (value) collected.push(value)
+  }
+  if (collected.length) return collected
+  return CHART_PALETTES[theme] || null
+}
+
+export function resolveChartTheme(theme = 'app', containerEl = null) {
+  const themeKey = String(theme || 'app')
+  if (themeKey === 'app' || themeKey.startsWith('app-')) {
+    return resolveAppChartTheme()
+  }
+
   const root = containerEl || (typeof document !== 'undefined' ? document.documentElement : null)
+  const palette = paletteFromContainer(root, themeKey) || CHART_PALETTES[themeKey] || CHART_PALETTES.normal
 
   if (root) {
     const style = getComputedStyle(root)
     const chartGrid = style.getPropertyValue('--mr-chart-grid').trim()
     if (chartGrid) {
+      const mode = style.getPropertyValue('--mr-mode').trim() || (themeKey === 'normal' ? 'light' : 'dark')
       return {
-        id: theme,
-        text: style.getPropertyValue('--mr-muted').trim() || '#94a3b8',
+        id: themeKey,
+        mode,
+        text: style.getPropertyValue('--mr-muted').trim() || (mode === 'light' ? '#78716c' : '#94a3b8'),
         grid: chartGrid,
-        border: style.getPropertyValue('--mr-chart-border').trim() || '#1e293b',
-        tooltipBg: theme === 'monokai' ? '#272822' : 'rgba(15, 23, 42, 0.92)',
-        accent: style.getPropertyValue('--mr-accent').trim() || '#10b981',
-        colors: theme === 'monokai' ? CHART_PALETTES.monokai : CHART_PALETTES.normal,
+        border: style.getPropertyValue('--mr-chart-border').trim() || (mode === 'light' ? '#ffffff' : '#1e293b'),
+        tooltipBg: style.getPropertyValue('--mr-tooltip-bg').trim()
+          || (mode === 'light' ? '#ffffff' : 'rgba(15, 23, 42, 0.96)'),
+        accent: style.getPropertyValue('--mr-accent').trim() || palette[0],
+        accentSoft: style.getPropertyValue('--mr-accent-bg').trim() || `${palette[0]}22`,
+        colors: palette,
       }
     }
   }
 
-  if (theme === 'monokai' && root) {
-    const style = getComputedStyle(root)
+  const preset = MONITOR_THEMES[themeKey]
+  if (preset) {
     return {
-      id: 'monokai',
-      text: style.getPropertyValue('--mr-muted').trim() || '#75715e',
-      grid: style.getPropertyValue('--mr-chart-grid').trim() || '#49483e',
-      border: style.getPropertyValue('--mr-chart-border').trim() || '#272822',
-      tooltipBg: '#272822',
-      accent: style.getPropertyValue('--mr-accent').trim() || '#a6e22e',
-      colors: CHART_PALETTES.monokai,
+      id: themeKey,
+      mode: preset.vars['--mr-mode'],
+      text: preset.vars['--mr-muted'],
+      grid: preset.vars['--mr-chart-grid'],
+      border: preset.vars['--mr-chart-border'],
+      tooltipBg: preset.vars['--mr-tooltip-bg'],
+      accent: preset.vars['--mr-accent'],
+      accentSoft: preset.vars['--mr-accent-bg'],
+      colors: preset.colors,
     }
   }
 
-  return {
-    id: 'normal',
-    text: '#8a8a8a',
-    grid: '#f0efe9',
-    border: '#ffffff',
-    tooltipBg: '#1c1c1c',
-    accent: getAccentColor(),
-    colors: CHART_PALETTES.normal,
-  }
+  return resolveAppChartTheme()
 }
 
 export function baseTooltip(theme) {
+  const lightTip = theme.mode === 'light' || theme.id === 'app' || theme.id === 'normal'
   return {
     backgroundColor: theme.tooltipBg,
+    titleColor: lightTip ? '#1c1917' : '#f8fafc',
+    bodyColor: lightTip ? '#44403c' : '#e2e8f0',
+    borderColor: lightTip ? '#e7e5e4' : 'transparent',
+    borderWidth: lightTip ? 1 : 0,
     padding: 10,
     cornerRadius: 8,
     titleFont: { size: 12 },
@@ -203,9 +261,10 @@ export function buildLineConfig({
 
 export function buildAreaConfig({ labels, data, label = 'Turnout', theme, color }) {
   const stroke = color || theme.accent || getAccentColor()
-  const soft = theme.id === 'monokai' || theme.grid === '#334155' || theme.grid === '#49483e'
+  const isDark = theme.mode === 'dark' || theme.id === 'monokai' || theme.id === 'dark'
+  const soft = color
     ? `${stroke}33`
-    : (color ? `${stroke}33` : getAccentSoftColor())
+    : (isDark ? `${stroke}33` : (theme.accentSoft || getAccentSoftColor()))
   return buildLineConfig({
     labels,
     datasets: [{
@@ -218,6 +277,8 @@ export function buildAreaConfig({ labels, data, label = 'Turnout', theme, color 
       pointRadius: 0,
       pointHoverRadius: 4,
       borderWidth: 2.5,
+      pointBackgroundColor: stroke,
+      pointBorderColor: stroke,
     }],
     theme,
     showLegend: false,

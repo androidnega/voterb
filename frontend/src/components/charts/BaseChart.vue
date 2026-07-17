@@ -71,9 +71,9 @@ defineExpose({ render })
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  color: #94a3b8;
+  color: var(--mr-muted, var(--vb-muted, #8a8a8a));
   font-size: 0.875rem;
-  background: rgba(255, 255, 255, 0.6);
+  background: color-mix(in srgb, var(--mr-panel, var(--vb-surface, #ffffff)) 88%, transparent);
   border-radius: 0.65rem;
 }
 

@@ -18,7 +18,7 @@ const props = defineProps({
   data: { type: Array, default: () => [] },
   label: { type: String, default: 'Turnout' },
   color: { type: String, default: '' },
-  theme: { type: String, default: 'normal' },
+  theme: { type: String, default: 'app' },
   themeContainer: { type: Object, default: null },
   height: { type: String, default: '14rem' },
   ariaLabel: { type: String, default: 'Area chart' },

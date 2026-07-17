@@ -16,7 +16,7 @@ import { buildDonutConfig, resolveChartTheme } from '@/composables/useChart'
 const props = defineProps({
   labels: { type: Array, default: () => [] },
   data: { type: Array, default: () => [] },
-  theme: { type: String, default: 'normal' },
+  theme: { type: String, default: 'app' },
   themeContainer: { type: Object, default: null },
   height: { type: String, default: '14rem' },
   legendPosition: { type: String, default: 'bottom' },

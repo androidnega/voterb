@@ -57,12 +57,20 @@
 
         <div class="mt-6 pt-4 border-t border-gray-100 flex justify-end">
           <button
+            v-if="!election.has_voted"
             @click="startVoting(election.uuid)"
             :disabled="election.status !== 'open'"
             class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Vote Now
           </button>
+          <span
+            v-else
+            class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-800 text-sm font-semibold"
+          >
+            <i class="pi pi-check-circle"></i>
+            Voted
+          </span>
         </div>
       </div>
     </div>

@@ -9,6 +9,8 @@ const SAFE_ACTION_HINTS = [
   { test: /not\s+eligible|ineligible/i, message: 'You’re not eligible for this ballot.' },
   { test: /cooldown|too\s+many|rate\s+limit|try\s+again\s+later/i, message: 'Please wait a moment, then try again.' },
   { test: /closed|not\s+open|ended/i, message: 'This ballot isn’t open for voting right now.' },
+  { test: /presence\s+photo|presence\s+check|audit\s+presence/i, message: 'Take a quick presence photo first, then continue to your ballot.' },
+  { test: /valid\s+svt|secure\s+voting\s+token|validate\s+your\s+secure/i, message: 'Validate your Secure Voting Token to continue.' },
 ]
 
 function isLikelyTechnical(text) {
@@ -42,6 +44,14 @@ export function friendlyLoadError(error, subject = 'this page') {
   if (status === 404) return 'We couldn’t find what you’re looking for.'
   if (status === 429) return 'Please wait a moment, then try again.'
   if (status >= 500) return 'Something went wrong on our side. Please try again in a moment.'
+
+  const raw = error.response?.data?.error || error.response?.data?.detail
+  if (typeof raw === 'string' && !isLikelyTechnical(raw)) {
+    for (const hint of SAFE_ACTION_HINTS) {
+      if (hint.test.test(raw)) return hint.message
+    }
+    if (raw.length <= 120 && !/[<>_/\\]{2,}/.test(raw)) return raw
+  }
 
   return `We couldn’t load ${subject}. Please try again.`
 }

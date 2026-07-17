@@ -36,34 +36,87 @@
           v-for="election in elections"
           :key="election.uuid"
           class="ballot"
+          :class="{ 'ballot--voted': election.has_voted }"
         >
-          <div class="ballot-main">
-            <div class="ballot-head">
-              <h2>{{ election.title }}</h2>
-              <span v-if="election.status === 'open'" class="ballot-live" aria-label="Open for voting">
-                <span class="ballot-live-dot" aria-hidden="true"></span>
-              </span>
+          <!-- Voted: civic duty card -->
+          <template v-if="election.has_voted">
+            <div class="ballot-done">
+              <div class="ballot-done__mark" aria-hidden="true">
+                <i class="fas fa-check"></i>
+              </div>
+
+              <div class="ballot-done__body">
+                <div class="ballot-done__head">
+                  <p class="ballot-done__eyebrow">Ballot sealed</p>
+                  <h2 class="ballot-done__title">{{ election.title }}</h2>
+                </div>
+
+                <p class="ballot-done__civic">
+                  You’ve performed your civic duty.
+                </p>
+                <p class="ballot-done__sub">
+                  Your vote is locked in. Sit back — nothing else is required from you for this election.
+                </p>
+
+                <p v-if="formatVotedAt(election.voted_at)" class="ballot-done__when">
+                  Cast {{ formatVotedAt(election.voted_at) }}
+                </p>
+
+                <ElectionCountdown
+                  :election="election"
+                  variant="done"
+                  label="Voting closes in"
+                  :beep="false"
+                />
+              </div>
+
+              <div class="ballot-done__footer">
+                <button
+                  type="button"
+                  class="ballot-done__receipt"
+                  @click="openConfirmation(election.uuid)"
+                >
+                  View receipt
+                  <i class="fas fa-arrow-right" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <!-- Open: ready to vote -->
+          <template v-else>
+            <div class="ballot-main">
+              <div class="ballot-head">
+                <h2>{{ election.title }}</h2>
+                <span
+                  v-if="election.status === 'open'"
+                  class="ballot-live"
+                  aria-label="Open for voting"
+                >
+                  <span class="ballot-live-dot" aria-hidden="true"></span>
+                </span>
+              </div>
+
+              <p v-if="election.description" class="ballot-desc">{{ election.description }}</p>
+
+              <ElectionCountdown :election="election" />
             </div>
 
-            <p v-if="election.description" class="ballot-desc">{{ election.description }}</p>
-
-            <ElectionCountdown :election="election" />
-          </div>
-
-          <div class="ballot-footer">
-            <button
-              type="button"
-              class="ballot-action"
-              :class="{ 'is-launching': launchingId === election.uuid }"
-              :disabled="!canVote(election) || !!launchingId"
-              @click="startVoting(election.uuid)"
-            >
-              <span class="ballot-action-label">Vote</span>
-              <span class="ballot-action-arrow" aria-hidden="true">
-                <i class="fas fa-arrow-right"></i>
-              </span>
-            </button>
-          </div>
+            <div class="ballot-footer">
+              <button
+                type="button"
+                class="ballot-action"
+                :class="{ 'is-launching': launchingId === election.uuid }"
+                :disabled="!canVote(election) || !!launchingId"
+                @click="startVoting(election.uuid)"
+              >
+                <span class="ballot-action-label">{{ voteLabel(election) }}</span>
+                <span class="ballot-action-arrow" aria-hidden="true">
+                  <i class="fas fa-arrow-right"></i>
+                </span>
+              </button>
+            </div>
+          </template>
         </article>
       </div>
     </section>
@@ -111,14 +164,41 @@ const campusTags = computed(() => {
   return [
     user.department?.name,
     user.faculty?.name,
-    user.level?.name,
   ].filter(Boolean)
 })
 
 function canVote(election) {
+  if (election.has_voted) return false
   if (election.status !== 'open') return false
   const timing = getElectionTiming(election)
   return timing.phase === 'open' && !timing.expired
+}
+
+function voteLabel(election) {
+  if (!canVote(election)) {
+    const timing = getElectionTiming(election)
+    if (timing.phase === 'upcoming') return 'Opens soon'
+    return 'Closed'
+  }
+  return 'Vote'
+}
+
+function openConfirmation(electionUuid) {
+  router.push(`/vote/${electionUuid}/confirmation`)
+}
+
+function formatVotedAt(value) {
+  if (!value) return ''
+  try {
+    return new Date(value).toLocaleString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return ''
+  }
 }
 
 async function fetchElections() {
@@ -139,6 +219,11 @@ function wait(ms) {
 }
 
 async function startVoting(electionUuid) {
+  const election = elections.value.find((e) => String(e.uuid) === String(electionUuid))
+  if (election?.has_voted) {
+    openConfirmation(electionUuid)
+    return
+  }
   if (launchingId.value) return
   launchingId.value = electionUuid
 
@@ -223,6 +308,13 @@ onMounted(fetchElections)
   overflow: hidden;
 }
 
+.ballot--voted {
+  border-color: #d1fae5;
+  background:
+    linear-gradient(165deg, #f0fdf9 0%, #fff 42%, #fff 100%);
+  box-shadow: 0 1px 0 rgba(16, 185, 129, 0.06);
+}
+
 .ballot-main {
   padding: 1rem 1rem 0.9rem;
   display: grid;
@@ -280,6 +372,122 @@ onMounted(fetchElections)
   padding: 0.65rem 0.85rem 0.85rem;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+}
+
+/* Voted / civic duty card */
+.ballot-done {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.05rem 1rem 0.95rem;
+}
+
+.ballot-done__mark {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #0f766e;
+  color: #fff;
+  font-size: 0.78rem;
+  box-shadow: 0 6px 16px rgba(15, 118, 110, 0.22);
+  animation: done-pop 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ballot-done__body {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.ballot-done__eyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0f766e;
+}
+
+.ballot-done__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+  color: #1c1917;
+  line-height: 1.25;
+}
+
+.ballot-done__civic {
+  margin: 0.35rem 0 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: #134e4a;
+  line-height: 1.35;
+}
+
+.ballot-done__sub {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: #78716c;
+  max-width: 28rem;
+}
+
+.ballot-done__when {
+  margin: 0.15rem 0 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #a8a29e;
+}
+
+.ballot-done__footer {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 0.15rem;
+}
+
+.ballot-done__receipt {
+  border: 1px solid #d1fae5;
+  background: #fff;
+  color: #0f766e;
+  font-size: 0.74rem;
+  font-weight: 650;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+.ballot-done__receipt i {
+  font-size: 0.58rem;
+}
+
+.ballot-done__receipt:hover {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  transform: translateY(-1px);
+}
+
+@keyframes done-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ballot-done__mark {
+    animation: none;
+  }
 }
 
 .ballot-action {
@@ -415,6 +623,15 @@ onMounted(fetchElections)
     padding: 0.9rem 0.9rem 0.65rem;
   }
 
+  .ballot-done {
+    padding: 0.95rem 0.9rem 0.9rem;
+    gap: 0.75rem;
+  }
+
+  .ballot-done__civic {
+    font-size: 0.88rem;
+  }
+
   .ballot-footer {
     padding: 0 0.85rem 0.9rem;
   }
@@ -466,9 +683,27 @@ onMounted(fetchElections)
     box-shadow: 0 8px 24px rgba(28, 25, 23, 0.04);
   }
 
+  .ballot--voted:hover {
+    border-color: #a7f3d0;
+    box-shadow: 0 8px 24px rgba(15, 118, 110, 0.08);
+  }
+
   .ballot-main {
     padding: 1.2rem 1.25rem 0.85rem;
     gap: 0.65rem;
+  }
+
+  .ballot-done {
+    padding: 1.25rem 1.25rem 1.15rem;
+    gap: 0.95rem;
+  }
+
+  .ballot-done__title {
+    font-size: 1.08rem;
+  }
+
+  .ballot-done__civic {
+    font-size: 0.98rem;
   }
 
   .ballot-footer {

@@ -71,7 +71,6 @@ const details = computed(() => {
   return [
     user.department?.name ? { label: 'Department', value: user.department.name } : null,
     user.faculty?.name ? { label: 'Faculty', value: user.faculty.name } : null,
-    user.level?.name ? { label: 'Level', value: user.level.name } : null,
     user.phone_number ? { label: 'Phone', value: user.phone_number } : null,
   ].filter(Boolean)
 })

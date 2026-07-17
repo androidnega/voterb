@@ -19,6 +19,21 @@
       />
     </template>
 
+    <template v-else-if="alreadyVoted">
+      <button type="button" class="svt-back" @click="$router.push('/student')">
+        <i class="fas fa-arrow-left" aria-hidden="true"></i>
+        Back
+      </button>
+      <FriendlyLoadState
+        tone="empty"
+        title="You’ve already voted"
+        message="Your ballot for this election is sealed. You can’t vote again."
+        action-label="View receipt"
+        icon="fas fa-check-circle"
+        @action="goToConfirmation"
+      />
+    </template>
+
     <template v-else>
       <button type="button" class="svt-back" @click="$router.push('/student')">
         <i class="fas fa-arrow-left" aria-hidden="true"></i>
@@ -29,20 +44,25 @@
         <div class="svt-card__shield" aria-hidden="true">
           <i class="fas fa-shield-alt"></i>
         </div>
-        <p class="svt-card__eyebrow">Secure voting gate</p>
+        <p class="svt-card__eyebrow">Voting security check</p>
         <h1 class="svt-card__title">{{ electionTitle }}</h1>
         <p class="svt-card__sub">
           {{ step === 'verifying'
-            ? 'Confirming your secure session…'
-            : 'Confirm your Secure Voting Token to unlock the ballot.' }}
+            ? 'Confirming your secure voting session…'
+            : step === 'validate'
+              ? 'Enter the SVT sent to your phone. Valid for 20 minutes · one use only.'
+              : 'Your SVT is sent to your registered phone. It lasts 20 minutes, binds to your voter ID, and you may request it up to 3 times.' }}
         </p>
 
         <div v-if="step === 'request'" class="svt-panel">
           <div class="svt-note">
             <i class="fas fa-lock" aria-hidden="true"></i>
             <div>
-              <strong>Secure Voting Token</strong>
-              <p>Request a one-time token sent to your registered channel, then enter it here to unlock your ballot.</p>
+              <strong>Secure Voting Token (SVT)</strong>
+              <p>
+                Sent by SMS to your register phone. One live token at a time · max 3 requests ·
+                expires after use or 20 minutes. Format starts with <strong>v-</strong>.
+              </p>
             </div>
           </div>
           <button type="button" class="svt-btn svt-btn--primary" :disabled="requesting" @click="requestSVT">
@@ -57,9 +77,28 @@
           <div class="svt-note svt-note--ok">
             <i class="fas fa-check-circle" aria-hidden="true"></i>
             <div>
-              <strong>Token issued</strong>
-              <p>Enter each character of your Secure Voting Token.</p>
+              <strong>{{ phoneMasked ? `Sent to ${phoneMasked}` : 'Token issued' }}</strong>
+              <p>Enter each character of your Secure Voting Token before it expires.</p>
             </div>
+          </div>
+
+          <div
+            v-if="svtExpiresAt"
+            class="svt-countdown"
+            :class="`is-${svtUrgency}`"
+            role="timer"
+            :aria-label="svtExpired ? 'SVT expired' : `SVT expires in ${svtCountdownDisplay}`"
+          >
+            <div class="svt-countdown__label">
+              <i class="fas fa-hourglass-half" aria-hidden="true"></i>
+              <span>{{ svtExpired ? 'Token expired' : 'Expires in' }}</span>
+            </div>
+            <div class="svt-countdown__clock" aria-hidden="true">{{ svtCountdownDisplay || '—' }}</div>
+            <p class="svt-countdown__hint">
+              {{ svtExpired
+                ? 'Request a new SVT to continue.'
+                : 'This timer beeps as time runs low — enter your code soon.' }}
+            </p>
           </div>
 
           <div class="svt-otp" role="group" aria-label="Secure Voting Token">
@@ -153,7 +192,9 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { votingApi } from '@/api/voting'
 import { useFriendlyLoad } from '@/composables/useFriendlyLoad'
+import { useExpiryCountdown } from '@/composables/useExpiryCountdown'
 import { friendlyActionError } from '@/utils/friendlyFeedback'
+import { unlockAudio, playBeep } from '@/utils/beep'
 import {
   clearSvtSession,
   isValidSvtFormat,
@@ -173,6 +214,7 @@ const digitCount = 4
 
 const electionTitle = ref('Election')
 const step = ref('request')
+const alreadyVoted = ref(false)
 const letterDigits = ref(Array.from({ length: letterCount }, () => ''))
 const numberDigits = ref(Array.from({ length: digitCount }, () => ''))
 const letterInputs = ref([])
@@ -180,11 +222,19 @@ const digitInputs = ref([])
 const requesting = ref(false)
 const validating = ref(false)
 const errorMessage = ref('')
+const phoneMasked = ref('')
+const svtExpiresAt = ref(null)
 const verifyStep = ref(0)
 const verifyTitle = ref('Securing your session…')
 const actionSlow = ref(false)
 let actionSlowTimer = null
 let resumeStarted = false
+
+const {
+  display: svtCountdownDisplay,
+  urgency: svtUrgency,
+  expired: svtExpired,
+} = useExpiryCountdown(svtExpiresAt, { beep: true })
 
 const {
   loading: booting,
@@ -200,7 +250,7 @@ const {
 const verifyLines = [
   'Checking token signature',
   'Matching voter eligibility',
-  'Opening sealed ballot positions',
+  'Preparing presence check',
 ]
 
 const svtNormalized = computed(() => {
@@ -317,13 +367,17 @@ async function playVerifySequence({ resume = false } = {}) {
     await new Promise((r) => setTimeout(r, 480 + i * 100))
   }
   verifyStep.value = verifyLines.length
-  verifyTitle.value = 'Ballot unlocked'
+  verifyTitle.value = 'Identity check next'
   await new Promise((r) => setTimeout(r, 380))
 }
 
-async function openBallotAfterVerify({ resume = false } = {}) {
+async function openBallotAfterVerify({ resume = false, presenceCaptured = false } = {}) {
   await playVerifySequence({ resume })
-  await router.replace(`/vote/${electionUuid}/ballot`)
+  if (presenceCaptured) {
+    await router.replace(`/vote/${electionUuid}/ballot`)
+    return
+  }
+  await router.replace(`/vote/${electionUuid}/presence`)
 }
 
 async function resumeValidatedSession(sessionPayload = {}) {
@@ -348,12 +402,20 @@ async function resumeValidatedSession(sessionPayload = {}) {
       }),
     )
   }
-  await openBallotAfterVerify({ resume: true })
+  await openBallotAfterVerify({
+    resume: true,
+    presenceCaptured: !!sessionPayload.presence_captured,
+  })
+}
+
+function goToConfirmation() {
+  router.push(`/vote/${electionUuid}/confirmation`)
 }
 
 async function bootPage() {
   begin()
   resumeStarted = false
+  alreadyVoted.value = false
   try {
     const [eligibleRes, sessionRes] = await Promise.all([
       votingApi.getEligibleElections(),
@@ -366,6 +428,12 @@ async function bootPage() {
     )
     electionTitle.value = match?.title || 'Election'
     succeed()
+
+    if (match?.has_voted || session.status === 'voted' || session.has_voted) {
+      clearSvtSession(electionUuid)
+      alreadyVoted.value = true
+      return
+    }
 
     if (session.status === 'validated') {
       await resumeValidatedSession(session)
@@ -380,6 +448,8 @@ async function bootPage() {
     }
 
     if (session.status === 'issued') {
+      svtExpiresAt.value = session.expires_at || null
+      phoneMasked.value = session.phone_masked || phoneMasked.value
       step.value = 'validate'
       await nextTick()
       focusFirstBox()
@@ -398,14 +468,34 @@ async function bootPage() {
 const requestSVT = async () => {
   requesting.value = true
   errorMessage.value = ''
+  unlockAudio()
   markActionPending()
   try {
-    await votingApi.requestSVT(electionUuid)
+    const { data } = await votingApi.requestSVT(electionUuid)
+    if (data?.already_validated) {
+      writeSvtSession(electionUuid, {
+        code: readSvtSession(electionUuid)?.code || '',
+        expires_at: data?.expires_at || null,
+        status: 'validated',
+      })
+      await openBallotAfterVerify({
+        resume: true,
+        presenceCaptured: !!data?.presence_captured,
+      })
+      return
+    }
+    phoneMasked.value = data?.phone_masked || ''
+    svtExpiresAt.value = data?.expires_at || null
     step.value = 'validate'
+    playBeep('alert')
     clearBoxes()
     await nextTick()
     focusFirstBox()
   } catch (error) {
+    if (error?.response?.data?.has_voted) {
+      alreadyVoted.value = true
+      return
+    }
     errorMessage.value = friendlyActionError(error, 'We couldn’t send your token. Please try again.')
   } finally {
     clearActionSlow()
@@ -426,8 +516,15 @@ const validateSVT = async () => {
       status: 'validated',
     })
     clearActionSlow()
-    await openBallotAfterVerify({ resume: !!data?.already_validated })
+    await openBallotAfterVerify({
+      resume: !!data?.already_validated,
+      presenceCaptured: !!data?.presence_captured,
+    })
   } catch (error) {
+    if (error?.response?.data?.has_voted) {
+      alreadyVoted.value = true
+      return
+    }
     step.value = 'validate'
     errorMessage.value = friendlyActionError(error, 'That token didn’t work. Please try again.')
     clearBoxes()
@@ -442,14 +539,22 @@ const validateSVT = async () => {
 const resendSVT = async () => {
   requesting.value = true
   errorMessage.value = ''
+  unlockAudio()
   markActionPending()
   try {
-    await votingApi.requestSVT(electionUuid, { resend: true })
+    const { data } = await votingApi.requestSVT(electionUuid, { resend: true })
+    phoneMasked.value = data?.phone_masked || phoneMasked.value
+    svtExpiresAt.value = data?.expires_at || null
     clearSvtSession(electionUuid)
+    playBeep('alert')
     clearBoxes()
     await nextTick()
     focusFirstBox()
   } catch (error) {
+    if (error?.response?.data?.has_voted) {
+      alreadyVoted.value = true
+      return
+    }
     errorMessage.value = friendlyActionError(error, 'We couldn’t resend your token. Please try again.')
   } finally {
     clearActionSlow()
@@ -576,6 +681,83 @@ onUnmounted(clearActionSlow)
   margin: 0;
   font-size: 0.78rem;
   line-height: 1.45;
+}
+
+.svt-countdown {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+  padding: 0.85rem 0.9rem;
+  border-radius: 0.85rem;
+  border: 1px solid #d6ebe5;
+  background: linear-gradient(180deg, #f4fbf8 0%, #eef8f4 100%);
+  text-align: center;
+}
+
+.svt-countdown__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #0f766e;
+}
+
+.svt-countdown__clock {
+  font-size: 2rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: #134e4a;
+  line-height: 1;
+}
+
+.svt-countdown__hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #5b716c;
+}
+
+.svt-countdown.is-warn {
+  border-color: #f5d0a9;
+  background: linear-gradient(180deg, #fffaf3 0%, #fff4e6 100%);
+}
+
+.svt-countdown.is-warn .svt-countdown__label,
+.svt-countdown.is-warn .svt-countdown__clock {
+  color: #c2410c;
+}
+
+.svt-countdown.is-urgent,
+.svt-countdown.is-critical {
+  border-color: #fecaca;
+  background: linear-gradient(180deg, #fff5f5 0%, #fee2e2 100%);
+  animation: svt-pulse 1s ease-in-out infinite;
+}
+
+.svt-countdown.is-urgent .svt-countdown__label,
+.svt-countdown.is-urgent .svt-countdown__clock,
+.svt-countdown.is-critical .svt-countdown__label,
+.svt-countdown.is-critical .svt-countdown__clock {
+  color: #b91c1c;
+}
+
+.svt-countdown.is-expired {
+  border-color: #e7e5e4;
+  background: #f5f5f4;
+  animation: none;
+}
+
+.svt-countdown.is-expired .svt-countdown__label,
+.svt-countdown.is-expired .svt-countdown__clock {
+  color: #78716c;
+}
+
+@keyframes svt-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
 }
 
 .svt-otp {

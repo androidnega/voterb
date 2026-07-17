@@ -31,6 +31,19 @@
   will-change: transform, opacity;
 }
 
+.p-dialog-content,
+.p-dialog .p-dialog-content {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.p-dialog-content::-webkit-scrollbar,
+.p-dialog .p-dialog-content::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .p-dialog-enter-active {
   animation: modal-panel-in var(--modal-duration-in) var(--modal-ease-out) forwards;
 }

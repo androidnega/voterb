@@ -18,7 +18,7 @@ const props = defineProps({
   datasets: { type: Array, default: () => [] },
   fill: { type: Boolean, default: false },
   tension: { type: Number, default: 0.4 },
-  theme: { type: String, default: 'normal' },
+  theme: { type: String, default: 'app' },
   themeContainer: { type: Object, default: null },
   height: { type: String, default: '14rem' },
   legendPosition: { type: String, default: 'top' },
